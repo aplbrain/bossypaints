@@ -1,9 +1,19 @@
 import abc
 import json
+import os
 import uuid
+from typing import Optional
 
 import fastapi
+import httpx
 import pydantic
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
+from fastapi.responses import FileResponse
+from fastapi.security import OAuth2AuthorizationCodeBearer
+from fastapi.staticfiles import StaticFiles
+from jose import jwt
+from jose.exceptions import JWTError
+from pydantic import BaseModel
 
 app = fastapi.FastAPI()
 
@@ -117,15 +127,6 @@ class JSONFileTaskQueueStore(TaskQueueStore):
         return list(tasks.values())
 
 
-import os
-from fastapi import Depends, HTTPException, Security
-from fastapi.security import OAuth2AuthorizationCodeBearer
-from jose import jwt
-from jose.exceptions import JWTError
-from pydantic import BaseModel
-from typing import Optional
-import httpx
-
 # Set up environment variables
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
 KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID")
@@ -194,18 +195,16 @@ def get_user_from_token(token_payload: dict) -> User:
     )
 
 
-from fastapi import FastAPI, Depends, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-
 app = FastAPI()
 
 # Serve the SvelteKit static files
 app.mount(
     "/",
-    StaticFiles(directory=os.path.join("sveltekit", "build"), html=True),
+    StaticFiles(directory=os.path.join("webbuild"), html=True),
     name="static",
 )
+
+STATIC_DIR = os.path.join("webbuild")
 
 
 @app.get("/secure-endpoint")
