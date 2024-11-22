@@ -1,0 +1,16 @@
+{
+    "829253bb-4abd-4a5b-b36d-4e133c361bb1": {
+        "collection": "Witvliet2020",
+        "experiment": "Dataset_1",
+        "channel": "em",
+        "resolution": 3,
+        "x_min": 1256,
+        "x_max": 1768,
+        "y_min": 1256,
+        "y_max": 1768,
+        "z_min": 0,
+        "z_max": 32,
+        "priority": 0,
+        "id": "829253bb-4abd-4a5b-b36d-4e133c361bb1"
+    }
+}

@@ -30,7 +30,13 @@ class ImageStackVolumePolygonRenderer(VolumePolygonRenderer):
             for poly in checkpoint.polygons:
                 z = poly.z
                 points = np.array(poly.points)
+                if points.ndim != 2:
+                    continue
+                # points[:, 0] = np.clip(points[:, 0], task.x_min, task.x_max)
+                # points[:, 1] = np.clip(points[:, 1], task.y_min, task.y_max)
                 rr, cc = polygon(points[:, 0], points[:, 1])
+                rr = np.clip(rr, 0, x_size - 1)
+                cc = np.clip(cc, 0, y_size - 1)
                 volume[rr, cc, z] = poly.segmentID
         # fpath = f"{self.directory}{task.collection}_{task.experiment}_{task.channel}_{task.resolution}_{task.id}.{z}.{self.fmt}"
         for z in range(z_size):

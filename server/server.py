@@ -12,8 +12,8 @@ from jose import jwt
 from jose.exceptions import JWTError
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from bossypaints.renderer import ImageStackVolumePolygonRenderer, VolumePolygonRenderer
-from bossypaints.tasks import InMemoryTaskQueueStore, Task, TaskID
+from bossypaints.renderer import ImageStackVolumePolygonRenderer
+from bossypaints.tasks import JSONFileTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
 
 # Load environment variables from .env file
@@ -108,22 +108,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-task_store = InMemoryTaskQueueStore()  # or JSONFileTaskQueueStore("tasks.json")
-task_store.put(
-    Task(
-        collection="Witvliet2020",
-        experiment="Dataset_1",
-        channel="em",
-        resolution=3,
-        x_min=1256,
-        x_max=1768,
-        y_min=1256,
-        y_max=1768,
-        z_min=0,
-        z_max=32,
-        priority=0,
-    )
-)
+task_store = JSONFileTaskQueueStore("tasks.json")
+# task_store.put(
+#     Task(
+#         collection="Witvliet2020",
+#         experiment="Dataset_1",
+#         channel="em",
+#         resolution=3,
+#         x_min=1256,
+#         x_max=1768,
+#         y_min=1256,
+#         y_max=1768,
+#         z_min=0,
+#         z_max=32,
+#         priority=0,
+#     )
+# )
 
 checkpoint_store = JSONCheckpointStore("checkpoints.json")
 
