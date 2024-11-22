@@ -25,6 +25,7 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-static": "^3.0.6",
+		"notyf": "^3.10.0",
 		"webpaint": "file:../../webpaint"
 	}
 }

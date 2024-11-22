@@ -3,7 +3,7 @@ import json
 import uuid
 import pydantic
 
-TaskID = int | str
+TaskID = str
 
 
 class Task(pydantic.BaseModel):
@@ -17,7 +17,7 @@ class Task(pydantic.BaseModel):
     y_max: int
     z_min: int
     z_max: int
-    priority: TaskID
+    priority: int
 
 
 class TaskInDB(Task):
@@ -54,8 +54,7 @@ class InMemoryTaskQueueStore(TaskQueueStore):
         self._next_id = 0
 
     def put(self, task: Task) -> TaskID:
-        task_id = self._next_id
-        self._next_id += 1
+        task_id = uuid.uuid4().hex
         self._tasks[task_id] = TaskInDB(id=task_id, **task.dict())
         return task_id
 

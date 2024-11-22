@@ -2,6 +2,7 @@ import type PolygonAnnotation from "webpaint/src/lib/PolygonAnnotation";
 
 const baseUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000';
 
+export type TaskID = string;
 
 export type Task = {
     collection: string;
@@ -18,7 +19,7 @@ export type Task = {
 }
 
 export type TaskInDB = Task & {
-    id: number;
+    id: TaskID;
 }
 
 class API {
@@ -44,8 +45,15 @@ class API {
         return this.get('/api/tasks/next');
     }
 
-    async checkpointTask({ taskId, checkpoint }: { taskId: number, checkpoint: PolygonAnnotation[] }) {
+    async checkpointTask({ taskId, checkpoint }: { taskId: TaskID, checkpoint: PolygonAnnotation[] }) {
         return this.post(`/api/tasks/${taskId}/checkpoint`, { checkpoint });
+    }
+
+    async getTaskCheckpoints(taskId: TaskID): Promise<{ checkpoints: Array<{ polygons: Array<PolygonAnnotation>, taskID: TaskID }> }> {
+        return this.get(`/api/tasks/${taskId}/checkpoints`);
+    }
+    async saveTask({ taskId, checkpoint }: { taskId: TaskID, checkpoint: PolygonAnnotation[] }) {
+        return this.post(`/api/tasks/${taskId}/save`, { checkpoint });
     }
 }
 
