@@ -81,9 +81,10 @@ class JSONFileTaskQueueStore(TaskQueueStore):
                 json_data = json.load(f)
 
             return {
-                task_id: TaskInDB(id=task_id, **task_data)
+                task_id: TaskInDB(**task_data)
                 for task_id, task_data in json_data.items()
             }
+
         except FileNotFoundError:
             return {}
 

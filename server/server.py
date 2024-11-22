@@ -12,8 +12,8 @@ from jose import jwt
 from jose.exceptions import JWTError
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from bossypaints.renderer import ImageStackVolumePolygonRenderer, VolumePolygonRenderer
-from bossypaints.tasks import InMemoryTaskQueueStore, Task, TaskID
+from bossypaints.renderer import ImageStackVolumePolygonRenderer
+from bossypaints.tasks import JSONFileTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
 
 # Load environment variables from .env file
@@ -108,22 +108,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-task_store = InMemoryTaskQueueStore()  # or JSONFileTaskQueueStore("tasks.json")
-task_store.put(
-    Task(
-        collection="Witvliet2020",
-        experiment="Dataset_1",
-        channel="em",
-        resolution=3,
-        x_min=1256,
-        x_max=1768,
-        y_min=1256,
-        y_max=1768,
-        z_min=0,
-        z_max=32,
-        priority=0,
-    )
-)
+task_store = JSONFileTaskQueueStore("tasks.json")
+# task_store.put(
+#     Task(
+#         collection="Witvliet2020",
+#         experiment="Dataset_1",
+#         channel="em",
+#         resolution=3,
+#         x_min=1256,
+#         x_max=1768,
+#         y_min=1256,
+#         y_max=1768,
+#         z_min=0,
+#         z_max=32,
+#         priority=0,
+#     )
+# )
 
 checkpoint_store = JSONCheckpointStore("checkpoints.json")
 
@@ -157,9 +157,9 @@ async def save_task(task_id: TaskID, checkpoint: dict):
     checkpoint_store.save_checkpoint(checkpoint_obj)
     # Render this volume:
     task = task_store.get(task_id)
-    ImageStackVolumePolygonRenderer(fmt="jpg").render_from_checkpoints(
-        task, checkpoint_store.get_checkpoints_for_task(task_id)
-    )
+    ImageStackVolumePolygonRenderer(
+        fmt="tif", directory="./exports/"
+    ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
 
 
 @api_router.post("/tasks/{task_id}/checkpoint")
@@ -173,6 +173,15 @@ async def checkpoint_task(task_id: TaskID, checkpoint: dict):
 async def get_task_checkpoints(task_id: TaskID):
     checkpoints = checkpoint_store.get_checkpoints_for_task(task_id)
     return {"checkpoints": checkpoints}
+
+
+@api_router.get("/tasks/{task_id}")
+async def get_task_by_id(task_id: TaskID):
+    task = task_store.get(task_id)
+    if task:
+        return {"task": task}
+    else:
+        raise HTTPException(status_code=404, detail="Task not found")
 
 
 app.include_router(api_router, prefix="/api")

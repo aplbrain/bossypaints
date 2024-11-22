@@ -41,6 +41,14 @@ class API {
         return response.json();
     }
 
+    async getTasks(): Promise<{ tasks: TaskInDB[] }> {
+        return this.get('/api/tasks');
+    }
+
+    async getTask(taskId: TaskID): Promise<{ task: TaskInDB }> {
+        return this.get(`/api/tasks/${taskId}`);
+    }
+
     async getNextTask(): Promise<{ task: TaskInDB }> {
         return this.get('/api/tasks/next');
     }
