@@ -1,27 +1,26 @@
 <script lang="ts">
 	import PaintApp from 'webpaint/src/lib/components/PaintApp.svelte';
-	import { createAnnotationManagerStore } from 'webpaint/src/lib/stores/AnnotationManagerStore.svelte';
-	import { createNavigationStore } from 'webpaint/src/lib/stores/NavigationStore.svelte';
-	import API, { type Task } from '$lib/api';
+	import {
+		createAnnotationManagerStore,
+		type AnnotationManagerStore
+	} from 'webpaint/src/lib/stores/AnnotationManagerStore.svelte';
+	import {
+		createNavigationStore,
+		type NavigationStore
+	} from 'webpaint/src/lib/stores/NavigationStore.svelte';
+	import API, { type TaskInDB } from '$lib/api';
+	import { Notyf } from 'notyf';
+	import 'notyf/notyf.min.css';
+	import PolygonAnnotation from 'webpaint/src/lib/PolygonAnnotation';
+	const notyf = new Notyf();
 
-	let task: Task | null = null;
-	let annotationStore = null;
-	let nav = null;
-
-	// const numberOfSlices = 32;
-
-	// let annotationStore = createAnnotationManagerStore(numberOfSlices);
-	// let nav = createNavigationStore({
-	// 	minLayer: 0,
-	// 	maxLayer: numberOfSlices - 1,
-	// 	imageWidth: 512,
-	// 	imageHeight: 512
-	// });
+	let task: TaskInDB;
+	let annotationStore: AnnotationManagerStore;
+	let nav: NavigationStore;
 
 	async function loadTask() {
 		let response = await API.getNextTask();
 		task = response.task;
-		console.log(task.z_max, task.z_min);
 		annotationStore = createAnnotationManagerStore(task.z_max - task.z_min + 1);
 		nav = createNavigationStore({
 			minLayer: task.z_min,
@@ -29,6 +28,23 @@
 			imageWidth: task.x_max - task.x_min + 1,
 			imageHeight: task.y_max - task.y_min + 1
 		});
+
+		let checkpointResponse = await API.getTaskCheckpoints(task.id);
+		if (checkpointResponse.checkpoints) {
+			checkpointResponse.checkpoints.forEach((checkpoint) => {
+				checkpoint.polygons.forEach((annotation) => {
+					annotationStore.addAnnotation(
+						annotation.z,
+						new PolygonAnnotation(
+							annotation.points,
+							annotation.segmentID,
+							annotation.editing,
+							annotation.z
+						)
+					);
+				});
+			});
+		}
 	}
 
 	loadTask();
@@ -45,7 +61,14 @@
 		resolution={task.resolution}
 		debugMode
 		onCheckpointData={(data) => {
-			API.checkpointTask({ taskId: task.id, checkpoint: data });
+			API.checkpointTask({ taskId: task.id, checkpoint: data }).then(() => {
+				notyf.success('Checkpoint saved');
+			});
+		}}
+		onSubmitData={(data) => {
+			API.saveTask({ taskId: task.id, checkpoint: data }).then(() => {
+				notyf.success('Volume finalized and saved.');
+			});
 		}}
 	/>
 {/if}

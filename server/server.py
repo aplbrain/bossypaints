@@ -12,7 +12,9 @@ from jose import jwt
 from jose.exceptions import JWTError
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from bossypaints.tasks import InMemoryTaskQueueStore, Task
+from bossypaints.renderer import ImageStackVolumePolygonRenderer, VolumePolygonRenderer
+from bossypaints.tasks import InMemoryTaskQueueStore, Task, TaskID
+from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
 
 # Load environment variables from .env file
 load_dotenv()
@@ -123,6 +125,8 @@ task_store.put(
     )
 )
 
+checkpoint_store = JSONCheckpointStore("checkpoints.json")
+
 api_router = APIRouter()
 
 
@@ -147,10 +151,28 @@ async def get_next_task():
         return {"task": None}
 
 
+@api_router.post("/tasks/{task_id}/save")
+async def save_task(task_id: TaskID, checkpoint: dict):
+    checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
+    checkpoint_store.save_checkpoint(checkpoint_obj)
+    # Render this volume:
+    task = task_store.get(task_id)
+    ImageStackVolumePolygonRenderer(fmt="jpg").render_from_checkpoints(
+        task, checkpoint_store.get_checkpoints_for_task(task_id)
+    )
+
+
 @api_router.post("/tasks/{task_id}/checkpoint")
-async def checkpoint_task(task_id: int, checkpoint: dict):
-    print(f"Checkpoint for task {task_id}: {checkpoint}")
+async def checkpoint_task(task_id: TaskID, checkpoint: dict):
+    checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
+    checkpoint_store.save_checkpoint(checkpoint_obj)
     return {"message": "Checkpoint received"}
+
+
+@api_router.get("/tasks/{task_id}/checkpoints")
+async def get_task_checkpoints(task_id: TaskID):
+    checkpoints = checkpoint_store.get_checkpoints_for_task(task_id)
+    return {"checkpoints": checkpoints}
 
 
 app.include_router(api_router, prefix="/api")
