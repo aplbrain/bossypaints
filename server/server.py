@@ -3,16 +3,16 @@ from typing import Optional
 
 import fastapi
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, APIRouter
+from fastapi import FastAPI, Request, Response, APIRouter
 from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.security import OAuth2AuthorizationCodeBearer
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from jose import jwt
-from jose.exceptions import JWTError
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from bossypaints.renderer import ImageStackVolumePolygonRenderer
+from bossypaints.renderer import (
+    ImageStackVolumePolygonRenderer,
+    BossDBInternVolumePolygonRenderer,
+)
 from bossypaints.tasks import JSONFileTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
 
@@ -20,73 +20,6 @@ from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
 load_dotenv()
 
 app = fastapi.FastAPI()
-
-# Set up environment variables
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
-KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID")
-KEYCLOAK_CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET")  # Optional
-
-# OAuth2 setup
-oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl=f"{KEYCLOAK_URL}/protocol/openid-connect/auth",
-    tokenUrl=f"{KEYCLOAK_URL}/protocol/openid-connect/token",
-)
-
-
-# Keycloak public key retrieval (for verifying JWT)
-async def get_keycloak_public_key():
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{KEYCLOAK_URL}/protocol/openid-connect/certs")
-        response.raise_for_status()
-        jwks = response.json()
-    return jwks
-
-
-# Dependency for getting and verifying the token
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        jwks = await get_keycloak_public_key()
-        unverified_header = jwt.get_unverified_header(token)
-        rsa_key = {}
-        for key in jwks["keys"]:
-            if key["kid"] == unverified_header["kid"]:
-                rsa_key = {
-                    "kty": key["kty"],
-                    "kid": key["kid"],
-                    "use": key["use"],
-                    "n": key["n"],
-                    "e": key["e"],
-                }
-        if rsa_key:
-            payload = jwt.decode(
-                token, rsa_key, algorithms=["RS256"], audience=KEYCLOAK_CLIENT_ID
-            )
-            return payload
-        else:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-
-class User(BaseModel):
-    sub: str
-    preferred_username: Optional[str] = None
-    email: Optional[str] = None
-    roles: Optional[list] = []
-
-
-def get_user_from_token(token_payload: dict) -> User:
-    return User(
-        sub=token_payload.get("sub"),
-        preferred_username=token_payload.get("preferred_username"),
-        email=token_payload.get("email"),
-        roles=token_payload.get("realm_access", {}).get("roles", []),
-    )
 
 
 app = FastAPI()
@@ -122,18 +55,15 @@ task_store = JSONFileTaskQueueStore("tasks.json")
 #         z_min=0,
 #         z_max=32,
 #         priority=0,
+#         destination_collection="Matelsky2024",
+#         destination_experiment="Witvliet_1",
+#         destination_channel="seg",
 #     )
 # )
 
 checkpoint_store = JSONCheckpointStore("checkpoints.json")
 
 api_router = APIRouter()
-
-
-@api_router.get("/hello")
-async def hello(current_user: dict = Depends(get_current_user)):
-    username = current_user.get("preferred_username", "user")
-    return {"message": f"Hello, {username}!"}
 
 
 @api_router.get("/tasks")
@@ -157,9 +87,12 @@ async def save_task(task_id: TaskID, checkpoint: dict):
     checkpoint_store.save_checkpoint(checkpoint_obj)
     # Render this volume:
     task = task_store.get(task_id)
-    ImageStackVolumePolygonRenderer(
-        fmt="tif", directory="./exports/"
-    ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
+    # ImageStackVolumePolygonRenderer(
+    #     fmt="tif", directory="./exports/"
+    # ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
+    BossDBInternVolumePolygonRenderer().render_from_checkpoints(
+        task, checkpoint_store.get_checkpoints_for_task(task_id)
+    )
 
 
 @api_router.post("/tasks/{task_id}/checkpoint")
@@ -181,7 +114,7 @@ async def get_task_by_id(task_id: TaskID):
     if task:
         return {"task": task}
     else:
-        raise HTTPException(status_code=404, detail="Task not found")
+        return {"task": None}
 
 
 @api_router.get("/bossdb/username")
@@ -204,37 +137,217 @@ async def get_bossdb_username(request: Request):
         return {"username": username}
 
 
-app.include_router(api_router, prefix="/api")
+class CreateTaskRequest(BaseModel):
+    collection: str
+    experiment: str
+    channel: str
+    resolution: int
+    x_min: int
+    x_max: int
+    y_min: int
+    y_max: int
+    z_min: int
+    z_max: int
+    priority: Optional[int] = 0
+    destination_collection: Optional[str] = None
+    destination_experiment: Optional[str] = None
+    destination_channel: Optional[str] = None
 
 
-@app.get("/login")
-async def login():
-    return RedirectResponse(
-        url=f"{KEYCLOAK_URL}/protocol/openid-connect/auth?client_id={KEYCLOAK_CLIENT_ID}&response_type=code&scope=openid&redirect_uri=http://localhost:8000/callback"
-    )
-
-
-@app.get("/callback")
-async def callback(request: Request, code: str):
+@api_router.post("/tasks/create")
+async def create_task(
+    request: Request, response: Response, new_task: CreateTaskRequest
+):
+    # Check if the collection exists and the user has access to it
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{KEYCLOAK_URL}/protocol/openid-connect/token",
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": "http://localhost:8000/callback",
-                "client_id": KEYCLOAK_CLIENT_ID,
-                "client_secret": KEYCLOAK_CLIENT_SECRET,
+        chan_exists_resp = await client.get(
+            f"https://api.bossdb.io/v1/collection/{new_task.collection}",
+            headers={
+                "Authorization": request.headers["Authorization"],
+                "Accept": "application/json",
             },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        response.raise_for_status()
-        token_data = response.json()
-        response = RedirectResponse(url="/app")
-        response.set_cookie(
-            key="access_token", value=token_data["access_token"], httponly=True
+        if chan_exists_resp.status_code != 200:
+            response.status_code = 404
+            return {
+                "message": "Collection does not exist or you do not have access to it"
+            }
+
+        exp_exists_resp = await client.get(
+            f"https://api.bossdb.io/v1/collection/{new_task.collection}/experiment/{new_task.experiment}",
+            headers={
+                "Authorization": request.headers["Authorization"],
+                "Accept": "application/json",
+            },
         )
-        return response
+        if exp_exists_resp.status_code != 200:
+            response.status_code = 404
+            return {
+                "message": "Experiment does not exist or you do not have access to it"
+            }
+
+        chan_exists_resp = await client.get(
+            f"https://api.bossdb.io/v1/collection/{new_task.collection}/experiment/{new_task.experiment}/channel/{new_task.channel}",
+            headers={
+                "Authorization": request.headers["Authorization"],
+                "Accept": "application/json",
+            },
+        )
+        if chan_exists_resp.status_code != 200:
+            response.status_code = 404
+            return {"message": "Channel does not exist or you do not have access to it"}
+
+        # Create the task
+        task = Task(
+            collection=new_task.collection,
+            experiment=new_task.experiment,
+            channel=new_task.channel,
+            resolution=new_task.resolution,
+            x_min=new_task.x_min,
+            x_max=new_task.x_max,
+            y_min=new_task.y_min,
+            y_max=new_task.y_max,
+            z_min=new_task.z_min,
+            z_max=new_task.z_max,
+            priority=new_task.priority,
+            destination_collection=new_task.destination_collection,
+            destination_experiment=new_task.destination_experiment,
+            destination_channel=new_task.destination_channel,
+        )
+
+        # Create or confirm access to the destination collection, experiment, and channel
+        if (
+            task.destination_collection
+            and task.destination_experiment
+            and task.destination_channel
+        ):
+            print("Checking destination collection")
+            dest_col_exists_resp = await client.get(
+                f"https://api.bossdb.io/v1/collection/{task.destination_collection}",
+                headers={
+                    "Authorization": request.headers["Authorization"],
+                    "Accept": "application/json",
+                },
+            )
+            if dest_col_exists_resp.status_code == 404:
+                # Create the collection
+                col_creation_resp = await client.post(
+                    f"https://api.bossdb.io/v1/collection/{task.destination_collection}",
+                    headers={
+                        "Authorization": request.headers["Authorization"],
+                        "Accept": "application/json",
+                    },
+                    json={
+                        "description": "Created by user with BossyPaints",
+                    },
+                )
+                # check if the collection was created successfully
+                if col_creation_resp.status_code != 201:
+                    response.status_code = col_creation_resp.status_code
+                    return {
+                        "message": "Destination collection could not be created",
+                        "error": col_creation_resp.json(),
+                    }
+
+            elif dest_col_exists_resp.status_code != 200:
+                response.status_code = dest_col_exists_resp.status_code
+                return {
+                    "message": "Destination collection does not exist or you do not have access to it"
+                }
+
+            print("Checking destination experiment")
+
+            exp_exists_resp = await client.get(
+                f"https://api.bossdb.io/v1/collection/{task.destination_collection}/experiment/{task.destination_experiment}",
+                headers={
+                    "Authorization": request.headers["Authorization"],
+                    "Accept": "application/json",
+                },
+            )
+            if exp_exists_resp.status_code == 404:
+                # Create the experiment.
+                # First, need to get the coordframe from the source experiment
+                exp_data = await client.get(
+                    f"https://api.bossdb.io/v1/collection/{task.collection}/experiment/{task.experiment}",
+                    headers={
+                        "Authorization": request.headers["Authorization"],
+                        "Accept": "application/json",
+                    },
+                )
+                exp_data = exp_data.json()
+                print(exp_data)
+                create_exp_resp = await client.post(
+                    f"https://api.bossdb.io/v1/collection/{task.destination_collection}/experiment/{task.destination_experiment}",
+                    headers={
+                        "Authorization": request.headers["Authorization"],
+                        "Accept": "application/json",
+                    },
+                    json={
+                        "description": f"Created by user with BossyPaints. Imagery source is {task.collection}/{task.experiment}/{task.channel}",
+                        "coord_frame": exp_data["coord_frame"],
+                        "num_hierarchy_levels": exp_data["num_hierarchy_levels"],
+                        "hierarchy_method": exp_data["hierarchy_method"],
+                        "num_time_samples": exp_data["num_time_samples"],
+                    },
+                )
+                # check if the experiment was created successfully
+                if create_exp_resp.status_code != 201:
+                    response.status_code = create_exp_resp.status_code
+                    return {
+                        "message": "Destination experiment could not be created",
+                        "error": create_exp_resp.json(),
+                    }
+            elif exp_exists_resp.status_code != 200:
+                response.status_code = exp_exists_resp.status_code
+                return {
+                    "message": "Destination experiment does not exist or you do not have access to it"
+                }
+
+            print("Checking destination channel")
+
+            chan_exists_resp = await client.get(
+                f"https://api.bossdb.io/v1/collection/{task.destination_collection}/experiment/{task.destination_experiment}/channel/{task.destination_channel}",
+                headers={
+                    "Authorization": request.headers["Authorization"],
+                    "Accept": "application/json",
+                },
+            )
+            if chan_exists_resp.status_code == 404:
+                # Create the channel
+                chan_creation_resp = await client.post(
+                    f"https://api.bossdb.io/v1/collection/{task.destination_collection}/experiment/{task.destination_experiment}/channel/{task.destination_channel}",
+                    headers={
+                        "Authorization": request.headers["Authorization"],
+                        "Accept": "application/json",
+                    },
+                    json={
+                        "description": f"Created by user with BossyPaints. Imagery source is {task.collection}/{task.experiment}/{task.channel}",
+                        "type": "annotation",
+                        "datatype": "uint64",
+                        "base_resolution": task.resolution,
+                        # "related": [
+                        #     f"{task.collection}/{task.experiment}/{task.channel}"
+                        # ],
+                    },
+                )
+                # check if the channel was created successfully
+                if chan_creation_resp.status_code != 201:
+                    response.status_code = chan_creation_resp.status_code
+                    return {
+                        "message": "Destination channel could not be created",
+                        "error": chan_creation_resp.json(),
+                    }
+            elif chan_exists_resp.status_code != 200:
+                response.status_code = chan_exists_resp.status_code
+                return {
+                    "message": "Destination channel does not exist or you do not have access to it"
+                }
+
+        task_id = task_store.put(task)
+        return {"task": task, "task_id": task_id}
+
+
+app.include_router(api_router, prefix="/api")
 
 
 # Fallback for all other routes: serve SvelteKit's index.html

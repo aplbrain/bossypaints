@@ -16,6 +16,9 @@ export type Task = {
     z_min: number;
     z_max: number;
     priority?: number;
+    destination_collection?: string;
+    destination_experiment?: string;
+    destination_channel?: string;
 }
 
 export type TaskInDB = Task & {
@@ -72,8 +75,13 @@ class API {
     async getTaskCheckpoints(taskId: TaskID): Promise<{ checkpoints: Array<{ polygons: Array<PolygonAnnotation>, taskID: TaskID }> }> {
         return this.get(`/api/tasks/${taskId}/checkpoints`);
     }
+
     async saveTask({ taskId, checkpoint }: { taskId: TaskID, checkpoint: PolygonAnnotation[] }) {
         return this.post(`/api/tasks/${taskId}/save`, { checkpoint });
+    }
+
+    async createTask(task: Task): Promise<{ message: string }> {
+        return this.post('/api/tasks/create', task);
     }
 
     async getBossDBUsernameFromToken(token: string): Promise<{ username: string }> {

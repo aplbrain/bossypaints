@@ -85,6 +85,15 @@
 <div class="w-full flex md:flex-col lg:flex-row">
 	<div class="md:flex-2/3 p-10 flex-1">
 		<h1 class="text-3xl mb-3 font-bold">Tasks</h1>
+		<p class="mb-5">Welcome, {user?.username}</p>
+		<a
+			href="/tasks/new"
+			class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+		>
+			New Task ...
+		</a>
+		<br />
+		<br />
 		{#if user?.username}
 			<table class="table-auto w-full">
 				<thead class="bg-gray-800 text-white">

@@ -18,6 +18,9 @@ class Task(pydantic.BaseModel):
     z_min: int
     z_max: int
     priority: int
+    destination_collection: str | None = None
+    destination_experiment: str | None = None
+    destination_channel: str | None = None
 
 
 class TaskInDB(Task):
