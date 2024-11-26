@@ -9,7 +9,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from bossypaints.renderer import ImageStackVolumePolygonRenderer
+from bossypaints.renderer import (
+    ImageStackVolumePolygonRenderer,
+    BossDBInternVolumePolygonRenderer,
+)
 from bossypaints.tasks import JSONFileTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
 
@@ -84,9 +87,12 @@ async def save_task(task_id: TaskID, checkpoint: dict):
     checkpoint_store.save_checkpoint(checkpoint_obj)
     # Render this volume:
     task = task_store.get(task_id)
-    ImageStackVolumePolygonRenderer(
-        fmt="tif", directory="./exports/"
-    ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
+    # ImageStackVolumePolygonRenderer(
+    #     fmt="tif", directory="./exports/"
+    # ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
+    BossDBInternVolumePolygonRenderer().render_from_checkpoints(
+        task, checkpoint_store.get_checkpoints_for_task(task_id)
+    )
 
 
 @api_router.post("/tasks/{task_id}/checkpoint")
@@ -108,7 +114,7 @@ async def get_task_by_id(task_id: TaskID):
     if task:
         return {"task": task}
     else:
-        raise HTTPException(status_code=404, detail="Task not found")
+        return {"task": None}
 
 
 @api_router.get("/bossdb/username")
