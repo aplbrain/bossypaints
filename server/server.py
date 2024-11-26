@@ -184,6 +184,26 @@ async def get_task_by_id(task_id: TaskID):
         raise HTTPException(status_code=404, detail="Task not found")
 
 
+@api_router.get("/bossdb/username")
+async def get_bossdb_username(request: Request):
+    # TODO: This is a really janky way to get the username.
+    token = request.headers.get("Authorization").split(" ")[1]
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://api.bossdb.io/v1/groups/",
+            headers={
+                "Authorization": f"Token {token}",
+                "Accept": "application/json",
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        username = [grp for grp in data["groups"] if grp.endswith("-primary")][0].split(
+            "-primary"
+        )[0]
+        return {"username": username}
+
+
 app.include_router(api_router, prefix="/api")
 
 

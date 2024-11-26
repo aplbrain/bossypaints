@@ -25,17 +25,29 @@ export type TaskInDB = Task & {
 class API {
     async get(url: string) {
         url = url.startsWith('/') ? url : `/${url}`;
-        const response = await fetch(`${baseUrl}${url}`);
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        if (localStorage.getItem('apiToken')) {
+            headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
+        }
+        const response = await fetch(`${baseUrl}${url}`, {
+            headers,
+        });
         return response.json();
     }
 
     async post(url: string, data: any) {
         url = url.startsWith('/') ? url : `/${url}`;
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        if (localStorage.getItem('apiToken')) {
+            headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
+        }
         const response = await fetch(`${baseUrl}${url}`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: headers,
             body: JSON.stringify(data),
         });
         return response.json();
@@ -62,6 +74,16 @@ class API {
     }
     async saveTask({ taskId, checkpoint }: { taskId: TaskID, checkpoint: PolygonAnnotation[] }) {
         return this.post(`/api/tasks/${taskId}/save`, { checkpoint });
+    }
+
+    async getBossDBUsernameFromToken(token: string): Promise<{ username: string }> {
+        const response = await fetch(`${baseUrl}/api/bossdb/username`, {
+            headers: {
+                "Authorization": `Token ${token}`,
+                "Accept": "application/json",
+            }
+        });
+        return response.json();
     }
 }
 

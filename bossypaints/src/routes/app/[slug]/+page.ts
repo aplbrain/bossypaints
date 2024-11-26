@@ -2,7 +2,7 @@ export const prerender = true;
 // Don't render this route on the server:
 export const ssr = false;
 
-import API, { type TaskInDB } from '$lib/api';
+import API from '$lib/api';
 
 import { error } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
