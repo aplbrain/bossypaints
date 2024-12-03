@@ -148,7 +148,7 @@
 				on:input={debounceFetchCollectionSuggestions}
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 			/>
-			<ul>
+			<ul class="autocomplete-list absolute bg-white border border-gray-300 rounded-md shadow-md">
 				{#each collectionSuggestions as suggestion}
 					<li
 						on:click={() => {
@@ -169,7 +169,7 @@
 				on:input={debounceFetchExperimentSuggestions}
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 			/>
-			<ul>
+			<ul class="autocomplete-list absolute bg-white border border-gray-300 rounded-md shadow-md">
 				{#each experimentSuggestions as suggestion}
 					<li
 						on:click={() => {
@@ -190,7 +190,7 @@
 				on:input={debounceFetchChannelSuggestions}
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 			/>
-			<ul>
+			<ul class="autocomplete-list absolute bg-white border border-gray-300 rounded-md shadow-md">
 				{#each channelSuggestions as suggestion}
 					<li
 						on:click={() => {
@@ -217,6 +217,8 @@
 				<input
 					type="number"
 					bind:value={x_center}
+					min={coordFrame?.x_start}
+					max={coordFrame?.x_stop}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
 				{#if coordFrame}
@@ -238,6 +240,8 @@
 				<input
 					type="number"
 					bind:value={y_center}
+					min={coordFrame?.y_start}
+					max={coordFrame?.y_stop}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
 				{#if coordFrame}
@@ -259,6 +263,8 @@
 				<input
 					type="number"
 					bind:value={z_center}
+					min={coordFrame?.z_start}
+					max={coordFrame?.z_stop}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
 				{#if coordFrame}
@@ -309,3 +315,16 @@
 		<p class="mt-4">{message}</p>
 	{/if}
 </main>
+
+
+<style>
+	.autocomplete-list {
+	}
+	.autocomplete-list li {
+		padding: 0.5rem;
+		cursor: pointer;
+	}
+	.autocomplete-list li:hover {
+		background-color: #f5f5f5;
+	}
+</style>
