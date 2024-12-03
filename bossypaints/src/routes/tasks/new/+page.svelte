@@ -1,5 +1,4 @@
-<script>
-	import { onMount } from 'svelte';
+<script lang="ts">
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
 	let collection = '';
@@ -16,6 +15,84 @@
 	let destination_experiment = '';
 	let destination_channel = '';
 	let message = '';
+	let collectionSuggestions: string[] = [];
+	let experimentSuggestions: string[] = [];
+	let channelSuggestions: string[] = [];
+	let coordFrame:
+		| {
+				x_start: number;
+				x_stop: number;
+				y_start: number;
+				y_stop: number;
+				z_start: number;
+				z_stop: number;
+		  }
+		| undefined;
+
+	const minAutoCompleteLength = 0;
+
+	let debounceTimeout: number | NodeJS.Timeout | undefined;
+
+	async function fetchCollectionSuggestions() {
+		if (collection.length > minAutoCompleteLength) {
+			const response = await API.autocompleteBossDBResource({
+				collection,
+				experiment: null,
+				channel: null
+			});
+			collectionSuggestions = response.resources;
+		} else {
+			collectionSuggestions = [];
+		}
+	}
+
+	function debounceFetchCollectionSuggestions() {
+		clearTimeout(debounceTimeout);
+		debounceTimeout = setTimeout(fetchCollectionSuggestions, 300);
+	}
+
+	async function fetchExperimentSuggestions() {
+		if (experiment.length > minAutoCompleteLength) {
+			const response = await API.autocompleteBossDBResource({
+				collection,
+				experiment,
+				channel: null
+			});
+			experimentSuggestions = response.resources;
+		} else {
+			experimentSuggestions = [];
+		}
+	}
+
+	function debounceFetchExperimentSuggestions() {
+		clearTimeout(debounceTimeout);
+		debounceTimeout = setTimeout(fetchExperimentSuggestions, 300);
+	}
+
+	async function fetchChannelSuggestions() {
+		if (channel.length > minAutoCompleteLength) {
+			const response = await API.autocompleteBossDBResource({ collection, experiment, channel });
+			channelSuggestions = response.resources;
+		} else {
+			channelSuggestions = [];
+		}
+	}
+
+	function debounceFetchChannelSuggestions() {
+		clearTimeout(debounceTimeout);
+		debounceTimeout = setTimeout(fetchChannelSuggestions, 300);
+	}
+
+	async function fetchCoordFrame() {
+		const response = await API.getCoordFrame(collection, experiment);
+		coordFrame = response;
+	}
+
+	$: {
+		if (collection && experiment) {
+			fetchCoordFrame();
+		}
+	}
 
 	async function createTask() {
 		const task = {
@@ -68,24 +145,63 @@
 			<input
 				type="text"
 				bind:value={collection}
+				on:input={debounceFetchCollectionSuggestions}
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 			/>
+			<ul>
+				{#each collectionSuggestions as suggestion}
+					<li
+						on:click={() => {
+							collection = suggestion;
+							collectionSuggestions = [];
+						}}
+					>
+						{suggestion}
+					</li>
+				{/each}
+			</ul>
 		</label>
 		<label class="block">
 			<span class="text-gray-700">Experiment:</span>
 			<input
 				type="text"
 				bind:value={experiment}
+				on:input={debounceFetchExperimentSuggestions}
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 			/>
+			<ul>
+				{#each experimentSuggestions as suggestion}
+					<li
+						on:click={() => {
+							experiment = suggestion;
+							experimentSuggestions = [];
+						}}
+					>
+						{suggestion}
+					</li>
+				{/each}
+			</ul>
 		</label>
 		<label class="block">
 			<span class="text-gray-700">Channel:</span>
 			<input
 				type="text"
 				bind:value={channel}
+				on:input={debounceFetchChannelSuggestions}
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 			/>
+			<ul>
+				{#each channelSuggestions as suggestion}
+					<li
+						on:click={() => {
+							channel = suggestion;
+							channelSuggestions = [];
+						}}
+					>
+						{suggestion}
+					</li>
+				{/each}
+			</ul>
 		</label>
 		<label class="block">
 			<span class="text-gray-700">Resolution:</span>
@@ -103,6 +219,9 @@
 					bind:value={x_center}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
+				{#if coordFrame}
+					<span class="text-gray-500 text-sm">({coordFrame?.x_start} - {coordFrame?.x_stop})</span>
+				{/if}
 			</label>
 			<label class="block flex-1">
 				<span class="text-gray-700">X Radius:</span>
@@ -121,6 +240,9 @@
 					bind:value={y_center}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
+				{#if coordFrame}
+					<span class="text-gray-500 text-sm">({coordFrame?.y_start} - {coordFrame?.y_stop})</span>
+				{/if}
 			</label>
 			<label class="block flex-1">
 				<span class="text-gray-700">Y Radius:</span>
@@ -139,6 +261,9 @@
 					bind:value={z_center}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
+				{#if coordFrame}
+					<span class="text-gray-500 text-sm">({coordFrame?.z_start} - {coordFrame?.z_stop})</span>
+				{/if}
 			</label>
 			<label class="block flex-1">
 				<span class="text-gray-700">Z Radius:</span>
