@@ -9,8 +9,8 @@ manager and navigation store.
 @prop nav {NavigationStore} - The navigation store to display information about.
 -->
 <script lang="ts">
-	import { type AnnotationManagerStore } from '$lib/stores/AnnotationManagerStore.svelte';
-	import { type NavigationStore } from '$lib/stores/NavigationStore.svelte';
+	import { type AnnotationManagerStore } from '$lib/webpaint/stores/AnnotationManagerStore.svelte';
+	import { type NavigationStore } from '$lib/webpaint/stores/NavigationStore.svelte';
 
 	export let annotationStore: AnnotationManagerStore;
 	export let nav: NavigationStore;
