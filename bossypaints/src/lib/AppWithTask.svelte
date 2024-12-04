@@ -1,20 +1,20 @@
 <script lang="ts">
-	import PaintApp from 'webpaint/src/lib/components/PaintApp.svelte';
-	import InfoTable from 'webpaint/src/lib/components/InfoTable.svelte';
-	import KeybindingsTable from 'webpaint/src/lib/components/KeybindingsTable.svelte';
+	import PaintApp from '$lib/webpaint/components/PaintApp.svelte';
+	import InfoTable from '$lib/webpaint/components/InfoTable.svelte';
+	import KeybindingsTable from '$lib/webpaint/components/KeybindingsTable.svelte';
 	import {
 		createAnnotationManagerStore,
 		type AnnotationManagerStore
-	} from 'webpaint/src/lib/stores/AnnotationManagerStore.svelte';
+	} from '$lib/webpaint/stores/AnnotationManagerStore.svelte';
 	import {
 		createNavigationStore,
 		type NavigationStore
-	} from 'webpaint/src/lib/stores/NavigationStore.svelte';
+	} from '$lib/webpaint/stores/NavigationStore.svelte';
 	import { goto } from '$app/navigation';
 	import API, { type TaskInDB } from '$lib/api';
 	import { Notyf } from 'notyf';
 	import 'notyf/notyf.min.css';
-	import PolygonAnnotation from 'webpaint/src/lib/PolygonAnnotation';
+	import PolygonAnnotation from '$lib/webpaint/PolygonAnnotation';
 	const notyf = new Notyf();
 
 	export let task: TaskInDB;
