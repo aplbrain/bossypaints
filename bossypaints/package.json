@@ -28,6 +28,9 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-static": "^3.0.6",
-		"notyf": "^3.10.0"
+		"@velipso/polybool": "^2.0.11",
+		"color-hash": "^2.0.2",
+		"notyf": "^3.10.0",
+		"p5": "^1.11.2"
 	}
 }
