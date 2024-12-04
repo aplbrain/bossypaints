@@ -120,7 +120,7 @@ async def get_task_by_id(task_id: TaskID):
 @api_router.get("/bossdb/username")
 async def get_bossdb_username(request: Request):
     # TODO: This is a really janky way to get the username.
-    token = request.headers.get("Authorization").split(" ")[1]
+    token = request.headers.get("Authorization", "").split(" ")[1]
     async with httpx.AsyncClient() as client:
         response = await client.get(
             "https://api.bossdb.io/v1/groups/",
@@ -135,6 +135,73 @@ async def get_bossdb_username(request: Request):
             "-primary"
         )[0]
         return {"username": username}
+
+
+@api_router.get("/bossdb/autocomplete")
+async def autocomplete_bossdb_resource(request: Request, collection: str, experiment: Optional[str] = None, channel: Optional[str] = None):
+    # There are three cases:
+    # 1. col str    exp null    chan null   -> return all collections with prefix
+    # 2. col str    exp str     chan null   -> return all experiments with prefix inside collection
+    # 3. col str    exp str     chan str    -> return all channels with prefix inside experiment
+    token = request.headers.get("Authorization", "").split(" ")[1]
+    async with httpx.AsyncClient() as client:
+        if experiment in [None, "", ] and channel in [None, "", ]:
+            response = await client.get(
+                f"https://api.bossdb.io/v1/collection/",
+                headers={
+                    "Authorization": "Token " + token,
+                    "Accept": "application/json",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {"resources": [res for res in data.get("collections", []) if res.lower().startswith(collection.lower())]}
+        elif experiment not in [None, "", ] and channel in [None, "", ]:
+            response = await client.get(
+                f"https://api.bossdb.io/v1/collection/{collection}/experiment/",
+                headers={
+                    "Authorization": "Token " + token,
+                    "Accept": "application/json",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {"resources": [res for res in data.get("experiments", []) if res.lower().startswith(experiment.lower())]}
+        elif experiment not in [None, "", ] and channel not in [None, "", ]:
+            response = await client.get(
+                f"https://api.bossdb.io/v1/collection/{collection}/experiment/{experiment}/channel/",
+                headers={
+                    "Authorization": "Token " + token,
+                    "Accept": "application/json",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {"resources": [res for res in data.get("channels", []) if res.lower().startswith(channel.lower())]}
+
+@api_router.get("/bossdb/coord_frame/{collection}/{experiment}")
+async def get_coord_frame(request: Request, collection: str, experiment: str):
+    token = request.headers.get("Authorization", "").split(" ")[1]
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"https://api.bossdb.io/v1/collection/{collection}/experiment/{experiment}",
+            headers={
+                "Authorization": f"Token {token}",
+                "Accept": "application/json",
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        coord_frame_name = data["coord_frame"]
+        response = await client.get(
+            f"https://api.bossdb.io/v1/coord/{coord_frame_name}",
+            headers={
+                "Authorization": f"Token {token}",
+                "Accept": "application/json",
+            },
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 class CreateTaskRequest(BaseModel):
@@ -345,6 +412,8 @@ async def create_task(
 
         task_id = task_store.put(task)
         return {"task": task, "task_id": task_id}
+
+
 
 
 app.include_router(api_router, prefix="/api")

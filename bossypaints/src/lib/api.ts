@@ -93,6 +93,23 @@ class API {
         });
         return response.json();
     }
-}
+
+    async autocompleteBossDBResource({
+        collection,
+        experiment,
+        channel,
+    }: {
+        collection: string;
+        experiment: string | null;
+        channel: string | null;
+    }): Promise<{ resources: Array<[string | string | null, string | null]> }> {
+        let res = await this.get(`/api/bossdb/autocomplete?collection=${collection}&experiment=${experiment || ''}&channel=${channel || ''}`);
+        return res;
+    }
+
+    async getCoordFrame(collection: string, experiment: string): Promise<{ x_start: number, x_stop: number, y_start: number, y_stop: number, z_start: number, z_stop: number }> {
+        return this.get(`/api/bossdb/coord_frame/${collection}/${experiment}`);
+    }
+};
 
 export default new API();
