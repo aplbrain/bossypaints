@@ -1,5 +1,6 @@
-# Use an official Python runtime as a parent image
-FROM ghcr.io/astral-sh/uv:0.5.8-python3.11-alpine
+# Using a debian slim image instead of alpine makes it easier to install
+# dependencies that adhere to PEP 518.
+FROM ghcr.io/astral-sh/uv:0.5.8-debian-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -7,9 +8,9 @@ WORKDIR /app
 # Copy the current directory contents into the container at /app
 COPY . /app
 
-# Install gcc for building deps
-# RUN apt-get update && apt-get install -y gcc
-RUN apk add --no-cache gcc musl-dev
+# Install build deps
+# RUN apk add --no-cache gcc python3-dev musl-dev linux-headers g++ gfortran
+# RUN apt-get update && apt-get install -y gcc musl-dev
 
 # Sync dependencies using uv
 RUN uv sync
