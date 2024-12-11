@@ -16,13 +16,3 @@ cd bossypaints
 npm install
 npm run dev
 ```
-
-The server expects a `sveltekit/build` directory with the contents of the build of the web app.
-
-To build, run the following in the `bossypaints` directory:
-
-```bash
-# Build into the sveltekit/build directory
-npm run build
-mv build ../server/webbuild
-```

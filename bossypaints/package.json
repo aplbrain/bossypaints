@@ -27,6 +27,7 @@
 		"vite": "^5.0.3"
 	},
 	"dependencies": {
+		"@sveltejs/adapter-node": "^5.2.9",
 		"@sveltejs/adapter-static": "^3.0.6",
 		"@velipso/polybool": "^2.0.11",
 		"color-hash": "^2.0.2",

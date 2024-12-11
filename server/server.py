@@ -24,15 +24,6 @@ app = fastapi.FastAPI()
 
 app = FastAPI()
 
-# Serve the SvelteKit static files
-app.mount(
-    "/app",
-    StaticFiles(directory=os.path.join("webbuild"), html=True),
-    name="static",
-)
-
-STATIC_DIR = os.path.join("webbuild")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
