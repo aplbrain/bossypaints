@@ -14,13 +14,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up SSH Agent
-        uses: webfactory/ssh-agent@v0.7.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+      - name: Create pem
+        run: echo "${{ secrets.DEPLOY_PEM }}" > deploy.pem && chmod 400 deploy.pem
 
-      - name: Deploy to Server
-        env:
-          DOCKER_HOST: "ssh://ubuntu@ml4paleo.labs.bossdb.org"
-        run: |
-          cd ~/bossypaints && git pull origin main && docker-compose up -d --build
+      - name: SSH and deploy
+        run: ssh -i deploy.pem ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "cd [PROJECT_DIR] && git pull origin main && docker-compose up -d --build"
