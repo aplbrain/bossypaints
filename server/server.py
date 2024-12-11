@@ -408,10 +408,3 @@ async def create_task(
 
 
 app.include_router(api_router, prefix="/api")
-
-
-# Fallback for all other routes: serve SvelteKit's index.html
-@app.exception_handler(404)
-async def custom_404_handler(request: Request, exc):
-    # Serve the index.html file for unknown routes
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
