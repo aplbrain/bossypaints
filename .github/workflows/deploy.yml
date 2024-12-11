@@ -18,4 +18,4 @@ jobs:
         run: echo "${{ secrets.DEPLOY_PEM }}" > deploy.pem && chmod 400 deploy.pem
 
       - name: SSH and deploy
-        run: ssh -o StrictHostKeyChecking=no -i deploy.pem ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "cd [PROJECT_DIR] && git pull origin main && docker-compose up -d --build"
+        run: ssh -o StrictHostKeyChecking=no -i deploy.pem ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "cd ~/bossypaints && git pull origin main && docker-compose up -d --build"
