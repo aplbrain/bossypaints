@@ -5,15 +5,14 @@ FROM ghcr.io/astral-sh/uv:0.5.8-debian-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
-
-# Install build deps
-# RUN apk add --no-cache gcc python3-dev musl-dev linux-headers g++ gfortran
-# RUN apt-get update && apt-get install -y gcc musl-dev
+# Copy only the dependency files first
+COPY pyproject.toml uv.lock .python-version  /app/
 
 # Sync dependencies using uv
 RUN uv sync
+
+# Copy the rest of the application code
+COPY . /app
 
 # Make port 8000 available to the world outside this container
 EXPOSE 8000
