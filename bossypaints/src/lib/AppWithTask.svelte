@@ -22,13 +22,29 @@
 	let nav: NavigationStore;
 
 	async function loadTask() {
-		annotationStore = createAnnotationManagerStore(task.z_max - task.z_min + 1);
-		nav = createNavigationStore({
-			minLayer: task.z_min,
-			maxLayer: task.z_max,
-			imageWidth: task.x_max - task.x_min + 1,
-			imageHeight: task.y_max - task.y_min + 1
-		});
+
+
+		if (task.z_max - task.z_min == 1){
+			// 2D
+			annotationStore = createAnnotationManagerStore(task.z_max - task.z_min + 1);
+			nav = createNavigationStore({
+				minLayer: 0,
+				maxLayer: 0,
+				layer: 0,
+				imageWidth: task.x_max - task.x_min + 1,
+				imageHeight: task.y_max - task.y_min + 1,
+			});
+		} else {
+			// 3D
+			annotationStore = createAnnotationManagerStore(task.z_max - task.z_min);
+			nav = createNavigationStore({
+				minLayer: task.z_min,
+				maxLayer: task.z_max,
+				layer: Math.floor((task.z_max - task.z_min) / 2),  
+				imageWidth: task.x_max - task.x_min + 1,
+				imageHeight: task.y_max - task.y_min + 1
+			});
+		}
 		let checkpointResponse = await API.getTaskCheckpoints(task.id);
 		if (checkpointResponse.checkpoints) {
 			checkpointResponse.checkpoints.forEach((checkpoint) => {

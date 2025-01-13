@@ -36,8 +36,8 @@ from BossDB and displays it on the canvas.
 
 	const remote = new BossRemote();
 
-	const imageHeight = xs[1] - xs[0] + 1;
-	const imageWidth = ys[1] - ys[0] + 1;
+	const imageWidth = xs[1] - xs[0] + 1;
+	const imageHeight = ys[1] - ys[0] + 1;
 	const imageDepth = zs[1] - zs[0] + 1;
 
 	let filmstrip: p5.Image = new p5.Image(imageWidth, imageHeight * imageDepth);
@@ -109,12 +109,12 @@ from BossDB and displays it on the canvas.
 					filmstrip,
 					0, //screenCoords.x,
 					0, //screenCoords.y,
-					imageWidth, //* nav.zoom,
-					imageHeight, //* nav.zoom,
-					0,
-					nav.layer * imageHeight,
-					imageWidth,
-					imageHeight
+					imageWidth, //* nav.zoom, //width
+					imageHeight, //* nav.zoom, //height
+					0,	//dx
+					nav.layer * imageHeight, //dy
+					imageWidth, //dwidth
+					imageHeight //dheight
 				);
 
 				if (debug) {

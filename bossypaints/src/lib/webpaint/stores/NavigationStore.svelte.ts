@@ -14,7 +14,7 @@
  * @param imageHeight - The height of the image.
  */
 export function createNavigationStore({
-    x = 0, y = 0, layer = 1, zoom = 1, minLayer = 0, maxLayer = 32, imageWidth = 512, imageHeight = 512
+    x = 0, y = 0, layer = 16, zoom = 1, minLayer = 0, maxLayer = 32, imageWidth = 512, imageHeight = 512
 }) {
     let _x = $state(x);
     let _y = $state(y);
