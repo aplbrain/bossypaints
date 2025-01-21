@@ -36,9 +36,9 @@ from BossDB and displays it on the canvas.
 
 	const remote = new BossRemote();
 
-	const imageWidth = xs[1] - xs[0];
-	const imageHeight = ys[1] - ys[0];
-	const imageDepth = zs[1] - zs[0];
+	const imageWidth = xs[1] - xs[0] - 1;
+	const imageHeight = ys[1] - ys[0] - 1;
+	const imageDepth = Math.max(1, zs[1] - zs[0] - 1);
 
 	let filmstrip: p5.Image = new p5.Image(imageWidth, imageHeight * imageDepth);
 	//  Fill with color while loading...

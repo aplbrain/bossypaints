@@ -23,7 +23,7 @@
 
 	async function loadTask() {
 
-		annotationStore = createAnnotationManagerStore(task.z_max - task.z_min);
+		annotationStore = createAnnotationManagerStore(Math.max(1, (task.z_max - task.z_min - 1)));
 		nav = createNavigationStore({
 			minLayer: task.z_min,
 			maxLayer: task.z_max - 1,
