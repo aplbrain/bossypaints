@@ -29,6 +29,10 @@
 		  }
 		| undefined;
 
+	let useEntireXExtent = false;
+	let useEntireYExtent = false;
+	let useEntireZExtent = false;
+
 	const minAutoCompleteLength = 0;
 
 	let debounceTimeout: number | NodeJS.Timeout | undefined;
@@ -94,17 +98,53 @@
 		}
 	}
 
+	function setXExtent() {
+		if (!coordFrame) return;
+		const xMid = (coordFrame.x_start + coordFrame.x_stop) / 2;
+		const xRad = (coordFrame.x_stop - coordFrame.x_start) / 2;
+		x_center = Math.floor(xMid);
+		x_radius = Math.floor(xRad);
+	}
+
+	function setYExtent() {
+		if (!coordFrame) return;
+		const yMid = (coordFrame.y_start + coordFrame.y_stop) / 2;
+		const yRad = (coordFrame.y_stop - coordFrame.y_start) / 2;
+		y_center = Math.floor(yMid);
+		y_radius = Math.floor(yRad);
+	}
+
+	function setZExtent() {
+		if (!coordFrame) return;
+		const zMid = (coordFrame.z_start + coordFrame.z_stop) / 2;
+		const zRad = (coordFrame.z_stop - coordFrame.z_start) / 2;
+		z_center = Math.floor(zMid);
+		z_radius = Math.floor(zRad);
+	}
+
+	$: if (useEntireXExtent) {
+		setXExtent();
+	}
+
+	$: if (useEntireYExtent) {
+		setYExtent();
+	}
+
+	$: if (useEntireZExtent) {
+		setZExtent();
+	}
+
 	async function createTask() {
 		const task = {
 			collection,
 			experiment,
 			channel,
 			resolution,
-			x_min: x_center - x_radius,
+			x_min: Math.max(0, x_center - x_radius),
 			x_max: x_center + x_radius,
-			y_min: y_center - y_radius,
+			y_min: Math.max(0, y_center - y_radius),
 			y_max: y_center + y_radius,
-			z_min: z_center - z_radius,
+			z_min: Math.max(0, z_center - z_radius),
 			z_max: z_center + z_radius,
 			destination_collection,
 			destination_experiment,
@@ -126,6 +166,9 @@
 			y_radius = 0;
 			z_center = 0;
 			z_radius = 0;
+			useEntireXExtent = false;
+			useEntireYExtent = false;
+			useEntireZExtent = false;
 			destination_collection = '';
 			destination_experiment = '';
 			destination_channel = '';
@@ -219,10 +262,13 @@
 					bind:value={x_center}
 					min={coordFrame?.x_start}
 					max={coordFrame?.x_stop}
+					disabled={useEntireXExtent}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
 				{#if coordFrame}
-					<span class="text-gray-500 text-sm">({coordFrame?.x_start} - {coordFrame?.x_stop})</span>
+					<span class="text-gray-500 text-sm">
+						({coordFrame?.x_start} - {coordFrame?.x_stop})
+					</span>
 				{/if}
 			</label>
 			<label class="block flex-1">
@@ -230,7 +276,17 @@
 				<input
 					type="number"
 					bind:value={x_radius}
+					disabled={useEntireXExtent}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+				/>
+			</label>
+			<label for="useEntireXExtent" class="block flex-1" >
+				<span class="text-gray-700"> Use entire X extent</span>
+				<input
+					id="useEntireXExtent"
+					type="checkbox"
+					bind:checked={useEntireXExtent}
+					class="rounded text-indigo-600 focus:ring-indigo-500"
 				/>
 			</label>
 		</div>
@@ -242,10 +298,13 @@
 					bind:value={y_center}
 					min={coordFrame?.y_start}
 					max={coordFrame?.y_stop}
+					disabled={useEntireYExtent}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
 				{#if coordFrame}
-					<span class="text-gray-500 text-sm">({coordFrame?.y_start} - {coordFrame?.y_stop})</span>
+					<span class="text-gray-500 text-sm">
+						({coordFrame?.y_start} - {coordFrame?.y_stop})
+					</span>
 				{/if}
 			</label>
 			<label class="block flex-1">
@@ -253,7 +312,17 @@
 				<input
 					type="number"
 					bind:value={y_radius}
+					disabled={useEntireYExtent}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+				/>
+			</label>
+			<label for="useEntireYExtent" class="block flex-1" >
+				<span class="text-gray-700"> Use entire Y extent</span>
+				<input
+					id="useEntireYExtent"
+					type="checkbox"
+					bind:checked={useEntireYExtent}
+					class="rounded text-indigo-600 focus:ring-indigo-500"
 				/>
 			</label>
 		</div>
@@ -265,10 +334,13 @@
 					bind:value={z_center}
 					min={coordFrame?.z_start}
 					max={coordFrame?.z_stop}
+					disabled={useEntireZExtent}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
 				/>
 				{#if coordFrame}
-					<span class="text-gray-500 text-sm">({coordFrame?.z_start} - {coordFrame?.z_stop})</span>
+					<span class="text-gray-500 text-sm">
+						({coordFrame?.z_start} - {coordFrame?.z_stop})
+					</span>
 				{/if}
 			</label>
 			<label class="block flex-1">
@@ -276,7 +348,17 @@
 				<input
 					type="number"
 					bind:value={z_radius}
+					disabled={useEntireZExtent}
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+				/>
+			</label>
+			<label for="useEntireZExtent" class="block flex-1" >
+				<span class="text-gray-700"> Use entire Z extent</span>
+				<input
+					id="useEntireZExtent"
+					type="checkbox"
+					bind:checked={useEntireZExtent}
+					class="rounded text-indigo-600 focus:ring-indigo-500"
 				/>
 			</label>
 		</div>

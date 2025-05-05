@@ -22,13 +22,16 @@
 	let nav: NavigationStore;
 
 	async function loadTask() {
-		annotationStore = createAnnotationManagerStore(task.z_max - task.z_min + 1);
+
+		annotationStore = createAnnotationManagerStore(Math.max(1, (task.z_max - task.z_min - 1)));
 		nav = createNavigationStore({
 			minLayer: task.z_min,
-			maxLayer: task.z_max,
-			imageWidth: task.x_max - task.x_min + 1,
-			imageHeight: task.y_max - task.y_min + 1
-		});
+			maxLayer: task.z_max - 1,
+			layer: Math.floor((task.z_max + task.z_min) / 2),  
+			imageWidth: task.x_max - task.x_min,
+			imageHeight: task.y_max - task.y_min
+		});	
+
 		let checkpointResponse = await API.getTaskCheckpoints(task.id);
 		if (checkpointResponse.checkpoints) {
 			checkpointResponse.checkpoints.forEach((checkpoint) => {
