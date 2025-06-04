@@ -37,10 +37,31 @@ const APP_CONFIG = {
     lodLevels: [
         { threshold: 0.8, multiplier: 1, color: [255, 255, 0], name: 'Normal' },      // Yellow - 1x (normal)
         { threshold: 0.4, multiplier: 2, color: [255, 165, 0], name: 'LOD 2x' },      // Orange - 2x
-        { threshold: 0.2, multiplier: 4, color: [255, 69, 0], name: 'LOD 4x' },       // Red-Orange - 4x  
+        { threshold: 0.2, multiplier: 4, color: [255, 69, 0], name: 'LOD 4x' },       // Red-Orange - 4x
         { threshold: 0.1, multiplier: 8, color: [255, 0, 0], name: 'LOD 8x' },        // Red - 8x
         { threshold: 0.0, multiplier: 16, color: [128, 0, 128], name: 'LOD 16x' }     // Purple - 16x
     ],
+
+    /**
+     * Fixed chunk dimensions for consistent performance.
+     * All chunks will be exactly these sizes regardless of resolution.
+     */
+    fixedChunkSize: {
+        width: 256,   // Fixed chunk width in pixels
+        height: 256,  // Fixed chunk height in pixels  
+        depth: 16     // Fixed chunk depth in Z-slices
+    },
+
+    /**
+     * Filmstrip configuration for efficient Z-batch fetching.
+     * BossDB performs much better when fetching multiple Z-slices in one request.
+     * Now aligned with fixed chunk depth.
+     */
+    filmstrip: {
+        batchSize: 16,  // Fetch 16 Z-slices at a time (matches fixedChunkSize.depth)
+        preloadRadius: 1,  // Number of filmstrip batches to preload around current batch
+        cacheMaxBatches: 8  // Maximum number of filmstrip batches to keep in memory
+    },
 
     /**
      * Zoom speed with keys.

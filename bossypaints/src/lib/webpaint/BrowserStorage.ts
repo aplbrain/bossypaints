@@ -1,6 +1,6 @@
 /**
  * @module BrowserStorage
- * 
+ *
  * Utility for persisting image cache data and navigation state to browser storage.
  * Uses IndexedDB for large image data and localStorage for configuration.
  */
@@ -60,7 +60,7 @@ export class BrowserStorage {
 
             request.onupgradeneeded = (event) => {
                 const db = (event.target as IDBOpenDBRequest).result;
-                
+
                 // Create object store for image chunks
                 if (!db.objectStoreNames.contains(this.storeName)) {
                     const store = db.createObjectStore(this.storeName, { keyPath: 'key' });
@@ -88,14 +88,14 @@ export class BrowserStorage {
         canvas.width = image.width;
         canvas.height = image.height;
         const ctx = canvas.getContext('2d');
-        
+
         if (!ctx) {
             throw new Error('Failed to get 2D context');
         }
 
         // Draw the p5 image to the canvas
         ctx.drawImage(image.canvas, 0, 0);
-        
+
         // Convert to blob then to ArrayBuffer
         return new Promise((resolve, reject) => {
             canvas.toBlob((blob) => {
@@ -103,7 +103,7 @@ export class BrowserStorage {
                     reject(new Error('Failed to create blob'));
                     return;
                 }
-                
+
                 const reader = new FileReader();
                 reader.onload = () => {
                     resolve(reader.result as ArrayBuffer);
@@ -120,9 +120,9 @@ export class BrowserStorage {
     private async arrayBufferToImage(buffer: ArrayBuffer, p5Instance: any): Promise<any> {
         const blob = new Blob([buffer], { type: 'image/png' });
         const url = URL.createObjectURL(blob);
-        
+
         return new Promise((resolve, reject) => {
-            const img = p5Instance.loadImage(url, 
+            const img = p5Instance.loadImage(url,
                 () => {
                     URL.revokeObjectURL(url);
                     resolve(img);
@@ -151,10 +151,10 @@ export class BrowserStorage {
         try {
             const imageData = await this.imageToArrayBuffer(image);
             const key = this.generateStorageKey(chunkId, datasetURI);
-            
+
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
-            
+
             const storedChunk = {
                 key,
                 chunkId,

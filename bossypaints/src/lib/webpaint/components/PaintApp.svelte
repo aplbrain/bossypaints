@@ -50,13 +50,18 @@ from BossDB and displays it on the canvas.
 	const imageHeight = ys[1] - ys[0] - 1;
 	const imageDepth = Math.max(1, zs[1] - zs[0] - 1);
 
-	// Calculate chunk size (same as current ROI)
-	const chunkSizeX = xs[1] - xs[0];
-	const chunkSizeY = ys[1] - ys[0];
-	const chunkSizeZ = zs[1] - zs[0];
+	// Fixed chunk sizes for consistent performance across all resolutions
+	const chunkSizeX = APP_CONFIG.fixedChunkSize.width;
+	const chunkSizeY = APP_CONFIG.fixedChunkSize.height;
+	const chunkSizeZ = APP_CONFIG.fixedChunkSize.depth;
 
 	// Helper function to get the current LOD level based on zoom
-	function getCurrentLODLevel(zoom: number): { threshold: number; multiplier: number; color: number[]; name: string } {
+	function getCurrentLODLevel(zoom: number): {
+		threshold: number;
+		multiplier: number;
+		color: number[];
+		name: string;
+	} {
 		// Find the appropriate LOD level based on zoom
 		// Levels are sorted by threshold descending, so first match is correct
 		for (const level of APP_CONFIG.lodLevels) {
@@ -101,8 +106,6 @@ from BossDB and displays it on the canvas.
 
 		return { x_min, x_max, y_min, y_max, z_min, z_max };
 	}
-
-
 
 	// Helper function to get all neighboring chunks around a center point with specific multiplier
 	function getAllNeighboringChunks(
@@ -216,7 +219,7 @@ from BossDB and displays it on the canvas.
 		if (navigationStateSaveTimer) {
 			clearTimeout(navigationStateSaveTimer);
 		}
-		
+
 		navigationStateSaveTimer = setTimeout(() => {
 			if (browserStorage) {
 				const navState: NavigationState = {
@@ -230,6 +233,14 @@ from BossDB and displays it on the canvas.
 		}, 500); // Save after 500ms of no navigation changes
 	}
 
+	// Function to clear the cache
+	function clearCache() {
+		if (imageCache) {
+			imageCache.clearAll();
+			console.log('Cache cleared successfully');
+		}
+	}
+
 	// Create the canvas element and attach it to the DOM:
 	const canvas = document.createElement('canvas');
 	canvas.id = 'app';
@@ -239,7 +250,11 @@ from BossDB and displays it on the canvas.
 	const debugEnabled = debug ?? (APP_CONFIG.debug || debugMode);
 
 	// Function to load and cache visible chunks based on current view
-	async function loadVisibleChunks(centerOfScreen: { x: number; y: number }, currentZ: number, lodLevel: any) {
+	async function loadVisibleChunks(
+		centerOfScreen: { x: number; y: number },
+		currentZ: number,
+		lodLevel: any
+	) {
 		if (!imageCache) return;
 
 		// Get all chunks that should be visible
@@ -254,8 +269,8 @@ from BossDB and displays it on the canvas.
 				x_max: chunk.x_max,
 				y_min: chunk.y_min,
 				y_max: chunk.y_max,
-				z_min: currentZ,  // Single layer
-				z_max: currentZ + 1,  // Single layer
+				z_min: currentZ, // Single layer
+				z_max: currentZ + 1, // Single layer
 				resolution: resolution,
 				multiplier: lodLevel.multiplier
 			};
@@ -263,7 +278,7 @@ from BossDB and displays it on the canvas.
 			newVisibleChunks.push(chunkId);
 
 			// Start loading the chunk (this will use cache if already loaded)
-			imageCache.getImage(chunkId).catch(err => {
+			imageCache.getImage(chunkId).catch((err) => {
 				console.warn(`Failed to load chunk:`, err);
 			});
 		}
@@ -271,20 +286,28 @@ from BossDB and displays it on the canvas.
 		currentVisibleChunks = newVisibleChunks;
 
 		// Preload neighboring chunks for smooth navigation
-		const centerChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, currentZ, lodLevel.multiplier);
+		const centerChunk = getChunkForPoint(
+			centerOfScreen.x,
+			centerOfScreen.y,
+			currentZ,
+			lodLevel.multiplier
+		);
 		const centerChunkId: ChunkIdentifier = {
 			x_min: centerChunk.x_min,
 			x_max: centerChunk.x_max,
 			y_min: centerChunk.y_min,
 			y_max: centerChunk.y_max,
-			z_min: currentZ,  // Single layer
-			z_max: currentZ + 1,  // Single layer
+			z_min: currentZ, // Single layer
+			z_max: currentZ + 1, // Single layer
 			resolution: resolution,
 			multiplier: lodLevel.multiplier
 		};
 
 		// Preload with a radius of 1 (immediate neighbors)
 		imageCache.preloadNeighboringChunks(centerChunkId, 1);
+
+		// Preload neighboring filmstrip batches for efficient Z-navigation
+		imageCache.preloadNeighboringFilmstrips(centerChunkId);
 	}
 
 	// Function to render cached chunks
@@ -292,21 +315,48 @@ from BossDB and displays it on the canvas.
 		if (!imageCache || currentVisibleChunks.length === 0) return;
 
 		for (const chunkId of currentVisibleChunks) {
-			// Get the cached image synchronously (won't trigger loading)
-			const image = imageCache.getCachedImage(chunkId);
+			// Try to get the cached image first (individual chunk)
+			let image = imageCache.getCachedImage(chunkId);
+
 			if (image) {
 				// Calculate render position and size
 				const renderX = chunkId.x_min;
 				const renderY = chunkId.y_min;
 				const renderWidth = chunkId.x_max - chunkId.x_min;
 				const renderHeight = chunkId.y_max - chunkId.y_min;
-				
-				// Since we're loading single layers now, just draw the entire image
+
+				// Draw the individual cached image
 				s.image(
 					image,
-					renderX, renderY,           // Destination position
-					renderWidth, renderHeight   // Destination size
+					renderX,
+					renderY, // Destination position
+					renderWidth,
+					renderHeight // Destination size
 				);
+			} else {
+				// Try to render directly from filmstrip (render-time extraction - much faster!)
+				const filmstripInfo = imageCache.getFilmstripRenderInfo(chunkId);
+
+				if (filmstripInfo) {
+					// Calculate render position and size
+					const renderX = chunkId.x_min;
+					const renderY = chunkId.y_min;
+					const renderWidth = chunkId.x_max - chunkId.x_min;
+					const renderHeight = chunkId.y_max - chunkId.y_min;
+
+					// Render directly from filmstrip using source coordinates
+					s.image(
+						filmstripInfo.filmstrip,
+						renderX,
+						renderY, // Destination position
+						renderWidth,
+						renderHeight, // Destination size
+						filmstripInfo.sourceX,
+						filmstripInfo.sourceY, // Source position in filmstrip
+						filmstripInfo.sourceWidth,
+						filmstripInfo.sourceHeight // Source size
+					);
+				}
 			}
 		}
 	}
@@ -321,7 +371,7 @@ from BossDB and displays it on the canvas.
 			browserStorage = new BrowserStorage();
 
 			// Initialize the image cache
-			imageCache = new ImageCache(remote, datasetURI, s, 100); // 100MB cache
+			imageCache = new ImageCache(remote, datasetURI, s, 2999); // 100MB cache
 
 			// Try to restore navigation state from storage
 			const savedNavState = browserStorage.loadNavigationState(datasetURI);
@@ -363,20 +413,26 @@ from BossDB and displays it on the canvas.
 			const currentLODLevel = getCurrentLODLevel(nav.zoom);
 
 			// Check if we need to load new chunks (LOD changed or moved significantly)
-			const centerChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer, currentLODLevel.multiplier);
+			const centerChunk = getChunkForPoint(
+				centerOfScreen.x,
+				centerOfScreen.y,
+				nav.layer,
+				currentLODLevel.multiplier
+			);
 			const centerChunkId: ChunkIdentifier = {
 				x_min: centerChunk.x_min,
 				x_max: centerChunk.x_max,
 				y_min: centerChunk.y_min,
 				y_max: centerChunk.y_max,
-				z_min: nav.layer,  // Single layer
-				z_max: nav.layer + 1,  // Single layer
+				z_min: nav.layer, // Single layer
+				z_max: nav.layer + 1, // Single layer
 				resolution: resolution,
 				multiplier: currentLODLevel.multiplier
 			};
 
 			// Check if we've moved to a different chunk or changed LOD level or layer
-			const chunkChanged = !lastCenterChunk || 
+			const chunkChanged =
+				!lastCenterChunk ||
 				lastCenterChunk.x_min !== centerChunkId.x_min ||
 				lastCenterChunk.y_min !== centerChunkId.y_min ||
 				lastCenterChunk.z_min !== centerChunkId.z_min ||
@@ -425,13 +481,22 @@ from BossDB and displays it on the canvas.
 			if (debugEnabled && imageCache) {
 				// Get the center of the screen
 				const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
-				
+
 				// Get the current LOD level based on zoom
 				const currentLODLevel = getCurrentLODLevel(nav.zoom);
-				
+
 				// Get chunks using the current LOD level
-				const currentChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer, currentLODLevel.multiplier);
-				const allChunks = getAllNeighboringChunks(centerOfScreen, nav.layer, currentLODLevel.multiplier);
+				const currentChunk = getChunkForPoint(
+					centerOfScreen.x,
+					centerOfScreen.y,
+					nav.layer,
+					currentLODLevel.multiplier
+				);
+				const allChunks = getAllNeighboringChunks(
+					centerOfScreen,
+					nav.layer,
+					currentLODLevel.multiplier
+				);
 
 				// Draw all neighboring chunks
 				s.strokeWeight(1);
@@ -474,7 +539,11 @@ from BossDB and displays it on the canvas.
 						x: [currentChunk.x_min, currentChunk.x_max],
 						y: [currentChunk.y_min, currentChunk.y_max],
 						z: [currentChunk.z_min, currentChunk.z_max],
-						chunkSize: [chunkSizeX * currentLODLevel.multiplier, chunkSizeY * currentLODLevel.multiplier, chunkSizeZ * currentLODLevel.multiplier],
+						chunkSize: [
+							chunkSizeX * currentLODLevel.multiplier,
+							chunkSizeY * currentLODLevel.multiplier,
+							chunkSizeZ * currentLODLevel.multiplier
+						],
 						multiplier: currentLODLevel.multiplier
 					});
 					lastLoggedChunk = chunkKey;
@@ -517,7 +586,12 @@ from BossDB and displays it on the canvas.
 				);
 
 				// Show current chunk info using new LOD system
-				const currentChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer, currentLODLevel.multiplier);
+				const currentChunk = getChunkForPoint(
+					centerOfScreen.x,
+					centerOfScreen.y,
+					nav.layer,
+					currentLODLevel.multiplier
+				);
 				s.text(
 					`Current ${currentLODLevel.name} Chunk: x:[${currentChunk.x_min}, ${currentChunk.x_max}] y:[${currentChunk.y_min}, ${currentChunk.y_max}] z:[${currentChunk.z_min}, ${currentChunk.z_max}]`,
 					10,
@@ -537,18 +611,38 @@ from BossDB and displays it on the canvas.
 				if (imageCache) {
 					const stats = imageCache.getStats();
 					s.fill(255);
-					s.text(`Memory Cache: ${stats.entryCount} entries, ${(stats.cacheSize / 1024 / 1024).toFixed(1)}MB / ${(stats.maxCacheSize / 1024 / 1024).toFixed(0)}MB (${stats.utilizationPercent.toFixed(1)}%)`, 10, 80);
-					s.text(`Loading: ${stats.loadingCount} chunks`, 10, 90);
-					
+					s.text(
+						`Memory Cache: ${stats.entryCount} entries, ${(stats.cacheSize / 1024 / 1024).toFixed(1)}MB / ${(stats.maxCacheSize / 1024 / 1024).toFixed(0)}MB (${stats.utilizationPercent.toFixed(1)}%)`,
+						10,
+						80
+					);
+					s.text(
+						`Filmstrip Cache: ${stats.filmstripCount} batches, ${stats.totalSlicesInFilmstrips} slices`,
+						10,
+						90
+					);
+					s.text(
+						`Loading: ${stats.loadingCount} chunks, ${stats.filmstripLoadingCount} filmstrips`,
+						10,
+						100
+					);
+
 					// Show storage stats (async, so we'll update periodically)
-					imageCache.getCombinedStats().then(combinedStats => {
-						if (debugEnabled) {
-							s.fill(200, 200, 255); // Light blue for storage stats
-							s.text(`Browser Storage: ${combinedStats.storage.totalChunks} chunks, ${(combinedStats.storage.estimatedSize / 1024 / 1024).toFixed(1)}MB`, 10, 100);
-						}
-					}).catch(() => {
-						// Ignore errors in debug display
-					});
+					imageCache
+						.getCombinedStats()
+						.then((combinedStats) => {
+							if (debugEnabled) {
+								s.fill(200, 200, 255); // Light blue for storage stats
+								s.text(
+									`Browser Storage: ${combinedStats.storage.totalChunks} chunks, ${(combinedStats.storage.estimatedSize / 1024 / 1024).toFixed(1)}MB`,
+									10,
+									110
+								);
+							}
+						})
+						.catch(() => {
+							// Ignore errors in debug display
+						});
 				}
 
 				// Show pinch zoom debug info
@@ -668,6 +762,14 @@ from BossDB and displays it on the canvas.
 			return true;
 		};
 
+		// Function to clear the cache
+		function clearCache() {
+			if (imageCache) {
+				imageCache.clearAll();
+				console.log('Cache cleared successfully');
+			}
+		}
+
 		function handleMouseEvent(eventType: MouseEventType, evt: MouseEvent | KeyboardEvent) {
 			for (const kb of keybindings.filter(
 				(kb) => kb.eventType === 'mouse' && kb.mouseEventType === eventType
@@ -742,3 +844,47 @@ from BossDB and displays it on the canvas.
 </script>
 
 <Minimap {annotationStore} {nav} />
+
+<!-- Debug UI overlay -->
+{#if debugEnabled}
+	<div class="debug-overlay">
+		<button
+			class="cache-clear-button"
+			on:click={clearCache}
+			title="Clear all cached images and browser storage"
+		>
+			Clear Cache
+		</button>
+	</div>
+{/if}
+
+<style>
+	.debug-overlay {
+		position: fixed;
+		top: 120px;
+		left: 10px;
+		z-index: 1000;
+		pointer-events: none; /* Allow clicks to pass through the overlay */
+	}
+
+	.cache-clear-button {
+		pointer-events: auto; /* Re-enable clicks for the button */
+		background-color: rgba(255, 100, 100, 0.8);
+		color: white;
+		border: 1px solid rgba(255, 255, 255, 0.5);
+		border-radius: 4px;
+		padding: 6px 12px;
+		font-size: 12px;
+		font-family: monospace;
+		cursor: pointer;
+		transition: background-color 0.2s;
+	}
+
+	.cache-clear-button:hover {
+		background-color: rgba(255, 50, 50, 0.9);
+	}
+
+	.cache-clear-button:active {
+		background-color: rgba(255, 0, 0, 1);
+	}
+</style>
