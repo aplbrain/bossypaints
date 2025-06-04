@@ -2,7 +2,14 @@
 @component PaintApp
 
 The primary component for the PaintApp. This component is responsible for
-rendering the main canvas and handling user input. It also loads the image data
+rendering the main canvas and handling user input. It also loa	// Image cache for managing LOD chunks
+	let imageCache: ImageCache;
+	let browserStorage: BrowserStorage;
+	let loadedChunks: Map<string, p5.Image> = new Map();
+	let currentLODMultiplier: number = 1;
+	let lastCenterChunk: ChunkIdentifier | null = null;
+	let currentVisibleChunks: ChunkIdentifier[] = [];
+	let navigationStateSaveTimer: number | null = null; image data
 from BossDB and displays it on the canvas.
 
 @prop {AnnotationManagerStore} annotationStore - Svelte store for annotations.
@@ -19,6 +26,8 @@ from BossDB and displays it on the canvas.
 	import APP_CONFIG from '../config';
 	import Minimap from './Minimap.svelte';
 	import PolygonAnnotation from '../PolygonAnnotation';
+	import { ImageCache, type ChunkIdentifier } from '../ImageCache';
+	import { BrowserStorage, type NavigationState } from '../BrowserStorage';
 
 	export let annotationStore: AnnotationManagerStore;
 	export let nav: NavigationStore;
@@ -158,6 +167,15 @@ from BossDB and displays it on the canvas.
 	// Keep track of the last logged chunk to avoid spamming console
 	let lastLoggedChunk: string | null = null;
 
+	// Image cache for managing LOD chunks
+	let imageCache: ImageCache;
+	let browserStorage: BrowserStorage;
+	let loadedChunks: Map<string, p5.Image> = new Map();
+	let currentLODMultiplier: number = 1;
+	let lastCenterChunk: ChunkIdentifier | null = null;
+	let currentVisibleChunks: ChunkIdentifier[] = [];
+	let navigationStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// Pinch zoom state tracking
 	let lastTouchDistance: number = 0;
 	let isPinching: boolean = false;
@@ -188,18 +206,29 @@ from BossDB and displays it on the canvas.
 		// Adjust position to zoom towards the pinch center
 		nav.decrementX(centerX * (1 / oldZoom - 1 / nav.zoom));
 		nav.decrementY(centerY * (1 / oldZoom - 1 / nav.zoom));
+
+		// Save navigation state with debouncing
+		saveNavigationStateDebounced();
 	}
 
-	let filmstrip: p5.Image = new p5.Image(imageWidth, imageHeight * imageDepth);
-	//  Fill with color while loading...
-	filmstrip.loadPixels();
-	for (let i = 0; i < filmstrip.pixels.length; i += 4) {
-		filmstrip.pixels[i] = 105;
-		filmstrip.pixels[i + 1] = 157;
-		filmstrip.pixels[i + 2] = 163;
-		filmstrip.pixels[i + 3] = 255;
+	// Debounced navigation state saving to avoid too frequent writes
+	function saveNavigationStateDebounced() {
+		if (navigationStateSaveTimer) {
+			clearTimeout(navigationStateSaveTimer);
+		}
+		
+		navigationStateSaveTimer = setTimeout(() => {
+			if (browserStorage) {
+				const navState: NavigationState = {
+					x: nav.x,
+					y: nav.y,
+					zoom: nav.zoom,
+					layer: nav.layer
+				};
+				browserStorage.saveNavigationState(navState, datasetURI);
+			}
+		}, 500); // Save after 500ms of no navigation changes
 	}
-	filmstrip.updatePixels();
 
 	// Create the canvas element and attach it to the DOM:
 	const canvas = document.createElement('canvas');
@@ -209,30 +238,109 @@ from BossDB and displays it on the canvas.
 	// Use the debug prop, fallback to config, then debugMode for compatibility
 	const debugEnabled = debug ?? (APP_CONFIG.debug || debugMode);
 
-	const sketch = (s: p5) => {
-		// Download the data from BossDB:
-		remote
-			.getCutoutPNG(datasetURI, resolution, [xs[0], xs[1]], [ys[0], ys[1]], [zs[0], zs[1]])
-			.then((blob) => {
-				if (blob) {
-					const url = URL.createObjectURL(blob);
-					filmstrip = s.loadImage(url);
-				} else {
-					throw new Error('Failed to load image');
-				}
-			})
-			.catch((err) => {
-				console.error(err);
-			});
+	// Function to load and cache visible chunks based on current view
+	async function loadVisibleChunks(centerOfScreen: { x: number; y: number }, currentZ: number, lodLevel: any) {
+		if (!imageCache) return;
 
+		// Get all chunks that should be visible
+		const chunks = getAllNeighboringChunks(centerOfScreen, currentZ, lodLevel.multiplier);
+		const newVisibleChunks: ChunkIdentifier[] = [];
+
+		// Convert chunk bounds to ChunkIdentifier format
+		for (const chunk of chunks) {
+			// Load each chunk for the current layer only
+			const chunkId: ChunkIdentifier = {
+				x_min: chunk.x_min,
+				x_max: chunk.x_max,
+				y_min: chunk.y_min,
+				y_max: chunk.y_max,
+				z_min: currentZ,  // Single layer
+				z_max: currentZ + 1,  // Single layer
+				resolution: resolution,
+				multiplier: lodLevel.multiplier
+			};
+
+			newVisibleChunks.push(chunkId);
+
+			// Start loading the chunk (this will use cache if already loaded)
+			imageCache.getImage(chunkId).catch(err => {
+				console.warn(`Failed to load chunk:`, err);
+			});
+		}
+
+		currentVisibleChunks = newVisibleChunks;
+
+		// Preload neighboring chunks for smooth navigation
+		const centerChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, currentZ, lodLevel.multiplier);
+		const centerChunkId: ChunkIdentifier = {
+			x_min: centerChunk.x_min,
+			x_max: centerChunk.x_max,
+			y_min: centerChunk.y_min,
+			y_max: centerChunk.y_max,
+			z_min: currentZ,  // Single layer
+			z_max: currentZ + 1,  // Single layer
+			resolution: resolution,
+			multiplier: lodLevel.multiplier
+		};
+
+		// Preload with a radius of 1 (immediate neighbors)
+		imageCache.preloadNeighboringChunks(centerChunkId, 1);
+	}
+
+	// Function to render cached chunks
+	function renderCachedChunks(s: p5) {
+		if (!imageCache || currentVisibleChunks.length === 0) return;
+
+		for (const chunkId of currentVisibleChunks) {
+			// Get the cached image synchronously (won't trigger loading)
+			const image = imageCache.getCachedImage(chunkId);
+			if (image) {
+				// Calculate render position and size
+				const renderX = chunkId.x_min;
+				const renderY = chunkId.y_min;
+				const renderWidth = chunkId.x_max - chunkId.x_min;
+				const renderHeight = chunkId.y_max - chunkId.y_min;
+				
+				// Since we're loading single layers now, just draw the entire image
+				s.image(
+					image,
+					renderX, renderY,           // Destination position
+					renderWidth, renderHeight   // Destination size
+				);
+			}
+		}
+	}
+
+	const sketch = (s: p5) => {
 		s.setup = () => {
 			// runs once
 			s.createCanvas(window.innerWidth, window.innerHeight, document.getElementById('app'));
 			s.background(0, 0, 0);
 
-			// Set the nav to the center of the image
-			nav.setX((s.width - nav.imageWidth) / 2);
-			nav.setY((s.height - nav.imageHeight) / 2);
+			// Initialize browser storage
+			browserStorage = new BrowserStorage();
+
+			// Initialize the image cache
+			imageCache = new ImageCache(remote, datasetURI, s, 100); // 100MB cache
+
+			// Try to restore navigation state from storage
+			const savedNavState = browserStorage.loadNavigationState(datasetURI);
+			if (savedNavState) {
+				nav.setX(savedNavState.x);
+				nav.setY(savedNavState.y);
+				nav.setZoom(savedNavState.zoom);
+				nav.setLayer(savedNavState.layer);
+				console.log('Restored navigation state from storage');
+			} else {
+				// Set the nav to the center of the image (default behavior)
+				nav.setX((s.width - nav.imageWidth) / 2);
+				nav.setY((s.height - nav.imageHeight) / 2);
+			}
+
+			// Load initial chunks
+			const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
+			const currentLODLevel = getCurrentLODLevel(nav.zoom);
+			loadVisibleChunks(centerOfScreen, nav.layer, currentLODLevel);
 		};
 
 		s.draw = () => {
@@ -249,32 +357,54 @@ from BossDB and displays it on the canvas.
 			s.translate(nav.x, nav.y);
 
 			annotationStore.setHoveredAnnotation(null);
-			if (filmstrip) {
-				// Start-y is the layer number times -imageHeight
-				// Stop-y is (layer number + 1) times -imageHeight
-				// These are "source" coordinates.
-				// The destination coordinates are always 0, 0
 
-				// const screenCoords = nav.dataToScene(0, 0);
-				s.image(
-					filmstrip,
-					0, //screenCoords.x,
-					0, //screenCoords.y,
-					imageWidth, //* nav.zoom, //width
-					imageHeight, //* nav.zoom, //height
-					0, //dx
-					nav.layer * imageHeight, //dy
-					imageWidth, //dwidth
-					imageHeight //dheight
-				);
+			// Get current view info for dynamic loading
+			const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
+			const currentLODLevel = getCurrentLODLevel(nav.zoom);
 
-				if (debugEnabled) {
-					// axes:
-					s.stroke(255, 0, 0);
-					s.line(0, 0, 100, 0);
-					s.stroke(0, 255, 0);
-					s.line(0, 0, 0, 100);
+			// Check if we need to load new chunks (LOD changed or moved significantly)
+			const centerChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer, currentLODLevel.multiplier);
+			const centerChunkId: ChunkIdentifier = {
+				x_min: centerChunk.x_min,
+				x_max: centerChunk.x_max,
+				y_min: centerChunk.y_min,
+				y_max: centerChunk.y_max,
+				z_min: nav.layer,  // Single layer
+				z_max: nav.layer + 1,  // Single layer
+				resolution: resolution,
+				multiplier: currentLODLevel.multiplier
+			};
+
+			// Check if we've moved to a different chunk or changed LOD level or layer
+			const chunkChanged = !lastCenterChunk || 
+				lastCenterChunk.x_min !== centerChunkId.x_min ||
+				lastCenterChunk.y_min !== centerChunkId.y_min ||
+				lastCenterChunk.z_min !== centerChunkId.z_min ||
+				lastCenterChunk.multiplier !== centerChunkId.multiplier;
+
+			if (chunkChanged) {
+				// If LOD level changed, clear old level cache entries
+				if (lastCenterChunk && lastCenterChunk.multiplier !== centerChunkId.multiplier) {
+					currentLODMultiplier = centerChunkId.multiplier;
+					// Optionally clear old LOD level to save memory
+					if (imageCache) {
+						imageCache.evictLODLevel(lastCenterChunk.multiplier);
+					}
 				}
+
+				lastCenterChunk = centerChunkId;
+				loadVisibleChunks(centerOfScreen, nav.layer, currentLODLevel);
+			}
+
+			// Render the cached chunks
+			renderCachedChunks(s);
+
+			if (debugEnabled) {
+				// axes:
+				s.stroke(255, 0, 0);
+				s.line(0, 0, 100, 0);
+				s.stroke(0, 255, 0);
+				s.line(0, 0, 0, 100);
 			}
 
 			annotationStore.currentAnnotation.annotation.draw(s, nav, annotationStore);
@@ -292,7 +422,7 @@ from BossDB and displays it on the canvas.
 			s.pop();
 
 			// Draw chunk visualization AFTER everything else so it's visible on top
-			if (debugEnabled && filmstrip) {
+			if (debugEnabled && imageCache) {
 				// Get the center of the screen
 				const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
 				
@@ -403,16 +533,34 @@ from BossDB and displays it on the canvas.
 					s.text('CENTER INSIDE ORIGINAL ROI', 10, 70);
 				}
 
+				// Show cache statistics
+				if (imageCache) {
+					const stats = imageCache.getStats();
+					s.fill(255);
+					s.text(`Memory Cache: ${stats.entryCount} entries, ${(stats.cacheSize / 1024 / 1024).toFixed(1)}MB / ${(stats.maxCacheSize / 1024 / 1024).toFixed(0)}MB (${stats.utilizationPercent.toFixed(1)}%)`, 10, 80);
+					s.text(`Loading: ${stats.loadingCount} chunks`, 10, 90);
+					
+					// Show storage stats (async, so we'll update periodically)
+					imageCache.getCombinedStats().then(combinedStats => {
+						if (debugEnabled) {
+							s.fill(200, 200, 255); // Light blue for storage stats
+							s.text(`Browser Storage: ${combinedStats.storage.totalChunks} chunks, ${(combinedStats.storage.estimatedSize / 1024 / 1024).toFixed(1)}MB`, 10, 100);
+						}
+					}).catch(() => {
+						// Ignore errors in debug display
+					});
+				}
+
 				// Show pinch zoom debug info
 				if (APP_CONFIG.debugPinch) {
 					s.fill(255);
-					s.text(`Pinch Active: ${isPinching}`, 10, 80);
+					s.text(`Pinch Active: ${isPinching}`, 10, imageCache ? 110 : 80);
 					if (isPinching) {
-						s.text(`Touch Distance: ${lastTouchDistance.toFixed(2)}`, 10, 90);
+						s.text(`Touch Distance: ${lastTouchDistance.toFixed(2)}`, 10, imageCache ? 120 : 90);
 						s.text(
 							`Pinch Center: ${pinchCenter.x.toFixed(1)}, ${pinchCenter.y.toFixed(1)}`,
 							10,
-							100
+							imageCache ? 130 : 100
 						);
 					}
 				}
@@ -435,6 +583,8 @@ from BossDB and displays it on the canvas.
 			for (const kb of keybindings.filter((kb) => kb.eventType === 'key')) {
 				if (kb.matcher(s)) {
 					kb.handler(s, annotationStore, nav, evt);
+					// Save navigation state after key interactions
+					saveNavigationStateDebounced();
 					return false;
 				}
 			}
@@ -523,7 +673,12 @@ from BossDB and displays it on the canvas.
 				(kb) => kb.eventType === 'mouse' && kb.mouseEventType === eventType
 			)) {
 				if (kb.matcher(s)) {
-					return kb.handler(s, annotationStore, nav, evt);
+					const result = kb.handler(s, annotationStore, nav, evt);
+					// Save navigation state after mouse interactions that might change navigation
+					if (eventType === 'mouseWheel' || eventType === 'mouseDragged') {
+						saveNavigationStateDebounced();
+					}
+					return result;
 				}
 			}
 		}
