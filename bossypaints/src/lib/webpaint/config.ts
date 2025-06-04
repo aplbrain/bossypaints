@@ -10,7 +10,7 @@ const APP_CONFIG = {
      * Debug-mode.
      * Show things like mouse position and axes.
      */
-    debug: false,
+    debug: true,
 
     /**
      * Zoom speed.
