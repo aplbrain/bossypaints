@@ -1,7 +1,7 @@
-import type PolygonAnnotation from "webpaint/src/lib/PolygonAnnotation";
+import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 
-// const baseUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000';
-const baseUrl = process.env.BOSSYPAINTS_API_URL || "https://api.paint.labs.bossdb.org" || 'http://localhost:8000';
+const baseUrl = 'http://localhost:8000';
+// const baseUrl = "https://api.paint.labs.bossdb.org";
 
 export type TaskID = string;
 
