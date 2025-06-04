@@ -134,6 +134,38 @@ from BossDB and displays it on the canvas.
 	// Keep track of the last logged chunk to avoid spamming console
 	let lastLoggedChunk: string | null = null;
 
+	// Pinch zoom state tracking
+	let lastTouchDistance: number = 0;
+	let isPinching: boolean = false;
+	let pinchCenter: { x: number; y: number } = { x: 0, y: 0 };
+
+	// Helper function to calculate distance between two touch points (p5.js version)
+	function getTouchDistance(s: p5): number {
+		if (s.touches.length < 2) return 0;
+		const dx = s.touches[0].x - s.touches[1].x;
+		const dy = s.touches[0].y - s.touches[1].y;
+		return Math.sqrt(dx * dx + dy * dy);
+	}
+
+	// Helper function to calculate center point between two touches (p5.js version)
+	function getTouchCenter(s: p5): { x: number; y: number } {
+		if (s.touches.length < 2) return { x: 0, y: 0 };
+		return {
+			x: (s.touches[0].x + s.touches[1].x) / 2,
+			y: (s.touches[0].y + s.touches[1].y) / 2
+		};
+	}
+
+	// Helper function for pinch zoom using the centerfullyZoom logic
+	function pinchZoom(newZoom: number, centerX: number, centerY: number) {
+		const oldZoom = nav.zoom;
+		nav.setZoom(newZoom);
+
+		// Adjust position to zoom towards the pinch center
+		nav.decrementX(centerX * (1 / oldZoom - 1 / nav.zoom));
+		nav.decrementY(centerY * (1 / oldZoom - 1 / nav.zoom));
+	}
+
 	let filmstrip: p5.Image = new p5.Image(imageWidth, imageHeight * imageDepth);
 	//  Fill with color while loading...
 	filmstrip.loadPixels();
@@ -328,10 +360,24 @@ from BossDB and displays it on the canvas.
 					s.fill(0, 255, 0); // Green text
 					s.text('CENTER INSIDE ORIGINAL ROI', 10, 60);
 				}
+
+				// Show pinch zoom debug info
+				if (APP_CONFIG.debugPinch) {
+					s.fill(255);
+					s.text(`Pinch Active: ${isPinching}`, 10, 80);
+					if (isPinching) {
+						s.text(`Touch Distance: ${lastTouchDistance.toFixed(2)}`, 10, 90);
+						s.text(
+							`Pinch Center: ${pinchCenter.x.toFixed(1)}, ${pinchCenter.y.toFixed(1)}`,
+							10,
+							100
+						);
+					}
+				}
 			}
 		};
 
-		s.keyPressed = (evt) => {
+		s.keyPressed = (evt: any) => {
 			// Alt + S = checkpoint
 			if (s.keyIsDown(s.ALT) && s.keyCode === 83) {
 				// If SHIFT is also pressed, submit the data
@@ -352,12 +398,12 @@ from BossDB and displays it on the canvas.
 			}
 		};
 
-		s.mousePressed = (evt) => {
+		s.mousePressed = (evt: any) => {
 			if (evt.target !== s.canvas) return;
 			return handleMouseEvent('mousePressed', evt);
 		};
 
-		s.mouseDragged = (evt) => {
+		s.mouseDragged = (evt: any) => {
 			if (evt.target !== s.canvas) return;
 			return handleMouseEvent('mouseDragged', evt);
 		};
@@ -365,6 +411,69 @@ from BossDB and displays it on the canvas.
 		s.mouseWheel = (evt: WheelEvent) => {
 			if (evt.target !== s.canvas) return;
 			return handleMouseEvent('mouseWheel', evt);
+		};
+
+		// Touch event handlers for pinch zoom
+		s.touchStarted = (evt: any) => {
+			// console.log('touchStarted called, touches:', s.touches.length);
+			if (evt && evt.target !== s.canvas) return;
+
+			if (s.touches.length === 2) {
+				// console.log('Starting pinch gesture');
+				// Start pinch gesture
+				isPinching = true;
+				lastTouchDistance = getTouchDistance(s);
+				pinchCenter = getTouchCenter(s);
+				// console.log('Initial touch distance:', lastTouchDistance);
+				if (evt && evt.preventDefault) evt.preventDefault();
+				return false;
+			}
+
+			// Handle single touch as mouse events for drawing/panning
+			return true;
+		};
+
+		s.touchMoved = (evt: any) => {
+			// console.log('touchMoved called, touches:', s.touches.length, 'isPinching:', isPinching);
+			if (evt && evt.target !== s.canvas) return;
+
+			if (isPinching && s.touches.length === 2) {
+				const currentDistance = getTouchDistance(s);
+				const currentCenter = getTouchCenter(s);
+				// console.log('Pinch move - distance:', currentDistance, 'lastDistance:', lastTouchDistance);
+
+				if (lastTouchDistance > 0) {
+					// Calculate zoom factor based on distance change
+					const distanceRatio = currentDistance / lastTouchDistance;
+					const zoomChange = (distanceRatio - 1) * APP_CONFIG.pinchZoomSpeed * nav.zoom;
+					const newZoom = Math.max(0.1, Math.min(10, nav.zoom + zoomChange));
+					// console.log('Applying zoom change:', zoomChange, 'newZoom:', newZoom);
+
+					// Apply zoom towards the pinch center
+					pinchZoom(newZoom, currentCenter.x, currentCenter.y);
+				}
+
+				lastTouchDistance = currentDistance;
+				pinchCenter = currentCenter;
+				if (evt && evt.preventDefault) evt.preventDefault();
+				return false;
+			}
+
+			return true;
+		};
+
+		s.touchEnded = (evt: any) => {
+			// console.log('touchEnded called, touches:', s.touches.length);
+			if (evt && evt.target !== s.canvas) return;
+
+			if (s.touches.length < 2) {
+				// console.log('Ending pinch gesture');
+				// End pinch gesture
+				isPinching = false;
+				lastTouchDistance = 0;
+			}
+
+			return true;
 		};
 
 		function handleMouseEvent(eventType: MouseEventType, evt: MouseEvent | KeyboardEvent) {
@@ -384,6 +493,55 @@ from BossDB and displays it on the canvas.
 
 	export const app = new p5(sketch);
 	document.addEventListener('contextmenu', (event) => event.preventDefault());
+
+	// Prevent browser's default pinch zoom behavior
+	document.addEventListener('gesturestart', (e) => e.preventDefault());
+	document.addEventListener('gesturechange', (e) => e.preventDefault());
+	document.addEventListener('gestureend', (e) => e.preventDefault());
+
+	// Prevent default touch behaviors that might interfere with pinch zoom
+	document.addEventListener(
+		'touchstart',
+		(e) => {
+			if (e.touches.length > 1) {
+				e.preventDefault();
+			}
+		},
+		{ passive: false }
+	);
+
+	document.addEventListener(
+		'touchmove',
+		(e) => {
+			if (e.touches.length > 1) {
+				e.preventDefault();
+			}
+		},
+		{ passive: false }
+	);
+
+	document.addEventListener(
+		'touchend',
+		(e) => {
+			// Allow single touch events but prevent multi-touch defaults
+			if (e.touches.length > 0) {
+				e.preventDefault();
+			}
+		},
+		{ passive: false }
+	);
+
+	// Prevent browser's default pinch zoom behavior on all wheel events with ctrlKey
+	// This ensures Mac trackpad pinch gestures are handled by our p5 mouseWheel handler
+	document.addEventListener(
+		'wheel',
+		(e) => {
+			if (e.ctrlKey) {
+				e.preventDefault();
+			}
+		},
+		{ passive: false }
+	);
 </script>
 
 <Minimap {annotationStore} {nav} />

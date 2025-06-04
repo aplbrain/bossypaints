@@ -44,7 +44,13 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          * @param layerIndex - The index of the layer.
          * @returns {Array<PolygonAnnotation>}
          */
-        getLayerAnnotations: (layerIndex: number): Array<PolygonAnnotation> => layerwiseAnnotations[layerIndex],
+        getLayerAnnotations: (layerIndex: number): Array<PolygonAnnotation> => {
+            // Defensive programming: return empty array if layer index is out of bounds
+            if (layerIndex < 0 || layerIndex >= layerwiseAnnotations.length) {
+                return [];
+            }
+            return layerwiseAnnotations[layerIndex];
+        },
 
         /**
          * Get all annotations as a flat array.
@@ -208,10 +214,12 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          * @returns {void}
          */
         draw: (p: p5, nav: NavigationStore) => {
-            // Draw the annotations:
-            layerwiseAnnotations[nav.layer].forEach((annotation) => {
-                annotation.draw(p, nav, this);
-            });
+            // Draw the annotations with bounds checking
+            if (nav.layer >= 0 && nav.layer < layerwiseAnnotations.length) {
+                layerwiseAnnotations[nav.layer].forEach((annotation) => {
+                    annotation.draw(p, nav, this);
+                });
+            }
         }
     };
 }

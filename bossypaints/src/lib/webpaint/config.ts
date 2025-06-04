@@ -13,10 +13,21 @@ const APP_CONFIG = {
     debug: true,
 
     /**
+     * Debug pinch zoom gestures.
+     */
+    debugPinch: true,
+
+    /**
      * Zoom speed.
      * Controls how quickly the zoom level changes when the user scrolls.
      */
     scrollingZoomSpeed: 0.005,
+
+    /**
+     * Pinch zoom speed.
+     * Controls how quickly the zoom level changes when the user pinches.
+     */
+    pinchZoomSpeed: 0.01,
 
     /**
      * Zoom speed with keys.

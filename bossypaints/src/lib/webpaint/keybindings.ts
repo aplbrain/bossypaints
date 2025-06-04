@@ -263,12 +263,22 @@ export const keybindings: Keybinding[] = [
         matcher: (s) => !!s,
         // @ts-expect-error This particular Wheel Event is a janky p5 type
         handler: (s, annotationStore, nav, event: WheelEvent & { delta: number }) => {
-            if (s.keyIsDown(s.CONTROL)) {
+            console.log('Wheel event - ctrlKey:', event.ctrlKey, 'p5 CONTROL:', s.keyIsDown(s.CONTROL), 'delta:', event.delta);
+            // Check both p5's keyIsDown and the event's ctrlKey for Mac compatibility
+            if (s.keyIsDown(s.CONTROL) || event.ctrlKey) {
+                console.log('Applying zoom via Ctrl+scroll, current zoom:', nav.zoom);
+                // Use a faster speed for pinch gestures (when ctrlKey is set by trackpad)
+                const zoomSpeed = event.ctrlKey ? APP_CONFIG.pinchZoomSpeed : APP_CONFIG.scrollingZoomSpeed;
                 centerfullyZoom(
-                    nav.zoom + -event.delta * APP_CONFIG.scrollingZoomSpeed, s, nav, true
+                    nav.zoom + -event.delta * zoomSpeed, s, nav, true
                 );
+                event.preventDefault();
+                return false;
             } else {
+                console.log('Changing layer via scroll, delta:', event.delta);
                 nav.incrementLayer(event.delta > 0 ? 1 : -1);
+                event.preventDefault();
+                return false;
             }
         },
         eventType: 'mouse',
@@ -279,7 +289,9 @@ export const keybindings: Keybinding[] = [
 
 function centerfullyZoom(newZoom: number, s: p5, nav: NavigationStore, zoomToMouse = true) {
     const oldZoom = nav.zoom;
+    console.log('centerfullyZoom: oldZoom =', oldZoom, 'newZoom =', newZoom);
     nav.setZoom(newZoom);
+    console.log('centerfullyZoom: zoom set to', nav.zoom);
 
     if (zoomToMouse) {
         nav.decrementX((s.mouseX) * (1 / oldZoom - 1 / nav.zoom));

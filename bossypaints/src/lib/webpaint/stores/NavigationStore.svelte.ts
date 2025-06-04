@@ -75,14 +75,20 @@ export function createNavigationStore({
         get layer() { return _layer; },
         setLayer: (newLayer: number) => {
             _layer = newLayer;
+            if (_layer < _minLayer) {
+                _layer = _minLayer;
+            }
+            if (_layer >= _maxLayer) {
+                _layer = _maxLayer - 1;
+            }
         },
         incrementLayer: (delta: number = 1) => {
             _layer += delta;
             if (_layer < _minLayer) {
                 _layer = _minLayer;
             }
-            if (_layer > _maxLayer) {
-                _layer = _maxLayer;
+            if (_layer >= _maxLayer) {
+                _layer = _maxLayer - 1;
             }
         },
         decrementLayer: (delta: number = 1) => {
@@ -91,7 +97,7 @@ export function createNavigationStore({
                 _layer = _minLayer;
             }
             if (_layer > _maxLayer) {
-                _layer = _maxLayer;
+                _layer = _maxLayer - 1;
             }
         },
         get zoom() { return _zoom; },
