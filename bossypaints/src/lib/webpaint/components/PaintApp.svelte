@@ -73,6 +73,15 @@ from BossDB and displays it on the canvas.
 		return APP_CONFIG.lodLevels[APP_CONFIG.lodLevels.length - 1];
 	}
 
+	// Helper function to calculate filmstrip-aligned Z-range for a given Z-coordinate
+	function getFilmstripZRange(z: number): { z_min: number; z_max: number } {
+		const batchSize = APP_CONFIG.filmstrip.batchSize;
+		const batchIndex = Math.floor(z / batchSize);
+		const z_min = batchIndex * batchSize;
+		const z_max = z_min + batchSize;
+		return { z_min, z_max };
+	}
+
 	// Helper function to get chunk coordinates for a given point with specific multiplier
 	function getChunkForPoint(
 		x: number,
@@ -277,9 +286,13 @@ from BossDB and displays it on the canvas.
 	) {
 		if (!imageCache) return;
 
+		// Calculate filmstrip-aligned Z-range for efficient batch loading
+		const filmstripRange = getFilmstripZRange(currentZ);
+
 		console.log('LOAD: Loading visible chunks for:', {
 			center: `x:${centerOfScreen.x.toFixed(0)}, y:${centerOfScreen.y.toFixed(0)}`,
 			z: currentZ,
+			filmstrip: `${filmstripRange.z_min}:${filmstripRange.z_max}`,
 			lod: lodLevel.multiplier
 		});
 
@@ -288,22 +301,23 @@ from BossDB and displays it on the canvas.
 		const newVisibleChunks: ChunkIdentifier[] = [];
 
 		// Convert chunk bounds to ChunkIdentifier format
-		for (const chunk of chunks) {		// Load each chunk for the current layer only
-		const chunkId: ChunkIdentifier = {
-			x_min: chunk.x_min,
-			x_max: chunk.x_max,
-			y_min: chunk.y_min,
-			y_max: chunk.y_max,
-			z_min: currentZ, // Single layer
-			z_max: currentZ + 1, // Single layer
-			lod: resolution
-		};
+		for (const chunk of chunks) {
+			// Load each chunk using filmstrip-aligned Z-range for efficient batch fetching
+			const chunkId: ChunkIdentifier = {
+				x_min: chunk.x_min,
+				x_max: chunk.x_max,
+				y_min: chunk.y_min,
+				y_max: chunk.y_max,
+				z_min: filmstripRange.z_min, // Filmstrip-aligned range
+				z_max: filmstripRange.z_max, // Filmstrip-aligned range
+				lod: resolution
+			};
 
 			newVisibleChunks.push(chunkId);
 
 			// Start loading the chunk (this will use cache if already loaded)
 			console.log(
-				`LOAD: Requesting chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:${chunkId.z_min}`
+				`LOAD: Requesting filmstrip chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:[${chunkId.z_min}-${chunkId.z_max}]`
 			);
 			imageCache.getImage(chunkId).catch((err) => {
 				console.warn(`LOAD: Failed to load chunk:`, err);
@@ -319,15 +333,15 @@ from BossDB and displays it on the canvas.
 			currentZ,
 			lodLevel.multiplier
 		);
-	const centerChunkId: ChunkIdentifier = {
-		x_min: centerChunk.x_min,
-		x_max: centerChunk.x_max,
-		y_min: centerChunk.y_min,
-		y_max: centerChunk.y_max,
-		z_min: currentZ, // Single layer
-		z_max: currentZ + 1, // Single layer
-		lod: resolution
-	};
+		const centerChunkId: ChunkIdentifier = {
+			x_min: centerChunk.x_min,
+			x_max: centerChunk.x_max,
+			y_min: centerChunk.y_min,
+			y_max: centerChunk.y_max,
+			z_min: filmstripRange.z_min, // Filmstrip-aligned range
+			z_max: filmstripRange.z_max, // Filmstrip-aligned range
+			lod: resolution
+		};
 
 		// Preload with a radius of 1 (immediate neighbors)
 		imageCache.preloadNeighboringChunks(centerChunkId, 1);
@@ -357,13 +371,20 @@ from BossDB and displays it on the canvas.
 					renderX,
 					renderY, // Destination position
 					renderWidth,
-					renderHeight // Destination size
+					renderHeight, // Destination size
+					// The de-squishing factor:
+					0,
+					nav.layer * renderWidth,
+					renderWidth,
+					renderHeight // Source size
+					// image.width,
+					// image.height // Source size
 				);
 				continue; // Skip the rest if we found an image
 			}
 
 			// Try to render directly from filmstrip (render-time extraction - much faster!)
-			const filmstripInfo = imageCache.getFilmstripRenderInfo(chunkId);
+			const filmstripInfo = imageCache.getFilmstripRenderInfo(chunkId, nav.layer);
 
 			if (filmstripInfo) {
 				// Calculate render position and size
@@ -379,8 +400,9 @@ from BossDB and displays it on the canvas.
 					renderY, // Destination position
 					renderWidth,
 					renderHeight, // Destination size
-					filmstripInfo.sourceX,
-					filmstripInfo.sourceY, // Source position in filmstrip
+					0,
+					// The de-squishing factor:
+					nav.layer * renderHeight,
 					filmstripInfo.sourceWidth,
 					filmstripInfo.sourceHeight // Source size
 				);
@@ -479,29 +501,34 @@ from BossDB and displays it on the canvas.
 				centerOfScreen.y,
 				nav.layer,
 				currentLODLevel.multiplier
-			);		const centerChunkId: ChunkIdentifier = {
-			x_min: centerChunk.x_min,
-			x_max: centerChunk.x_max,
-			y_min: centerChunk.y_min,
-			y_max: centerChunk.y_max,
-			z_min: nav.layer, // Single layer
-			z_max: nav.layer + 1, // Single layer
-			lod: resolution
-		};
-		// Check if we've moved to a different chunk or changed LOD level or layer
-		const chunkChanged =
-			!lastCenterChunk ||
-			lastCenterChunk.x_min !== centerChunkId.x_min ||
-			lastCenterChunk.y_min !== centerChunkId.y_min ||
-			lastCenterChunk.z_min !== centerChunkId.z_min ||
-			lastCenterChunk.lod !== centerChunkId.lod;
-		if (chunkChanged) {
-			// If LOD level changed, clear old level cache entries
-			if (lastCenterChunk && lastCenterChunk.lod !== centerChunkId.lod) {
-				currentLODMultiplier = centerChunkId.lod;
-				// Optionally clear old LOD level to save memory
-				if (imageCache) {
-					imageCache.evictLODLevel(lastCenterChunk.lod);
+			);
+
+			// Use filmstrip-aligned Z-range for center chunk calculation
+			const filmstripRange = getFilmstripZRange(nav.layer);
+
+			const centerChunkId: ChunkIdentifier = {
+				x_min: centerChunk.x_min,
+				x_max: centerChunk.x_max,
+				y_min: centerChunk.y_min,
+				y_max: centerChunk.y_max,
+				z_min: filmstripRange.z_min, // Filmstrip-aligned range
+				z_max: filmstripRange.z_max, // Filmstrip-aligned range
+				lod: resolution
+			};
+			// Check if we've moved to a different chunk or changed LOD level or layer
+			const chunkChanged =
+				!lastCenterChunk ||
+				lastCenterChunk.x_min !== centerChunkId.x_min ||
+				lastCenterChunk.y_min !== centerChunkId.y_min ||
+				lastCenterChunk.z_min !== centerChunkId.z_min ||
+				lastCenterChunk.lod !== centerChunkId.lod;
+			if (chunkChanged) {
+				// If LOD level changed, clear old level cache entries
+				if (lastCenterChunk && lastCenterChunk.lod !== centerChunkId.lod) {
+					currentLODMultiplier = centerChunkId.lod;
+					// Optionally clear old LOD level to save memory
+					if (imageCache) {
+						imageCache.evictLODLevel(lastCenterChunk.lod);
 					}
 				}
 
@@ -925,8 +952,5 @@ from BossDB and displays it on the canvas.
 
 <Minimap {annotationStore} {nav} />
 
-
-
 <style>
-
 </style>

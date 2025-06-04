@@ -1,6 +1,6 @@
 /**
  * @module ImageCache
- * 
+ *
  * LRU Cache for managing image chunks with different LOD levels.
  * Handles loading, caching, and eviction of image data from BossDB.
  */
@@ -62,7 +62,7 @@ export class ImageCache {
     private bossRemote?: BossRemote;
     private datasetURI?: string;
     private p5Instance?: any;
-    
+
     // Statistics
     private stats = {
         hits: 0,
@@ -96,7 +96,7 @@ export class ImageCache {
             this.enablePreloading = true;
             this.filmstripBatchSize = APP_CONFIG.filmstrip.batchSize;
         }
-        
+
         this.storage = new BrowserStorage();
         this.loadFromPersistentStorage();
     }
@@ -115,7 +115,7 @@ export class ImageCache {
         if (chunk.size) {
             return chunk.size;
         }
-        
+
         // Estimate based on image dimensions if available
         const width = chunk.identifier.x_max - chunk.identifier.x_min;
         const height = chunk.identifier.y_max - chunk.identifier.y_min;
@@ -129,7 +129,7 @@ export class ImageCache {
     get(identifier: ChunkIdentifier): any | null {
         const key = this.generateKey(identifier);
         const cached = this.cache.get(key);
-        
+
         if (cached) {
             // Move to end (most recently used)
             this.cache.delete(key);
@@ -137,7 +137,7 @@ export class ImageCache {
             this.stats.hits++;
             return cached.image;
         }
-        
+
         this.stats.misses++;
         return null;
     }
@@ -197,18 +197,18 @@ export class ImageCache {
     delete(identifier: ChunkIdentifier): boolean {
         const key = this.generateKey(identifier);
         const cached = this.cache.get(key);
-        
+
         if (cached) {
             this.cache.delete(key);
             this.currentSize -= cached.size;
-            
+
             if (this.enablePersistence) {
                 this.saveToPersistentStorage();
             }
-            
+
             return true;
         }
-        
+
         return false;
     }
 
@@ -329,7 +329,7 @@ export class ImageCache {
                 [identifier.y_min, identifier.y_max], // y range
                 [identifier.z_min, identifier.z_max]  // z range
             );
-            
+
             if (blob) {
                 // Convert blob to image data that can be cached
                 // Note: In a real implementation, you'd convert this to a p5.Image or similar
@@ -376,7 +376,7 @@ export class ImageCache {
                 currentSize: this.currentSize,
                 timestamp: Date.now()
             };
-            
+
             // Use localStorage as a fallback since BrowserStorage doesn't have direct setItem
             localStorage.setItem('imageCacheMetadata', JSON.stringify(metadata));
         } catch (error) {
@@ -451,13 +451,13 @@ export class ImageCache {
      */
     getMemoryUsage(): { [key: string]: number } {
         const usage: { [key: string]: number } = {};
-        
+
         for (const chunk of this.cache.values()) {
             const lod = chunk.identifier.lod;
             const key = `LOD${lod}`;
             usage[key] = (usage[key] || 0) + chunk.size;
         }
-        
+
         return usage;
     }
 
@@ -487,7 +487,7 @@ export class ImageCache {
                 [identifier.y_min, identifier.y_max], // y range
                 [identifier.z_min, identifier.z_max]  // z range
             );
-            
+
             if (blob && this.p5Instance) {
                 // Convert blob to p5.Image
                 const url = URL.createObjectURL(blob);
@@ -495,12 +495,12 @@ export class ImageCache {
                     // Clean up the object URL after the image loads
                     URL.revokeObjectURL(url);
                 });
-                
+
                 // Cache the image
                 this.set(identifier, image);
                 return image;
             }
-            
+
             return null;
         } catch (error) {
             console.warn('ImageCache.getImage: Failed to load image:', error);
@@ -568,28 +568,66 @@ export class ImageCache {
      */
     evictLODLevel(multiplier: number): void {
         const toRemove: string[] = [];
-        
+
         for (const [key, chunk] of this.cache.entries()) {
             if (chunk.identifier.lod === multiplier) {
                 toRemove.push(key);
             }
         }
-        
+
         for (const key of toRemove) {
             const chunk = this.cache.get(key)!;
             this.cache.delete(key);
             this.currentSize -= chunk.size;
         }
-        
+
         console.log(`ImageCache: Evicted ${toRemove.length} chunks from LOD level ${multiplier}`);
     }
 
     /**
      * Legacy method: Get filmstrip render info for a chunk
      */
-    getFilmstripRenderInfo(identifier: ChunkIdentifier): any | null {
-        // For now, return null as filmstrip rendering isn't implemented yet
-        return null;
+    getFilmstripRenderInfo(identifier: ChunkIdentifier, targetLayer?: number): any | null {
+        // Check if we have a filmstrip that contains this layer
+        const filmstripKey = this.generateKey(identifier);
+        const filmstripChunk = this.cache.get(filmstripKey);
+        
+        if (!filmstripChunk || !filmstripChunk.image) {
+            return null;
+        }
+        
+        // Use the provided target layer, or default to the first layer in the filmstrip
+        const layerToExtract = targetLayer !== undefined ? targetLayer : identifier.z_min;
+        
+        // Verify that the target layer is within the filmstrip range
+        if (layerToExtract < identifier.z_min || layerToExtract >= identifier.z_max) {
+            console.warn(`Target layer ${layerToExtract} is outside filmstrip range [${identifier.z_min}, ${identifier.z_max})`);
+            return null;
+        }
+        
+        // Calculate the relative position within the filmstrip
+        const layerOffsetInFilmstrip = layerToExtract - identifier.z_min;
+        
+        // Each layer in the filmstrip occupies a vertical slice
+        // Filmstrip image height = imageHeight * batchSize (16 layers stacked vertically)
+        const imageHeight = filmstripChunk.image.height / this.filmstripBatchSize;
+        const imageWidth = filmstripChunk.image.width;
+        
+        // Calculate source coordinates for extracting the specific layer
+        const sourceX = 0; // Always start from left edge
+        const sourceY = layerOffsetInFilmstrip * imageHeight; // Vertical offset for the target layer
+        const sourceWidth = imageWidth; // Full width
+        const sourceHeight = imageHeight; // Single layer height
+        
+        console.log(`Filmstrip extraction: layer ${layerToExtract}, offset ${layerOffsetInFilmstrip}, sourceY=${sourceY}, sourceHeight=${sourceHeight}, total height=${filmstripChunk.image.height}`);
+        
+        return {
+            filmstrip: filmstripChunk.image,
+            sourceX: sourceX,
+            sourceY: sourceY,
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight
+        };
     }
 
     /**
@@ -597,7 +635,7 @@ export class ImageCache {
      */
     async getCombinedStats(): Promise<any> {
         const cacheStats = this.getStatistics();
-        
+
         return {
             cache: cacheStats,
             storage: {
