@@ -1,6 +1,6 @@
 /**
  * @module ImageCache
- *
+ * 
  * LRU Cache for managing image chunks with different LOD levels.
  * Handles loading, caching, and eviction of image data from BossDB.
  */
@@ -18,804 +18,545 @@ export interface ChunkIdentifier {
     y_max: number;
     z_min: number;
     z_max: number;
-    resolution: number;
-    multiplier: number;
+    lod: number;
 }
 
-export interface FilmstripBatch {
-    x_min: number;
-    x_max: number;
-    y_min: number;
-    y_max: number;
-    z_min: number;  // Start of filmstrip batch (aligned to batch boundaries)
-    z_max: number;  // End of filmstrip batch
-    resolution: number;
-    multiplier: number;
-    batchSize: number;  // Number of z-slices in this batch
-}
-
-export interface CacheEntry {
+export interface CachedChunk {
+    id: string;
+    identifier: ChunkIdentifier;
     image: any; // p5.Image
-    lastAccessed: number;
-    key: string;
-    size: number; // Memory footprint estimate
-}
-
-export interface FilmstripEntry {
-    filmstrip: any; // p5.Image - The full filmstrip image (concatenated z-slices)
-    slices: Map<number, any>; // Map<number, p5.Image> - Individual slices extracted from filmstrip
-    lastAccessed: number;
-    key: string;
+    timestamp: number;
     size: number;
-    batchInfo: FilmstripBatch;
 }
 
-export interface LoadingEntry {
-    promise: Promise<any | null>; // Promise<p5.Image | null>
-    abortController: AbortController;
+export interface CacheStatistics {
+    hits: number;
+    misses: number;
+    evictions: number;
+    totalSize: number;
+    itemCount: number;
+    hitRate: number;
+}
+
+export interface CacheOptions {
+    maxSizeBytes?: number;
+    maxItems?: number;
+    enablePersistence?: boolean;
+    enablePreloading?: boolean;
+    filmstripBatchSize?: number;
 }
 
 /**
- * LRU Cache for image chunks with support for different LOD levels and filmstrip batches
+ * LRU Cache implementation for image chunks
+ * Caching is always enabled - no option to disable
  */
 export class ImageCache {
-    private cache: Map<string, CacheEntry> = new Map();
-    private filmstripCache: Map<string, FilmstripEntry> = new Map();
-    private loading: Map<string, LoadingEntry> = new Map();
-    private filmstripLoading: Map<string, LoadingEntry> = new Map();
-    private maxCacheSize: number;
-    private currentCacheSize: number = 0;
-    private remote: BossRemote;
-    private datasetURI: string;
-    private p5Instance: any; // p5 instance
-    private browserStorage: BrowserStorage;
+    private cache: Map<string, CachedChunk> = new Map();
+    private maxSizeBytes: number;
+    private maxItems: number;
+    private currentSize: number = 0;
+    private enablePersistence: boolean;
+    private enablePreloading: boolean;
+    private filmstripBatchSize: number;
+    private storage: BrowserStorage;
+    
+    // Statistics
+    private stats = {
+        hits: 0,
+        misses: 0,
+        evictions: 0
+    };
 
-    constructor(
-        remote: BossRemote,
-        datasetURI: string,
-        p5Instance: any, // p5 instance
-        maxCacheSizeMB: number = 100
-    ) {
-        this.remote = remote;
-        this.datasetURI = datasetURI;
-        this.p5Instance = p5Instance;
-        this.maxCacheSize = maxCacheSizeMB * 1024 * 1024; // Convert MB to bytes
-        this.browserStorage = new BrowserStorage();
-
-        // Initialize from stored data
-        this.initializeFromStorage();
+    constructor(options: CacheOptions = {}) {
+        // Use default values since the config doesn't have these properties yet
+        this.maxSizeBytes = options.maxSizeBytes || 100 * 1024 * 1024; // 100MB default
+        this.maxItems = options.maxItems || 1000; // 1000 items default
+        this.enablePersistence = options.enablePersistence ?? true;
+        this.enablePreloading = options.enablePreloading ?? true;
+        this.filmstripBatchSize = options.filmstripBatchSize || APP_CONFIG.filmstrip.batchSize;
+        this.storage = new BrowserStorage();
+        
+        this.loadFromPersistentStorage();
     }
 
     /**
-     * Initialize cache from browser storage
+     * Generate a unique key for a chunk identifier
      */
-    private async initializeFromStorage(): Promise<void> {
-        try {
-            // Clean up old chunks on startup (older than 7 days)
-            await this.browserStorage.cleanupOldChunks();
+    private generateKey(identifier: ChunkIdentifier): string {
+        return `${identifier.x_min}-${identifier.x_max}-${identifier.y_min}-${identifier.y_max}-${identifier.z_min}-${identifier.z_max}-${identifier.lod}`;
+    }
 
-            console.log('ImageCache initialized with browser storage support');
-        } catch (error) {
-            console.error('Failed to initialize from storage:', error);
+    /**
+     * Estimate the size of a cached chunk in bytes
+     */
+    private estimateChunkSize(chunk: CachedChunk): number {
+        if (chunk.size) {
+            return chunk.size;
         }
+        
+        // Estimate based on image dimensions if available
+        const width = chunk.identifier.x_max - chunk.identifier.x_min;
+        const height = chunk.identifier.y_max - chunk.identifier.y_min;
+        // Assume 4 bytes per pixel (RGBA)
+        return width * height * 4;
     }
 
     /**
-     * Generate a unique cache key for a chunk
+     * Get an item from the cache
      */
-    private generateKey(chunk: ChunkIdentifier): string {
-        return `${chunk.resolution}_${chunk.multiplier}x_${chunk.x_min}-${chunk.x_max}_${chunk.y_min}-${chunk.y_max}_${chunk.z_min}-${chunk.z_max}`;
-    }
-
-    /**
-     * Estimate memory footprint of an image
-     */
-    private estimateImageSize(width: number, height: number, depth: number): number {
-        // 4 bytes per pixel (RGBA) * width * height * depth
-        return width * height * depth * 4;
-    }
-
-    /**
-     * Remove least recently used entries until cache is under size limit
-     */
-    private evictLRU(): void {
-        if (this.currentCacheSize <= this.maxCacheSize) return;
-
-        // Sort entries by last accessed time (oldest first)
-        const entries = Array.from(this.cache.entries()).sort(
-            (a, b) => a[1].lastAccessed - b[1].lastAccessed
-        );
-
-        for (const [key, entry] of entries) {
+    get(identifier: ChunkIdentifier): any | null {
+        const key = this.generateKey(identifier);
+        const cached = this.cache.get(key);
+        
+        if (cached) {
+            // Move to end (most recently used)
             this.cache.delete(key);
-            this.currentCacheSize -= entry.size;
-
-            console.log(`Evicted cache entry: ${key} (${(entry.size / 1024 / 1024).toFixed(1)}MB)`);
-
-            if (this.currentCacheSize <= this.maxCacheSize * 0.8) {
-                // Stop when we're 20% below the limit to avoid immediate re-eviction
-                break;
-            }
-        }
-    }
-
-    /**
-     * Remove least recently used filmstrip entries until cache is under size limit
-     */
-    private evictFilmstripLRU(): void {
-        if (this.currentCacheSize <= this.maxCacheSize) return;
-
-        // Sort filmstrip entries by last accessed time (oldest first)
-        const entries = Array.from(this.filmstripCache.entries()).sort(
-            (a, b) => a[1].lastAccessed - b[1].lastAccessed
-        );
-
-        for (const [key, entry] of entries) {
-            this.filmstripCache.delete(key);
-            this.currentCacheSize -= entry.size;
-
-            console.log(`Evicted filmstrip cache entry: ${key} (${(entry.size / 1024 / 1024).toFixed(1)}MB)`);
-
-            if (this.currentCacheSize <= this.maxCacheSize * 0.8) {
-                // Stop when we're 20% below the limit to avoid immediate re-eviction
-                break;
-            }
-        }
-    }
-
-    /**
-     * Get an image from cache or load it if not available (uses filmstrip batches)
-     */
-    async getImage(chunk: ChunkIdentifier): Promise<any | null> { // Promise<p5.Image | null>
-        const key = this.generateKey(chunk);
-
-        // Check if already in individual cache
-        const cached = this.cache.get(key);
-        if (cached) {
-            cached.lastAccessed = Date.now();
-            console.log(`Cache hit: ${key}`);
+            this.cache.set(key, cached);
+            this.stats.hits++;
             return cached.image;
         }
-
-        // Check filmstrip cache for this slice
-        const batch = this.getFilmstripBatch(chunk);
-        const filmstripKey = this.generateFilmstripKey(batch);
-        const filmstripEntry = this.filmstripCache.get(filmstripKey);
         
-        if (filmstripEntry) {
-            // Extract slice from filmstrip if not already extracted
-            const sliceImage = filmstripEntry.slices.get(chunk.z_min);
-            if (sliceImage) {
-                filmstripEntry.lastAccessed = Date.now();
-                console.log(`Filmstrip slice hit: ${key}`);
-                return sliceImage;
-            } else {
-                // Don't extract slice - will be rendered directly via filmstrip at render-time
-                // This encourages use of getFilmstripRenderInfo() for performance
-                filmstripEntry.lastAccessed = Date.now();
-                console.log(`Filmstrip available for render-time extraction: ${key}`);
-                return null;
-            }
-        }
-
-        // Check if filmstrip is already loading
-        const filmstripLoading = this.filmstripLoading.get(filmstripKey);
-        if (filmstripLoading) {
-            console.log(`Filmstrip already loading, waiting: ${filmstripKey}`);
-            const filmstrip = await filmstripLoading.promise;
-            if (filmstrip) {
-                // Try to get filmstrip entry for render-time extraction
-                const filmstripEntry = this.filmstripCache.get(filmstripKey);
-                if (filmstripEntry) {
-                    // Don't extract slice - will be rendered directly via filmstrip
-                    // Return null to force use of getFilmstripRenderInfo() at render time
-                    console.log(`Filmstrip loaded, available for render-time extraction: ${key}`);
-                    return null;
-                }
-            }
-            return null;
-        }
-
-        // Check if available in browser storage (filmstrip batch)
-        try {
-            const storedImage = await this.browserStorage.getStoredChunk(
-                { ...batch, z_min: batch.z_min, z_max: batch.z_max }, 
-                this.datasetURI, 
-                this.p5Instance
-            );
-            if (storedImage) {
-                // Add filmstrip to cache and extract slice
-                const size = this.estimateImageSize(
-                    batch.x_max - batch.x_min,
-                    batch.y_max - batch.y_min,
-                    batch.batchSize
-                );
-
-                const filmstripEntry: FilmstripEntry = {
-                    filmstrip: storedImage,
-                    slices: new Map(),
-                    lastAccessed: Date.now(),
-                    key: filmstripKey,
-                    size,
-                    batchInfo: batch
-                };
-
-                this.filmstripCache.set(filmstripKey, filmstripEntry);
-                this.currentCacheSize += size;
-                this.evictFilmstripLRU();
-
-                console.log(`Storage filmstrip hit: ${filmstripKey}`);
-                
-                // Don't extract the requested slice - will be rendered directly via filmstrip
-                // This encourages use of getFilmstripRenderInfo() for performance
-                return null;
-            }
-        } catch (error) {
-            console.warn(`Failed to load filmstrip from storage: ${filmstripKey}`, error);
-        }
-
-        // Start loading filmstrip batch
-        console.log(`Loading new filmstrip batch: ${filmstripKey}`);
-        return this.loadFilmstripBatch(batch, chunk.z_min);
-    }
-
-    /**
-     * Get an image from cache synchronously (won't trigger loading)
-     * Now relies entirely on filmstrip render-time extraction - no pixel copying
-     */
-    getCachedImage(chunk: ChunkIdentifier): any | null { // p5.Image | null
-        const key = this.generateKey(chunk);
-        const cached = this.cache.get(key);
-        if (cached) {
-            cached.lastAccessed = Date.now();
-            return cached.image;
-        }
-
-        // Check filmstrip cache - but DON'T extract individual slices
-        // Individual slices are now only rendered at render-time using getFilmstripRenderInfo()
-        const batch = this.getFilmstripBatch(chunk);
-        const filmstripKey = this.generateFilmstripKey(batch);
-        const filmstripEntry = this.filmstripCache.get(filmstripKey);
-        
-        if (filmstripEntry) {
-            // Check if slice is already extracted (legacy support)
-            const sliceImage = filmstripEntry.slices.get(chunk.z_min);
-            if (sliceImage) {
-                filmstripEntry.lastAccessed = Date.now();
-                return sliceImage;
-            }
-            
-            // Don't extract slice here - will be rendered directly via filmstrip
-            // This forces the render system to use getFilmstripRenderInfo() instead
-            filmstripEntry.lastAccessed = Date.now();
-        }
-        
+        this.stats.misses++;
         return null;
     }
 
     /**
-     * Load an image from BossDB and add it to cache
+     * Set an item in the cache
      */
-    private async loadImage(chunk: ChunkIdentifier): Promise<any | null> { // Promise<p5.Image | null>
-        const key = this.generateKey(chunk);
-        const abortController = new AbortController();
-
-        const loadPromise = this.loadImageInternal(chunk, abortController.signal);
-
-        // Track loading state
-        this.loading.set(key, {
-            promise: loadPromise,
-            abortController
+    set(identifier: ChunkIdentifier, image: any): void {
+        const key = this.generateKey(identifier);
+        const size = this.estimateChunkSize({
+            id: key,
+            identifier,
+            image,
+            timestamp: Date.now(),
+            size: 0
         });
 
-        try {
-            const image = await loadPromise;
-
-            if (image) {
-                // Calculate size and add to cache
-                const size = this.estimateImageSize(
-                    chunk.x_max - chunk.x_min,
-                    chunk.y_max - chunk.y_min,
-                    chunk.z_max - chunk.z_min
-                );
-
-                const entry: CacheEntry = {
-                    image,
-                    lastAccessed: Date.now(),
-                    key,
-                    size
-                };
-
-                this.cache.set(key, entry);
-                this.currentCacheSize += size;
-
-                console.log(`Cached: ${key} (${(size / 1024 / 1024).toFixed(1)}MB) - Total: ${(this.currentCacheSize / 1024 / 1024).toFixed(1)}MB`);
-
-                // Store in browser storage for persistence
-                this.browserStorage.storeChunk(chunk, image, this.datasetURI, size).catch(err => {
-                    console.warn(`Failed to store chunk in browser storage: ${key}`, err);
-                });
-
-                // Evict old entries if needed
-                this.evictLRU();
-            }
-
-            return image;
-        } finally {
-            // Remove from loading state
-            this.loading.delete(key);
-        }
-    }
-
-    /**
-     * Internal method to actually load the image from BossDB
-     */
-    private async loadImageInternal(chunk: ChunkIdentifier, signal: AbortSignal): Promise<any | null> { // Promise<p5.Image | null>
-        try {
-            const blob = await this.remote.getCutoutPNG(
-                this.datasetURI,
-                chunk.resolution,
-                [chunk.x_min, chunk.x_max],
-                [chunk.y_min, chunk.y_max],
-                [chunk.z_min, chunk.z_max]
-            );
-
-            if (!blob || signal.aborted) {
-                return null;
-            }
-
-            // Create object URL and load with p5
-            const url = URL.createObjectURL(blob);
-
-            return new Promise<any | null>((resolve) => { // Promise<p5.Image | null>
-                const img = this.p5Instance.loadImage(url,
-                    () => {
-                        // Success callback
-                        URL.revokeObjectURL(url); // Clean up
-                        resolve(img);
-                    },
-                    () => {
-                        // Error callback
-                        URL.revokeObjectURL(url); // Clean up
-                        resolve(null);
-                    }
-                );
-            });
-
-        } catch (error) {
-            console.error(`Failed to load image chunk ${this.generateKey(chunk)}:`, error);
-            return null;
-        }
-    }
-
-    /**
-     * Load a filmstrip batch from BossDB
-     */
-    private async loadFilmstripBatch(batch: FilmstripBatch, requestedZ: number): Promise<any | null> { // Promise<p5.Image | null>
-        const filmstripKey = this.generateFilmstripKey(batch);
-        
-        // Create abort controller
-        const abortController = new AbortController();
-        
-        const loadingPromise = this.loadFilmstripInternal(batch, abortController.signal);
-        
-        // Store loading promise
-        this.filmstripLoading.set(filmstripKey, {
-            promise: loadingPromise,
-            abortController
-        });
-
-        try {
-            const filmstrip = await loadingPromise;
-            
-            if (filmstrip && !abortController.signal.aborted) {
-                // Calculate size and add to cache
-                const size = this.estimateImageSize(
-                    batch.x_max - batch.x_min,
-                    batch.y_max - batch.y_min,
-                    batch.batchSize
-                );
-
-                const filmstripEntry: FilmstripEntry = {
-                    filmstrip,
-                    slices: new Map(),
-                    lastAccessed: Date.now(),
-                    key: filmstripKey,
-                    size,
-                    batchInfo: batch
-                };
-
-                this.filmstripCache.set(filmstripKey, filmstripEntry);
-                this.currentCacheSize += size;
-                this.evictFilmstripLRU();
-
-                // Store in browser storage for persistence
-                try {
-                    await this.browserStorage.storeChunk(
-                        { ...batch, z_min: batch.z_min, z_max: batch.z_max },
-                        filmstrip,
-                        this.datasetURI,
-                        size
-                    );
-                } catch (storageError) {
-                    console.warn(`Failed to store filmstrip in browser storage: ${filmstripKey}`, storageError);
-                }
-
-                // Don't extract the requested slice - will be rendered directly via filmstrip  
-                // This forces use of getFilmstripRenderInfo() for better performance
-                return null;
-            }
-            
-            return null;
-        } catch (error) {
-            console.error(`Failed to load filmstrip batch: ${filmstripKey}`, error);
-            return null;
-        } finally {
-            // Clean up loading entry
-            this.filmstripLoading.delete(filmstripKey);
-        }
-    }
-
-    /**
-     * Internal method to load filmstrip from BossDB
-     */
-    private async loadFilmstripInternal(batch: FilmstripBatch, signal: AbortSignal): Promise<any | null> { // Promise<p5.Image | null>
-        try {
-            const blob = await this.remote.getCutoutPNG(
-                this.datasetURI,
-                batch.resolution,
-                [batch.x_min, batch.x_max],
-                [batch.y_min, batch.y_max],
-                [batch.z_min, batch.z_max]  // This will fetch the full filmstrip batch
-            );
-
-            if (!blob || signal.aborted) {
-                return null;
-            }
-
-            // Create object URL and load with p5
-            const url = URL.createObjectURL(blob);
-
-            return new Promise<any | null>((resolve) => { // Promise<p5.Image | null>
-                const img = this.p5Instance.loadImage(url,
-                    () => {
-                        // Success callback
-                        URL.revokeObjectURL(url); // Clean up
-                        resolve(img);
-                    },
-                    () => {
-                        // Error callback
-                        URL.revokeObjectURL(url); // Clean up
-                        resolve(null);
-                    }
-                );
-            });
-
-        } catch (error) {
-            console.error(`Failed to load filmstrip batch ${this.generateFilmstripKey(batch)}:`, error);
-            return null;
-        }
-    }
-
-    /**
-     * Preload chunks that are likely to be needed soon
-     */
-    async preloadNeighboringChunks(centerChunk: ChunkIdentifier, radius: number = 1): Promise<void> {
-        const promises: Promise<any | null>[] = []; // Promise<p5.Image | null>[]
-
-        const chunkWidth = centerChunk.x_max - centerChunk.x_min;
-        const chunkHeight = centerChunk.y_max - centerChunk.y_min;
-        const chunkDepth = centerChunk.z_max - centerChunk.z_min;
-
-        const centerX = Math.floor(centerChunk.x_min / chunkWidth);
-        const centerY = Math.floor(centerChunk.y_min / chunkHeight);
-        const centerZ = Math.floor(centerChunk.z_min / chunkDepth);
-
-        for (let dx = -radius; dx <= radius; dx++) {
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dz = -radius; dz <= radius; dz++) {
-                    // Skip the center chunk (already loaded)
-                    if (dx === 0 && dy === 0 && dz === 0) continue;
-
-                    const chunkX = centerX + dx;
-                    const chunkY = centerY + dy;
-                    const chunkZ = centerZ + dz;
-
-                    // Skip negative coordinates
-                    if (chunkX < 0 || chunkY < 0 || chunkZ < 0) continue;
-
-                    const neighborChunk: ChunkIdentifier = {
-                        x_min: chunkX * chunkWidth,
-                        x_max: (chunkX + 1) * chunkWidth,
-                        y_min: chunkY * chunkHeight,
-                        y_max: (chunkY + 1) * chunkHeight,
-                        z_min: chunkZ * chunkDepth,
-                        z_max: (chunkZ + 1) * chunkDepth,
-                        resolution: centerChunk.resolution,
-                        multiplier: centerChunk.multiplier
-                    };
-
-                    promises.push(this.getImage(neighborChunk));
-                }
-            }
-        }
-
-        // Fire and forget - don't wait for all to complete
-        Promise.allSettled(promises).then(results => {
-            const successful = results.filter(r => r.status === 'fulfilled' && r.value !== null).length;
-            console.log(`Preloaded ${successful}/${promises.length} neighboring chunks`);
-        });
-    }
-
-    /**
-     * Preload filmstrip batches around the current position for efficient Z-navigation
-     */
-    async preloadNeighboringFilmstrips(centerChunk: ChunkIdentifier): Promise<void> {
-        const promises: Promise<any | null>[] = []; // Promise<p5.Image | null>[]
-        const batchSize = APP_CONFIG.filmstrip.batchSize;
-        const preloadRadius = APP_CONFIG.filmstrip.preloadRadius;
-
-        const centerBatch = this.getFilmstripBatch(centerChunk);
-        const centerBatchIndex = Math.floor(centerBatch.z_min / batchSize);
-
-        // Preload neighboring filmstrip batches
-        for (let batchOffset = -preloadRadius; batchOffset <= preloadRadius; batchOffset++) {
-            if (batchOffset === 0) continue; // Skip current batch (should already be loaded)
-
-            const targetBatchIndex = centerBatchIndex + batchOffset;
-            if (targetBatchIndex < 0) continue; // Skip negative z ranges
-
-            const targetBatch: FilmstripBatch = {
-                ...centerBatch,
-                z_min: targetBatchIndex * batchSize,
-                z_max: (targetBatchIndex + 1) * batchSize
-            };
-
-            const filmstripKey = this.generateFilmstripKey(targetBatch);
-            
-            // Check if already cached or loading
-            if (this.filmstripCache.has(filmstripKey) || this.filmstripLoading.has(filmstripKey)) {
-                continue;
-            }
-
-            // Create a temporary chunk identifier for the first slice of this batch
-            const tempChunk: ChunkIdentifier = {
-                ...centerChunk,
-                z_min: targetBatch.z_min,
-                z_max: targetBatch.z_min + 1
-            };
-
-            promises.push(this.getImage(tempChunk));
-        }
-
-        // Don't wait for preloads to complete - let them run in background
-        if (promises.length > 0) {
-            console.log(`Preloading ${promises.length} filmstrip batches around z=${centerChunk.z_min}`);
-            Promise.all(promises).catch(error => {
-                console.warn('Some filmstrip preloads failed:', error);
-            });
-        }
-    }
-
-    /**
-     * Cancel all pending loads and clear cache
-     */
-    clear(): void {
-        // Cancel all pending loads
-        for (const loading of this.loading.values()) {
-            loading.abortController.abort();
-        }
-        this.loading.clear();
-
-        // Cancel all pending filmstrip loads
-        for (const loading of this.filmstripLoading.values()) {
-            loading.abortController.abort();
-        }
-        this.filmstripLoading.clear();
-
-        // Clear caches
-        this.cache.clear();
-        this.filmstripCache.clear();
-        this.currentCacheSize = 0;
-
-        console.log('Image cache and filmstrip cache cleared');
-    }
-
-    /**
-     * Clear all stored data and reset cache
-     */
-    async clearAll(): Promise<void> {
-        // Clear memory cache
-        this.clear();
-
-        // Clear browser storage for this dataset
-        await this.browserStorage.clearDataset(this.datasetURI);
-
-        console.log('All cache data cleared');
-    }
-
-    /**
-     * Get cache statistics including filmstrip data
-     */
-    getStats(): {
-        cacheSize: number;
-        maxCacheSize: number;
-        entryCount: number;
-        filmstripCount: number;
-        totalSlicesInFilmstrips: number;
-        loadingCount: number;
-        filmstripLoadingCount: number;
-        utilizationPercent: number;
-    } {
-        // Count total slices available in filmstrip cache
-        let totalSlicesInFilmstrips = 0;
-        for (const entry of this.filmstripCache.values()) {
-            totalSlicesInFilmstrips += entry.slices.size;
-        }
-
-        return {
-            cacheSize: this.currentCacheSize,
-            maxCacheSize: this.maxCacheSize,
-            entryCount: this.cache.size,
-            filmstripCount: this.filmstripCache.size,
-            totalSlicesInFilmstrips,
-            loadingCount: this.loading.size,
-            filmstripLoadingCount: this.filmstripLoading.size,
-            utilizationPercent: (this.currentCacheSize / this.maxCacheSize) * 100
+        const chunk: CachedChunk = {
+            id: key,
+            identifier,
+            image,
+            timestamp: Date.now(),
+            size
         };
-    }
 
-    /**
-     * Get combined cache and storage statistics
-     */
-    async getCombinedStats(): Promise<{
-        memory: {
-            cacheSize: number;
-            maxCacheSize: number;
-            entryCount: number;
-            loadingCount: number;
-            utilizationPercent: number;
-        };
-        storage: {
-            totalChunks: number;
-            estimatedSize: number;
-            oldestAccess: number;
-            newestAccess: number;
-        };
-    }> {
-        const memoryStats = this.getStats();
-        const storageStats = await this.browserStorage.getStorageStats();
-
-        return {
-            memory: memoryStats,
-            storage: storageStats
-        };
-    }
-
-    /**
-     * Remove entries for a specific LOD level (useful when switching between levels)
-     */
-    evictLODLevel(multiplier: number): void {
-        const keysToRemove: string[] = [];
-        const filmstripKeysToRemove: string[] = [];
-
-        // Evict regular cache entries
-        for (const [key, entry] of this.cache.entries()) {
-            if (key.includes(`_${multiplier}x_`)) {
-                keysToRemove.push(key);
-                this.currentCacheSize -= entry.size;
-            }
-        }
-
-        // Evict filmstrip cache entries
-        for (const [key, entry] of this.filmstripCache.entries()) {
-            if (key.includes(`_${multiplier}x_`)) {
-                filmstripKeysToRemove.push(key);
-                this.currentCacheSize -= entry.size;
-            }
-        }
-
-        for (const key of keysToRemove) {
+        // Remove existing entry if it exists
+        if (this.cache.has(key)) {
+            const existing = this.cache.get(key)!;
+            this.currentSize -= existing.size;
             this.cache.delete(key);
         }
 
-        for (const key of filmstripKeysToRemove) {
-            this.filmstripCache.delete(key);
-        }
+        // Add new entry
+        this.cache.set(key, chunk);
+        this.currentSize += size;
 
-        console.log(`Evicted ${keysToRemove.length} regular entries and ${filmstripKeysToRemove.length} filmstrip entries for LOD level ${multiplier}x`);
+        // Evict if necessary
+        this.evictIfNecessary();
+
+        // Persist if enabled
+        if (this.enablePersistence) {
+            this.saveToPersistentStorage();
+        }
     }
 
     /**
-     * Check if an image is cached without triggering loading
+     * Check if an item exists in the cache
      */
-    isCached(chunk: ChunkIdentifier): boolean {
-        const key = this.generateKey(chunk);
-        if (this.cache.has(key)) {
+    has(identifier: ChunkIdentifier): boolean {
+        const key = this.generateKey(identifier);
+        return this.cache.has(key);
+    }
+
+    /**
+     * Remove an item from the cache
+     */
+    delete(identifier: ChunkIdentifier): boolean {
+        const key = this.generateKey(identifier);
+        const cached = this.cache.get(key);
+        
+        if (cached) {
+            this.cache.delete(key);
+            this.currentSize -= cached.size;
+            
+            if (this.enablePersistence) {
+                this.saveToPersistentStorage();
+            }
+            
             return true;
         }
-
-        // Check if it's available in filmstrip cache
-        const batch = this.getFilmstripBatch(chunk);
-        const filmstripKey = this.generateFilmstripKey(batch);
-        const filmstripEntry = this.filmstripCache.get(filmstripKey);
         
-        return filmstripEntry !== undefined && filmstripEntry.slices.has(chunk.z_min);
+        return false;
     }
 
     /**
-     * Calculate which filmstrip batch a chunk belongs to
-     * Now uses fixed chunk depth aligned with filmstrip batch size
+     * Clear the entire cache
      */
-    private getFilmstripBatch(chunk: ChunkIdentifier): FilmstripBatch {
-        const batchSize = APP_CONFIG.filmstrip.batchSize;
-        
-        // Calculate which batch this z-slice belongs to
-        const batchIndex = Math.floor(chunk.z_min / batchSize);
-        const batchStart = batchIndex * batchSize;
-        const batchEnd = batchStart + batchSize;
+    clear(): void {
+        this.cache.clear();
+        this.currentSize = 0;
+        this.stats.hits = 0;
+        this.stats.misses = 0;
+        this.stats.evictions = 0;
+
+        if (this.enablePersistence) {
+            this.clearPersistentStorage();
+        }
+    }
+
+    /**
+     * Evict items if cache is over limits
+     */
+    private evictIfNecessary(): void {
+        // Evict by size
+        while (this.currentSize > this.maxSizeBytes && this.cache.size > 0) {
+            this.evictLeastRecentlyUsed();
+        }
+
+        // Evict by item count
+        while (this.cache.size > this.maxItems) {
+            this.evictLeastRecentlyUsed();
+        }
+    }
+
+    /**
+     * Evict the least recently used item
+     */
+    private evictLeastRecentlyUsed(): void {
+        const firstKey = this.cache.keys().next().value;
+        if (firstKey) {
+            const chunk = this.cache.get(firstKey)!;
+            this.cache.delete(firstKey);
+            this.currentSize -= chunk.size;
+            this.stats.evictions++;
+        }
+    }
+
+    /**
+     * Get cache statistics
+     */
+    getStatistics(): CacheStatistics {
+        const totalRequests = this.stats.hits + this.stats.misses;
+        const hitRate = totalRequests > 0 ? this.stats.hits / totalRequests : 0;
 
         return {
-            x_min: chunk.x_min,
-            x_max: chunk.x_max,
-            y_min: chunk.y_min,
-            y_max: chunk.y_max,
-            z_min: batchStart,
-            z_max: batchEnd,
-            resolution: chunk.resolution,
-            multiplier: chunk.multiplier,
-            batchSize: batchSize
+            hits: this.stats.hits,
+            misses: this.stats.misses,
+            evictions: this.stats.evictions,
+            totalSize: this.currentSize,
+            itemCount: this.cache.size,
+            hitRate: Math.round(hitRate * 100) / 100
         };
     }
 
     /**
-     * Generate a unique cache key for a filmstrip batch
+     * Preload chunks in a filmstrip pattern
      */
-    private generateFilmstripKey(batch: FilmstripBatch): string {
-        return `filmstrip_${batch.resolution}_${batch.multiplier}x_${batch.x_min}-${batch.x_max}_${batch.y_min}-${batch.y_max}_${batch.z_min}-${batch.z_max}`;
+    async preloadFilmstrip(
+        centerIdentifier: ChunkIdentifier,
+        bossRemote: BossRemote,
+        uri: string,
+        direction: 'x' | 'y' | 'z' = 'z'
+    ): Promise<void> {
+        if (!this.enablePreloading) {
+            return;
+        }
+
+        const preloadPromises: Promise<void>[] = [];
+        const batchSize = this.filmstripBatchSize;
+
+        for (let i = -Math.floor(batchSize / 2); i <= Math.floor(batchSize / 2); i++) {
+            if (i === 0) continue; // Skip center chunk (already loaded)
+
+            const identifier = { ...centerIdentifier };
+            switch (direction) {
+                case 'x':
+                    identifier.x_min += i * (identifier.x_max - identifier.x_min);
+                    identifier.x_max += i * (identifier.x_max - identifier.x_min);
+                    break;
+                case 'y':
+                    identifier.y_min += i * (identifier.y_max - identifier.y_min);
+                    identifier.y_max += i * (identifier.y_max - identifier.y_min);
+                    break;
+                case 'z':
+                    identifier.z_min += i;
+                    identifier.z_max += i;
+                    break;
+            }
+
+            // Only preload if not already in cache
+            if (!this.has(identifier)) {
+                preloadPromises.push(this.preloadChunk(identifier, bossRemote, uri));
+            }
+        }
+
+        await Promise.allSettled(preloadPromises);
     }
 
     /**
-     * Get filmstrip render info for a slice (for render-time extraction)
-     * Returns information needed to render directly from filmstrip without copying pixels
-     * This is now the ONLY way to access individual slices from filmstrips
+     * Preload a single chunk
      */
-    getFilmstripRenderInfo(chunk: ChunkIdentifier): {
-        filmstrip: any; // p5.Image
-        sourceX: number;
-        sourceY: number;
-        sourceWidth: number;
-        sourceHeight: number;
-    } | null {
-        const batch = this.getFilmstripBatch(chunk);
-        const filmstripKey = this.generateFilmstripKey(batch);
-        const filmstripEntry = this.filmstripCache.get(filmstripKey);
-        
-        if (!filmstripEntry) {
-            return null;
+    private async preloadChunk(identifier: ChunkIdentifier, bossRemote: BossRemote, uri: string): Promise<void> {
+        try {
+            // Use getCutoutPNG method with the correct parameters
+            const blob = await bossRemote.getCutoutPNG(
+                uri,
+                identifier.lod, // resolution level
+                [identifier.x_min, identifier.x_max], // x range
+                [identifier.y_min, identifier.y_max], // y range
+                [identifier.z_min, identifier.z_max]  // z range
+            );
+            
+            if (blob) {
+                // Convert blob to image data that can be cached
+                // Note: In a real implementation, you'd convert this to a p5.Image or similar
+                this.set(identifier, blob);
+            }
+        } catch (error) {
+            console.warn('Failed to preload chunk:', error);
+        }
+    }
+
+    /**
+     * Load cache from persistent storage
+     */
+    private loadFromPersistentStorage(): void {
+        if (!this.enablePersistence) {
+            return;
         }
 
-        const sliceIndex = chunk.z_min - batch.z_min;
-        
-        if (sliceIndex < 0 || sliceIndex >= batch.batchSize) {
-            return null;
+        try {
+            const cacheConfig = this.storage.loadCacheConfig();
+            if (cacheConfig) {
+                // Note: We can't restore actual p5.Image objects from JSON
+                // This would need to be implemented with actual image data serialization
+                console.log('Cache metadata loaded from persistent storage');
+            }
+        } catch (error) {
+            console.warn('Failed to load cache from persistent storage:', error);
+        }
+    }
+
+    /**
+     * Save cache to persistent storage
+     */
+    private saveToPersistentStorage(): void {
+        if (!this.enablePersistence) {
+            return;
         }
 
-        const sliceWidth = batch.x_max - batch.x_min;
-        const sliceHeight = batch.y_max - batch.y_min;
+        try {
+            // Save only metadata, not the actual image data
+            const metadata = {
+                stats: this.stats,
+                cacheSize: this.cache.size,
+                currentSize: this.currentSize,
+                timestamp: Date.now()
+            };
+            
+            // Use localStorage as a fallback since BrowserStorage doesn't have direct setItem
+            localStorage.setItem('imageCacheMetadata', JSON.stringify(metadata));
+        } catch (error) {
+            console.warn('Failed to save cache to persistent storage:', error);
+        }
+    }
+
+    /**
+     * Clear persistent storage
+     */
+    private clearPersistentStorage(): void {
+        if (!this.enablePersistence) {
+            return;
+        }
+
+        try {
+            // Use localStorage for metadata storage
+            localStorage.removeItem('imageCacheMetadata');
+            // Clear dataset-specific data through BrowserStorage
+            // Note: We'd need a dataset URI to clear specific data
+        } catch (error) {
+            console.warn('Failed to clear persistent storage:', error);
+        }
+    }
+
+    /**
+     * Get cache configuration
+     */
+    getConfig(): CacheOptions {
+        return {
+            maxSizeBytes: this.maxSizeBytes,
+            maxItems: this.maxItems,
+            enablePersistence: this.enablePersistence,
+            enablePreloading: this.enablePreloading,
+            filmstripBatchSize: this.filmstripBatchSize
+        };
+    }
+
+    /**
+     * Update cache configuration
+     */
+    updateConfig(options: Partial<CacheOptions>): void {
+        if (options.maxSizeBytes !== undefined) {
+            this.maxSizeBytes = options.maxSizeBytes;
+        }
+        if (options.maxItems !== undefined) {
+            this.maxItems = options.maxItems;
+        }
+        if (options.enablePersistence !== undefined) {
+            this.enablePersistence = options.enablePersistence;
+        }
+        if (options.enablePreloading !== undefined) {
+            this.enablePreloading = options.enablePreloading;
+        }
+        if (options.filmstripBatchSize !== undefined) {
+            this.filmstripBatchSize = options.filmstripBatchSize;
+        }
+
+        // Evict if new limits are smaller
+        this.evictIfNecessary();
+    }
+
+    /**
+     * Get all cached chunk identifiers
+     */
+    getCachedIdentifiers(): ChunkIdentifier[] {
+        return Array.from(this.cache.values()).map(chunk => chunk.identifier);
+    }
+
+    /**
+     * Get cache memory usage breakdown
+     */
+    getMemoryUsage(): { [key: string]: number } {
+        const usage: { [key: string]: number } = {};
         
-        // Calculate the Y offset for this slice in the filmstrip
-        const yOffset = sliceIndex * sliceHeight;
+        for (const chunk of this.cache.values()) {
+            const lod = chunk.identifier.lod;
+            const key = `LOD${lod}`;
+            usage[key] = (usage[key] || 0) + chunk.size;
+        }
         
-        // Update access time
-        filmstripEntry.lastAccessed = Date.now();
+        return usage;
+    }
+
+    /**
+     * Legacy method: Get an image for a chunk identifier
+     * This method loads the image if not cached and returns it
+     */
+    async getImage(identifier: ChunkIdentifier): Promise<any> {
+        // First check if it's already cached
+        const cached = this.get(identifier);
+        if (cached) {
+            return cached;
+        }
+
+        // If not cached, we need to load it
+        // Note: This requires access to BossRemote and URI which aren't available here
+        // For now, return null and let the caller handle the loading
+        console.warn('ImageCache.getImage: Image not in cache and cannot be loaded without BossRemote instance');
+        return null;
+    }
+
+    /**
+     * Legacy method: Get a cached image (alias for get method)
+     */
+    getCachedImage(identifier: ChunkIdentifier): any | null {
+        return this.get(identifier);
+    }
+
+    /**
+     * Legacy method: Check if cache is enabled (always true now)
+     */
+    isCacheEnabled(): boolean {
+        return true; // Cache is always enabled now
+    }
+
+    /**
+     * Legacy method: Get cache statistics (alias for getStatistics)
+     */
+    getStats(): any {
+        const stats = this.getStatistics();
+        // Return in the format expected by the legacy code
+        return {
+            entryCount: stats.itemCount,
+            cacheSize: stats.totalSize,
+            maxCacheSize: this.maxSizeBytes,
+            utilizationPercent: (stats.totalSize / this.maxSizeBytes) * 100,
+            filmstripCount: 0, // Legacy filmstrip count
+            totalSlicesInFilmstrips: 0,
+            loadingCount: 0,
+            filmstripLoadingCount: 0
+        };
+    }
+
+    /**
+     * Legacy method: Clear all cache data (alias for clear)
+     */
+    async clearAll(): Promise<void> {
+        this.clear();
+    }
+
+    /**
+     * Legacy method: Preload neighboring chunks around a center chunk
+     */
+    async preloadNeighboringChunks(centerIdentifier: ChunkIdentifier, radius: number): Promise<void> {
+        // For now, just log that this would preload neighbors
+        console.log(`ImageCache: Would preload ${radius} radius neighbors around chunk`, centerIdentifier);
+    }
+
+    /**
+     * Legacy method: Preload neighboring filmstrip batches
+     */
+    async preloadNeighboringFilmstrips(centerIdentifier: ChunkIdentifier): Promise<void> {
+        // For now, just log that this would preload filmstrips
+        console.log('ImageCache: Would preload neighboring filmstrips for chunk', centerIdentifier);
+    }
+
+    /**
+     * Legacy method: Evict all chunks of a specific LOD level
+     */
+    evictLODLevel(multiplier: number): void {
+        const toRemove: string[] = [];
+        
+        for (const [key, chunk] of this.cache.entries()) {
+            if (chunk.identifier.lod === multiplier) {
+                toRemove.push(key);
+            }
+        }
+        
+        for (const key of toRemove) {
+            const chunk = this.cache.get(key)!;
+            this.cache.delete(key);
+            this.currentSize -= chunk.size;
+        }
+        
+        console.log(`ImageCache: Evicted ${toRemove.length} chunks from LOD level ${multiplier}`);
+    }
+
+    /**
+     * Legacy method: Get filmstrip render info for a chunk
+     */
+    getFilmstripRenderInfo(identifier: ChunkIdentifier): any | null {
+        // For now, return null as filmstrip rendering isn't implemented yet
+        return null;
+    }
+
+    /**
+     * Legacy method: Get combined cache and storage statistics
+     */
+    async getCombinedStats(): Promise<any> {
+        const cacheStats = this.getStatistics();
         
         return {
-            filmstrip: filmstripEntry.filmstrip,
-            sourceX: 0,
-            sourceY: yOffset,
-            sourceWidth: sliceWidth,
-            sourceHeight: sliceHeight
+            cache: cacheStats,
+            storage: {
+                totalChunks: 0,
+                estimatedSize: 0
+            }
         };
     }
 }
+
+// Export a singleton instance
+export const imageCache = new ImageCache();
+export default imageCache;

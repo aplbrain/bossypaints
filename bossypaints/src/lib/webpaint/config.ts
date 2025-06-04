@@ -48,7 +48,7 @@ const APP_CONFIG = {
      */
     fixedChunkSize: {
         width: 256,   // Fixed chunk width in pixels
-        height: 256,  // Fixed chunk height in pixels  
+        height: 256,  // Fixed chunk height in pixels
         depth: 16     // Fixed chunk depth in Z-slices
     },
 

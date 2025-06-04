@@ -236,8 +236,28 @@ from BossDB and displays it on the canvas.
 	// Function to clear the cache
 	function clearCache() {
 		if (imageCache) {
-			imageCache.clearAll();
-			console.log('Cache cleared successfully');
+			console.log('UI: Clear cache button clicked, clearing cache and reloading data');
+			imageCache
+				.clearAll()
+				.then(() => {
+					// Force reload of current view after cache is cleared
+					const centerOfScreen = nav.sceneToData(window.innerWidth / 2, window.innerHeight / 2);
+					const currentLODLevel = getCurrentLODLevel(nav.zoom);
+
+					// Clear our tracking variables to force reload
+					lastCenterChunk = null;
+					currentVisibleChunks = [];
+					loadedChunks.clear();
+
+					// Force reload visible chunks for current view
+					console.log('UI: Cache cleared, forcing reload of visible chunks');
+					loadVisibleChunks(centerOfScreen, nav.layer, currentLODLevel);
+
+					console.log('UI: Cache cleared and view reload triggered');
+				})
+				.catch((error) => {
+					console.error('UI: Error clearing cache:', error);
+				});
 		}
 	}
 
@@ -256,6 +276,12 @@ from BossDB and displays it on the canvas.
 		lodLevel: any
 	) {
 		if (!imageCache) return;
+
+		console.log('LOAD: Loading visible chunks for:', {
+			center: `x:${centerOfScreen.x.toFixed(0)}, y:${centerOfScreen.y.toFixed(0)}`,
+			z: currentZ,
+			lod: lodLevel.multiplier
+		});
 
 		// Get all chunks that should be visible
 		const chunks = getAllNeighboringChunks(centerOfScreen, currentZ, lodLevel.multiplier);
@@ -278,8 +304,11 @@ from BossDB and displays it on the canvas.
 			newVisibleChunks.push(chunkId);
 
 			// Start loading the chunk (this will use cache if already loaded)
+			console.log(
+				`LOAD: Requesting chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:${chunkId.z_min}`
+			);
 			imageCache.getImage(chunkId).catch((err) => {
-				console.warn(`Failed to load chunk:`, err);
+				console.warn(`LOAD: Failed to load chunk:`, err);
 			});
 		}
 
@@ -333,30 +362,65 @@ from BossDB and displays it on the canvas.
 					renderWidth,
 					renderHeight // Destination size
 				);
-			} else {
-				// Try to render directly from filmstrip (render-time extraction - much faster!)
-				const filmstripInfo = imageCache.getFilmstripRenderInfo(chunkId);
+				continue; // Skip the rest if we found an image
+			}
 
-				if (filmstripInfo) {
-					// Calculate render position and size
-					const renderX = chunkId.x_min;
-					const renderY = chunkId.y_min;
-					const renderWidth = chunkId.x_max - chunkId.x_min;
-					const renderHeight = chunkId.y_max - chunkId.y_min;
+			// Try to render directly from filmstrip (render-time extraction - much faster!)
+			const filmstripInfo = imageCache.getFilmstripRenderInfo(chunkId);
 
-					// Render directly from filmstrip using source coordinates
-					s.image(
-						filmstripInfo.filmstrip,
-						renderX,
-						renderY, // Destination position
-						renderWidth,
-						renderHeight, // Destination size
-						filmstripInfo.sourceX,
-						filmstripInfo.sourceY, // Source position in filmstrip
-						filmstripInfo.sourceWidth,
-						filmstripInfo.sourceHeight // Source size
-					);
-				}
+			if (filmstripInfo) {
+				// Calculate render position and size
+				const renderX = chunkId.x_min;
+				const renderY = chunkId.y_min;
+				const renderWidth = chunkId.x_max - chunkId.x_min;
+				const renderHeight = chunkId.y_max - chunkId.y_min;
+
+				// Render directly from filmstrip using source coordinates
+				s.image(
+					filmstripInfo.filmstrip,
+					renderX,
+					renderY, // Destination position
+					renderWidth,
+					renderHeight, // Destination size
+					filmstripInfo.sourceX,
+					filmstripInfo.sourceY, // Source position in filmstrip
+					filmstripInfo.sourceWidth,
+					filmstripInfo.sourceHeight // Source size
+				);
+				continue; // Skip the rest if we rendered from filmstrip
+			}
+
+			// If we get here, neither the image nor filmstrip was available
+			// When cache is disabled, we need to initiate loading without waiting
+			if (!imageCache.isCacheEnabled()) {
+				// Display a loading indicator or placeholder
+				const renderX = chunkId.x_min;
+				const renderY = chunkId.y_min;
+				const renderWidth = chunkId.x_max - chunkId.x_min;
+				const renderHeight = chunkId.y_max - chunkId.y_min;
+
+				// Draw a subtle loading indicator rectangle
+				s.push();
+				s.noFill();
+				s.stroke(100, 100, 255, 100); // Light blue with low opacity
+				s.strokeWeight(1);
+				s.rect(renderX, renderY, renderWidth, renderHeight);
+
+				// Add a small "loading" text
+				s.noStroke();
+				s.fill(200, 200, 255);
+				s.textSize(12);
+				s.textAlign(s.CENTER, s.CENTER);
+				s.text('loading...', renderX + renderWidth / 2, renderY + renderHeight / 2);
+				s.pop();
+
+				// Force immediate loading attempt for this chunk
+				console.log(
+					`Force loading chunk because cache is disabled: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:${chunkId.z_min}`
+				);
+				imageCache.getImage(chunkId).catch((err) => {
+					console.warn('Failed to load chunk:', err);
+				});
 			}
 		}
 	}
@@ -612,7 +676,7 @@ from BossDB and displays it on the canvas.
 					const stats = imageCache.getStats();
 					s.fill(255);
 					s.text(
-						`Memory Cache: ${stats.entryCount} entries, ${(stats.cacheSize / 1024 / 1024).toFixed(1)}MB / ${(stats.maxCacheSize / 1024 / 1024).toFixed(0)}MB (${stats.utilizationPercent.toFixed(1)}%)`,
+						`Memory Cache: ${imageCache.isCacheEnabled() ? 'ENABLED' : 'DISABLED'}, ${stats.entryCount} entries, ${(stats.cacheSize / 1024 / 1024).toFixed(1)}MB / ${(stats.maxCacheSize / 1024 / 1024).toFixed(0)}MB (${stats.utilizationPercent.toFixed(1)}%)`,
 						10,
 						80
 					);
@@ -765,8 +829,31 @@ from BossDB and displays it on the canvas.
 		// Function to clear the cache
 		function clearCache() {
 			if (imageCache) {
-				imageCache.clearAll();
-				console.log('Cache cleared successfully');
+				console.log('UI: Clear cache button clicked, clearing cache and reloading data');
+				imageCache
+					.clearAll()
+					.then(() => {
+						// Force reload of current view after cache is cleared
+						const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
+						const currentLODLevel = getCurrentLODLevel(nav.zoom);
+
+						// Clear our tracking variables to force reload
+						lastCenterChunk = null;
+						currentVisibleChunks = [];
+						loadedChunks.clear();
+
+						// Force reload visible chunks for current view
+						console.log('UI: Cache cleared, forcing reload of visible chunks');
+						loadVisibleChunks(centerOfScreen, nav.layer, currentLODLevel);
+
+						// Force refresh of the UI
+						s.redraw();
+
+						console.log('UI: Cache cleared and view reload triggered');
+					})
+					.catch((error) => {
+						console.error('UI: Error clearing cache:', error);
+					});
 			}
 		}
 
@@ -845,46 +932,8 @@ from BossDB and displays it on the canvas.
 
 <Minimap {annotationStore} {nav} />
 
-<!-- Debug UI overlay -->
-{#if debugEnabled}
-	<div class="debug-overlay">
-		<button
-			class="cache-clear-button"
-			on:click={clearCache}
-			title="Clear all cached images and browser storage"
-		>
-			Clear Cache
-		</button>
-	</div>
-{/if}
+
 
 <style>
-	.debug-overlay {
-		position: fixed;
-		top: 120px;
-		left: 10px;
-		z-index: 1000;
-		pointer-events: none; /* Allow clicks to pass through the overlay */
-	}
 
-	.cache-clear-button {
-		pointer-events: auto; /* Re-enable clicks for the button */
-		background-color: rgba(255, 100, 100, 0.8);
-		color: white;
-		border: 1px solid rgba(255, 255, 255, 0.5);
-		border-radius: 4px;
-		padding: 6px 12px;
-		font-size: 12px;
-		font-family: monospace;
-		cursor: pointer;
-		transition: background-color 0.2s;
-	}
-
-	.cache-clear-button:hover {
-		background-color: rgba(255, 50, 50, 0.9);
-	}
-
-	.cache-clear-button:active {
-		background-color: rgba(255, 0, 0, 1);
-	}
 </style>

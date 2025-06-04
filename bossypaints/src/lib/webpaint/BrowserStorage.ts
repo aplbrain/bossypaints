@@ -32,7 +32,7 @@ export interface CacheConfig {
  */
 export class BrowserStorage {
     private dbName = 'BossyPaintsCache';
-    private dbVersion = 1;
+    private dbVersion = 2;
     private db: IDBDatabase | null = null;
     private storeName = 'imageChunks';
 
@@ -54,7 +54,8 @@ export class BrowserStorage {
 
             request.onsuccess = () => {
                 this.db = request.result;
-                console.log('IndexedDB initialized successfully');
+                console.log('IndexedDB initialized successfully, version:', this.db.version);
+                console.log('Object stores:', Array.from(this.db.objectStoreNames));
                 resolve();
             };
 

@@ -48,14 +48,46 @@ class BossRemote {
 
 		/:resolution/:x_range/:y_range/:z_range/:time_range/?iso=:iso
 		*/
-		return fetch(
-			`${this.protocol}://${this.host}/v1/cutout/${uri}/${res}/${xs.join(':')}/${ys.join(':')}/${zs.join(':')}/`,
-			{
-				headers: { Authorization: `Token ${this.token}`, Accept: 'image/jpeg' }
+		const url = `${this.protocol}://${this.host}/v1/cutout/${uri}/${res}/${xs.join(':')}/${ys.join(':')}/${zs.join(':')}/`;
+		const requestTime = Date.now();
+		const requestId = Math.random().toString(36).substring(2, 8);
+
+		console.log(`NETWORK REQUEST [${requestId}]: Fetching from ${url} (${zs[1] - zs[0]} z-slices)`);
+
+		try {
+			// Try to request with both PNG and JPEG formats to ensure compatibility
+			const headers = {
+				Authorization: `Token ${this.token}`,
+				Accept: 'image/png, image/jpeg' // Accept both PNG and JPEG formats
+			};
+
+			const response = await fetch(url, {
+				headers: headers,
+				// Add cache busting to prevent browser caching
+				cache: 'no-store'
+			});
+
+			if (!response.ok) {
+				console.error(`NETWORK ERROR [${requestId}]: ${response.status} ${response.statusText} from ${url}`);
+				return null;
 			}
-		)
-			.then((res) => res.blob())
-			.catch((err) => console.error(err));
+
+			const contentType = response.headers.get('content-type');
+			const blob = await response.blob();
+
+			if (!blob || blob.size === 0) {
+				console.error(`NETWORK ERROR [${requestId}]: Received empty blob from ${url} (content-type: ${contentType})`);
+				return null;
+			}
+
+			const duration = Date.now() - requestTime;
+			console.log(`NETWORK SUCCESS [${requestId}]: Received ${(blob.size / 1024).toFixed(1)}KB from ${url} (content-type: ${contentType}, took ${duration}ms)`);
+			return blob;
+		} catch (err) {
+			const duration = Date.now() - requestTime;
+			console.error(`NETWORK FAILURE [${requestId}]: Error fetching from ${url} after ${duration}ms`, err);
+			return null;
+		}
 	}
 
 	async getCoordFrame(coordFrameName: string) {
