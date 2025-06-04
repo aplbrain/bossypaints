@@ -59,6 +59,9 @@ export class ImageCache {
     private enablePreloading: boolean;
     private filmstripBatchSize: number;
     private storage: BrowserStorage;
+    private bossRemote?: BossRemote;
+    private datasetURI?: string;
+    private p5Instance?: any;
     
     // Statistics
     private stats = {
@@ -67,15 +70,34 @@ export class ImageCache {
         evictions: 0
     };
 
-    constructor(options: CacheOptions = {}) {
-        // Use default values since the config doesn't have these properties yet
-        this.maxSizeBytes = options.maxSizeBytes || 100 * 1024 * 1024; // 100MB default
-        this.maxItems = options.maxItems || 1000; // 1000 items default
-        this.enablePersistence = options.enablePersistence ?? true;
-        this.enablePreloading = options.enablePreloading ?? true;
-        this.filmstripBatchSize = options.filmstripBatchSize || APP_CONFIG.filmstrip.batchSize;
-        this.storage = new BrowserStorage();
+    constructor(
+        bossRemoteOrOptions?: BossRemote | CacheOptions,
+        datasetURI?: string,
+        p5Instance?: any,
+        maxSizeMB?: number
+    ) {
+        // Handle both old and new constructor signatures
+        if (bossRemoteOrOptions && typeof bossRemoteOrOptions === 'object' && !('protocol' in bossRemoteOrOptions)) {
+            // New constructor with options object
+            const options = bossRemoteOrOptions as CacheOptions;
+            this.maxSizeBytes = options.maxSizeBytes || 100 * 1024 * 1024; // 100MB default
+            this.maxItems = options.maxItems || 1000; // 1000 items default
+            this.enablePersistence = options.enablePersistence ?? true;
+            this.enablePreloading = options.enablePreloading ?? true;
+            this.filmstripBatchSize = options.filmstripBatchSize || APP_CONFIG.filmstrip.batchSize;
+        } else {
+            // Legacy constructor with individual parameters
+            this.bossRemote = bossRemoteOrOptions as BossRemote;
+            this.datasetURI = datasetURI;
+            this.p5Instance = p5Instance;
+            this.maxSizeBytes = (maxSizeMB || 100) * 1024 * 1024; // Convert MB to bytes
+            this.maxItems = 1000;
+            this.enablePersistence = true;
+            this.enablePreloading = true;
+            this.filmstripBatchSize = APP_CONFIG.filmstrip.batchSize;
+        }
         
+        this.storage = new BrowserStorage();
         this.loadFromPersistentStorage();
     }
 
@@ -451,10 +473,39 @@ export class ImageCache {
         }
 
         // If not cached, we need to load it
-        // Note: This requires access to BossRemote and URI which aren't available here
-        // For now, return null and let the caller handle the loading
-        console.warn('ImageCache.getImage: Image not in cache and cannot be loaded without BossRemote instance');
-        return null;
+        if (!this.bossRemote || !this.datasetURI) {
+            console.warn('ImageCache.getImage: Image not in cache and BossRemote/URI not available for loading');
+            return null;
+        }
+
+        try {
+            // Use getCutoutPNG method to load the image
+            const blob = await this.bossRemote.getCutoutPNG(
+                this.datasetURI,
+                identifier.lod, // resolution level
+                [identifier.x_min, identifier.x_max], // x range
+                [identifier.y_min, identifier.y_max], // y range
+                [identifier.z_min, identifier.z_max]  // z range
+            );
+            
+            if (blob && this.p5Instance) {
+                // Convert blob to p5.Image
+                const url = URL.createObjectURL(blob);
+                const image = this.p5Instance.loadImage(url, () => {
+                    // Clean up the object URL after the image loads
+                    URL.revokeObjectURL(url);
+                });
+                
+                // Cache the image
+                this.set(identifier, image);
+                return image;
+            }
+            
+            return null;
+        } catch (error) {
+            console.warn('ImageCache.getImage: Failed to load image:', error);
+            return null;
+        }
     }
 
     /**

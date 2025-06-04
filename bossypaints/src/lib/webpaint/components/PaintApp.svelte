@@ -288,18 +288,16 @@ from BossDB and displays it on the canvas.
 		const newVisibleChunks: ChunkIdentifier[] = [];
 
 		// Convert chunk bounds to ChunkIdentifier format
-		for (const chunk of chunks) {
-			// Load each chunk for the current layer only
-			const chunkId: ChunkIdentifier = {
-				x_min: chunk.x_min,
-				x_max: chunk.x_max,
-				y_min: chunk.y_min,
-				y_max: chunk.y_max,
-				z_min: currentZ, // Single layer
-				z_max: currentZ + 1, // Single layer
-				resolution: resolution,
-				multiplier: lodLevel.multiplier
-			};
+		for (const chunk of chunks) {		// Load each chunk for the current layer only
+		const chunkId: ChunkIdentifier = {
+			x_min: chunk.x_min,
+			x_max: chunk.x_max,
+			y_min: chunk.y_min,
+			y_max: chunk.y_max,
+			z_min: currentZ, // Single layer
+			z_max: currentZ + 1, // Single layer
+			lod: resolution
+		};
 
 			newVisibleChunks.push(chunkId);
 
@@ -321,16 +319,15 @@ from BossDB and displays it on the canvas.
 			currentZ,
 			lodLevel.multiplier
 		);
-		const centerChunkId: ChunkIdentifier = {
-			x_min: centerChunk.x_min,
-			x_max: centerChunk.x_max,
-			y_min: centerChunk.y_min,
-			y_max: centerChunk.y_max,
-			z_min: currentZ, // Single layer
-			z_max: currentZ + 1, // Single layer
-			resolution: resolution,
-			multiplier: lodLevel.multiplier
-		};
+	const centerChunkId: ChunkIdentifier = {
+		x_min: centerChunk.x_min,
+		x_max: centerChunk.x_max,
+		y_min: centerChunk.y_min,
+		y_max: centerChunk.y_max,
+		z_min: currentZ, // Single layer
+		z_max: currentZ + 1, // Single layer
+		lod: resolution
+	};
 
 		// Preload with a radius of 1 (immediate neighbors)
 		imageCache.preloadNeighboringChunks(centerChunkId, 1);
@@ -482,33 +479,29 @@ from BossDB and displays it on the canvas.
 				centerOfScreen.y,
 				nav.layer,
 				currentLODLevel.multiplier
-			);
-			const centerChunkId: ChunkIdentifier = {
-				x_min: centerChunk.x_min,
-				x_max: centerChunk.x_max,
-				y_min: centerChunk.y_min,
-				y_max: centerChunk.y_max,
-				z_min: nav.layer, // Single layer
-				z_max: nav.layer + 1, // Single layer
-				resolution: resolution,
-				multiplier: currentLODLevel.multiplier
-			};
-
-			// Check if we've moved to a different chunk or changed LOD level or layer
-			const chunkChanged =
-				!lastCenterChunk ||
-				lastCenterChunk.x_min !== centerChunkId.x_min ||
-				lastCenterChunk.y_min !== centerChunkId.y_min ||
-				lastCenterChunk.z_min !== centerChunkId.z_min ||
-				lastCenterChunk.multiplier !== centerChunkId.multiplier;
-
-			if (chunkChanged) {
-				// If LOD level changed, clear old level cache entries
-				if (lastCenterChunk && lastCenterChunk.multiplier !== centerChunkId.multiplier) {
-					currentLODMultiplier = centerChunkId.multiplier;
-					// Optionally clear old LOD level to save memory
-					if (imageCache) {
-						imageCache.evictLODLevel(lastCenterChunk.multiplier);
+			);		const centerChunkId: ChunkIdentifier = {
+			x_min: centerChunk.x_min,
+			x_max: centerChunk.x_max,
+			y_min: centerChunk.y_min,
+			y_max: centerChunk.y_max,
+			z_min: nav.layer, // Single layer
+			z_max: nav.layer + 1, // Single layer
+			lod: resolution
+		};
+		// Check if we've moved to a different chunk or changed LOD level or layer
+		const chunkChanged =
+			!lastCenterChunk ||
+			lastCenterChunk.x_min !== centerChunkId.x_min ||
+			lastCenterChunk.y_min !== centerChunkId.y_min ||
+			lastCenterChunk.z_min !== centerChunkId.z_min ||
+			lastCenterChunk.lod !== centerChunkId.lod;
+		if (chunkChanged) {
+			// If LOD level changed, clear old level cache entries
+			if (lastCenterChunk && lastCenterChunk.lod !== centerChunkId.lod) {
+				currentLODMultiplier = centerChunkId.lod;
+				// Optionally clear old LOD level to save memory
+				if (imageCache) {
+					imageCache.evictLODLevel(lastCenterChunk.lod);
 					}
 				}
 
