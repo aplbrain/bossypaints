@@ -46,11 +46,25 @@ from BossDB and displays it on the canvas.
 	const chunkSizeY = ys[1] - ys[0];
 	const chunkSizeZ = zs[1] - zs[0];
 
-	// Helper function to get chunk coordinates for a given point
+	// Helper function to get the current LOD level based on zoom
+	function getCurrentLODLevel(zoom: number): { threshold: number; multiplier: number; color: number[]; name: string } {
+		// Find the appropriate LOD level based on zoom
+		// Levels are sorted by threshold descending, so first match is correct
+		for (const level of APP_CONFIG.lodLevels) {
+			if (zoom >= level.threshold) {
+				return level;
+			}
+		}
+		// Fallback to the lowest level if zoom is extremely low
+		return APP_CONFIG.lodLevels[APP_CONFIG.lodLevels.length - 1];
+	}
+
+	// Helper function to get chunk coordinates for a given point with specific multiplier
 	function getChunkForPoint(
 		x: number,
 		y: number,
-		z: number
+		z: number,
+		multiplier: number = 1
 	): {
 		x_min: number;
 		x_max: number;
@@ -59,26 +73,33 @@ from BossDB and displays it on the canvas.
 		z_min: number;
 		z_max: number;
 	} {
+		const effectiveChunkSizeX = chunkSizeX * multiplier;
+		const effectiveChunkSizeY = chunkSizeY * multiplier;
+		const effectiveChunkSizeZ = chunkSizeZ * multiplier;
+
 		// Calculate which chunk the point is in
-		const chunkX = Math.floor(x / chunkSizeX);
-		const chunkY = Math.floor(y / chunkSizeY);
-		const chunkZ = Math.floor(z / chunkSizeZ);
+		const chunkX = Math.floor(x / effectiveChunkSizeX);
+		const chunkY = Math.floor(y / effectiveChunkSizeY);
+		const chunkZ = Math.floor(z / effectiveChunkSizeZ);
 
 		// Calculate chunk bounds, ensuring we never go below 0
-		const x_min = Math.max(0, chunkX * chunkSizeX);
-		const x_max = x_min + chunkSizeX;
-		const y_min = Math.max(0, chunkY * chunkSizeY);
-		const y_max = y_min + chunkSizeY;
-		const z_min = Math.max(0, chunkZ * chunkSizeZ);
-		const z_max = z_min + chunkSizeZ;
+		const x_min = Math.max(0, chunkX * effectiveChunkSizeX);
+		const x_max = x_min + effectiveChunkSizeX;
+		const y_min = Math.max(0, chunkY * effectiveChunkSizeY);
+		const y_max = y_min + effectiveChunkSizeY;
+		const z_min = Math.max(0, chunkZ * effectiveChunkSizeZ);
+		const z_max = z_min + effectiveChunkSizeZ;
 
 		return { x_min, x_max, y_min, y_max, z_min, z_max };
 	}
 
-	// Helper function to get all neighboring chunks around a center point
+
+
+	// Helper function to get all neighboring chunks around a center point with specific multiplier
 	function getAllNeighboringChunks(
 		centerOfScreen: { x: number; y: number },
-		currentZ: number
+		currentZ: number,
+		multiplier: number = 1
 	): Array<{
 		x_min: number;
 		x_max: number;
@@ -88,12 +109,15 @@ from BossDB and displays it on the canvas.
 		z_max: number;
 	}> {
 		const chunks = [];
+		const effectiveChunkSizeX = chunkSizeX * multiplier;
+		const effectiveChunkSizeY = chunkSizeY * multiplier;
+		const effectiveChunkSizeZ = chunkSizeZ * multiplier;
 
 		// Get the chunk that contains the center point
-		const centerChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, currentZ);
-		const centerChunkX = Math.floor(centerOfScreen.x / chunkSizeX);
-		const centerChunkY = Math.floor(centerOfScreen.y / chunkSizeY);
-		const centerChunkZ = Math.floor(currentZ / chunkSizeZ);
+		const centerChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, currentZ, multiplier);
+		const centerChunkX = Math.floor(centerOfScreen.x / effectiveChunkSizeX);
+		const centerChunkY = Math.floor(centerOfScreen.y / effectiveChunkSizeY);
+		const centerChunkZ = Math.floor(currentZ / effectiveChunkSizeZ);
 
 		// Generate all 9 chunks (3x3 grid) around the center chunk
 		for (let dx = -1; dx <= 1; dx++) {
@@ -105,12 +129,12 @@ from BossDB and displays it on the canvas.
 				// Skip chunks that would be negative
 				if (chunkX < 0 || chunkY < 0 || chunkZ < 0) continue;
 
-				const x_min = chunkX * chunkSizeX;
-				const x_max = x_min + chunkSizeX;
-				const y_min = chunkY * chunkSizeY;
-				const y_max = y_min + chunkSizeY;
-				const z_min = chunkZ * chunkSizeZ;
-				const z_max = z_min + chunkSizeZ;
+				const x_min = chunkX * effectiveChunkSizeX;
+				const x_max = x_min + effectiveChunkSizeX;
+				const y_min = chunkY * effectiveChunkSizeY;
+				const y_max = y_min + effectiveChunkSizeY;
+				const z_min = chunkZ * effectiveChunkSizeZ;
+				const z_max = z_min + effectiveChunkSizeZ;
 
 				chunks.push({ x_min, x_max, y_min, y_max, z_min, z_max });
 			}
@@ -269,10 +293,15 @@ from BossDB and displays it on the canvas.
 
 			// Draw chunk visualization AFTER everything else so it's visible on top
 			if (debugEnabled && filmstrip) {
-				// Get the center of the screen and all neighboring chunks
+				// Get the center of the screen
 				const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
-				const currentChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer);
-				const allChunks = getAllNeighboringChunks(centerOfScreen, nav.layer);
+				
+				// Get the current LOD level based on zoom
+				const currentLODLevel = getCurrentLODLevel(nav.zoom);
+				
+				// Get chunks using the current LOD level
+				const currentChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer, currentLODLevel.multiplier);
+				const allChunks = getAllNeighboringChunks(centerOfScreen, nav.layer, currentLODLevel.multiplier);
 
 				// Draw all neighboring chunks
 				s.strokeWeight(1);
@@ -293,26 +322,30 @@ from BossDB and displays it on the canvas.
 						chunk.y_min === currentChunk.y_min &&
 						chunk.z_min === currentChunk.z_min;
 
+					// Use the color from the current LOD level
+					const [r, g, b] = currentLODLevel.color;
 					if (isCurrentChunk) {
-						// Draw current chunk in thick yellow
-						s.stroke(255, 255, 0); // Bright yellow
+						// Draw current chunk with bright color and thick stroke
+						s.stroke(r, g, b);
 						s.strokeWeight(4);
 					} else {
-						// Draw neighboring chunks in thinner light yellow
-						s.stroke(255, 255, 100); // Light yellow
+						// Draw neighboring chunks with lighter color and thinner stroke
+						s.stroke(r * 0.8, g * 0.8, b * 0.8);
 						s.strokeWeight(2);
 					}
 
 					s.rect(chunkTopLeft.x, chunkTopLeft.y, chunkScreenWidth, chunkScreenHeight);
 				}
 
-				// Only log coordinates when they change to avoid console spam
-				const chunkKey = `${currentChunk.x_min}-${currentChunk.x_max}_${currentChunk.y_min}-${currentChunk.y_max}_${currentChunk.z_min}-${currentChunk.z_max}`;
+				// Log current chunk coordinates when they change to avoid console spam
+				const chunkKey = `${currentLODLevel.name}_${currentChunk.x_min}-${currentChunk.x_max}_${currentChunk.y_min}-${currentChunk.y_max}_${currentChunk.z_min}-${currentChunk.z_max}`;
 				if (chunkKey !== lastLoggedChunk) {
-					console.log('Current chunk XYZ coords:', {
+					console.log(`Current ${currentLODLevel.name} chunk XYZ coords:`, {
 						x: [currentChunk.x_min, currentChunk.x_max],
 						y: [currentChunk.y_min, currentChunk.y_max],
-						z: [currentChunk.z_min, currentChunk.z_max]
+						z: [currentChunk.z_min, currentChunk.z_max],
+						chunkSize: [chunkSizeX * currentLODLevel.multiplier, chunkSizeY * currentLODLevel.multiplier, chunkSizeZ * currentLODLevel.multiplier],
+						multiplier: currentLODLevel.multiplier
 					});
 					lastLoggedChunk = chunkKey;
 				}
@@ -337,28 +370,37 @@ from BossDB and displays it on the canvas.
 					30
 				);
 
-				// Show current ROI bounds
+				// Show zoom and LOD info using multi-level system
+				const currentLODLevel = getCurrentLODLevel(nav.zoom);
+				const [r, g, b] = currentLODLevel.color;
 				s.text(
-					`Original ROI: x:[${xs[0]}, ${xs[1]}] y:[${ys[0]}, ${ys[1]}] z:[${zs[0]}, ${zs[1]}]`,
+					`Zoom: ${nav.zoom.toFixed(3)} | Current LOD: ${currentLODLevel.name} (${currentLODLevel.multiplier}x)`,
 					10,
 					40
 				);
 
-				// Show current chunk info
-				const currentChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer);
+				// Show current ROI bounds
 				s.text(
-					`Current Chunk: x:[${currentChunk.x_min}, ${currentChunk.x_max}] y:[${currentChunk.y_min}, ${currentChunk.y_max}] z:[${currentChunk.z_min}, ${currentChunk.z_max}]`,
+					`Original ROI: x:[${xs[0]}, ${xs[1]}] y:[${ys[0]}, ${ys[1]}] z:[${zs[0]}, ${zs[1]}]`,
 					10,
 					50
+				);
+
+				// Show current chunk info using new LOD system
+				const currentChunk = getChunkForPoint(centerOfScreen.x, centerOfScreen.y, nav.layer, currentLODLevel.multiplier);
+				s.text(
+					`Current ${currentLODLevel.name} Chunk: x:[${currentChunk.x_min}, ${currentChunk.x_max}] y:[${currentChunk.y_min}, ${currentChunk.y_max}] z:[${currentChunk.z_min}, ${currentChunk.z_max}]`,
+					10,
+					60
 				);
 
 				// Show if outside original ROI - fix the logic
 				if (isOutsideROI(centerOfScreen, nav.layer)) {
 					s.fill(255, 255, 0); // Yellow text
-					s.text('CENTER OUTSIDE ORIGINAL ROI', 10, 60);
+					s.text('CENTER OUTSIDE ORIGINAL ROI', 10, 70);
 				} else {
 					s.fill(0, 255, 0); // Green text
-					s.text('CENTER INSIDE ORIGINAL ROI', 10, 60);
+					s.text('CENTER INSIDE ORIGINAL ROI', 10, 70);
 				}
 
 				// Show pinch zoom debug info

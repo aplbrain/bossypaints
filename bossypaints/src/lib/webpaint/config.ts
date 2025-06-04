@@ -30,6 +30,19 @@ const APP_CONFIG = {
     pinchZoomSpeed: 0.01,
 
     /**
+     * LOD (Level of Detail) system configuration.
+     * Defines multiple levels of detail with zoom thresholds and chunk multipliers.
+     * Lower zoom values trigger higher LOD levels (larger chunks).
+     */
+    lodLevels: [
+        { threshold: 0.8, multiplier: 1, color: [255, 255, 0], name: 'Normal' },      // Yellow - 1x (normal)
+        { threshold: 0.4, multiplier: 2, color: [255, 165, 0], name: 'LOD 2x' },      // Orange - 2x
+        { threshold: 0.2, multiplier: 4, color: [255, 69, 0], name: 'LOD 4x' },       // Red-Orange - 4x  
+        { threshold: 0.1, multiplier: 8, color: [255, 0, 0], name: 'LOD 8x' },        // Red - 8x
+        { threshold: 0.0, multiplier: 16, color: [128, 0, 128], name: 'LOD 16x' }     // Purple - 16x
+    ],
+
+    /**
      * Zoom speed with keys.
      */
     slowKeyZoomSpeed: 0.1,
