@@ -82,6 +82,11 @@ from BossDB and displays it on the canvas.
 		return { z_min, z_max };
 	}
 
+	// Helper function to calculate Boss resolution based on base resolution and LOD multiplier
+	function getBossResolution(baseResolution: number, lodMultiplier: number): number {
+		return baseResolution + Math.log2(lodMultiplier);
+	}
+
 	// Helper function to get chunk coordinates for a given point with specific multiplier
 	function getChunkForPoint(
 		x: number,
@@ -282,7 +287,7 @@ from BossDB and displays it on the canvas.
 	async function loadVisibleChunks(
 		centerOfScreen: { x: number; y: number },
 		currentZ: number,
-		lodLevel: any
+		currentLODLevel: any
 	) {
 		if (!imageCache) return;
 
@@ -293,11 +298,11 @@ from BossDB and displays it on the canvas.
 			center: `x:${centerOfScreen.x.toFixed(0)}, y:${centerOfScreen.y.toFixed(0)}`,
 			z: currentZ,
 			filmstrip: `${filmstripRange.z_min}:${filmstripRange.z_max}`,
-			lod: lodLevel.multiplier
+			lod: currentLODLevel.multiplier
 		});
 
 		// Get all chunks that should be visible
-		const chunks = getAllNeighboringChunks(centerOfScreen, currentZ, lodLevel.multiplier);
+		const chunks = getAllNeighboringChunks(centerOfScreen, currentZ, currentLODLevel.multiplier);
 		const newVisibleChunks: ChunkIdentifier[] = [];
 
 		// Convert chunk bounds to ChunkIdentifier format
@@ -310,7 +315,7 @@ from BossDB and displays it on the canvas.
 				y_max: chunk.y_max,
 				z_min: filmstripRange.z_min, // Filmstrip-aligned range
 				z_max: filmstripRange.z_max, // Filmstrip-aligned range
-				lod: resolution
+				lod: getBossResolution(resolution, currentLODLevel.multiplier)
 			};
 
 			newVisibleChunks.push(chunkId);
@@ -331,7 +336,7 @@ from BossDB and displays it on the canvas.
 			centerOfScreen.x,
 			centerOfScreen.y,
 			currentZ,
-			lodLevel.multiplier
+			currentLODLevel.multiplier
 		);
 		const centerChunkId: ChunkIdentifier = {
 			x_min: centerChunk.x_min,
@@ -340,7 +345,7 @@ from BossDB and displays it on the canvas.
 			y_max: centerChunk.y_max,
 			z_min: filmstripRange.z_min, // Filmstrip-aligned range
 			z_max: filmstripRange.z_max, // Filmstrip-aligned range
-			lod: resolution
+			lod: getBossResolution(resolution, currentLODLevel.multiplier)
 		};
 
 		// Preload with a radius of 1 (immediate neighbors)
@@ -350,9 +355,22 @@ from BossDB and displays it on the canvas.
 		imageCache.preloadNeighboringFilmstrips(centerChunkId);
 	}
 
+	// Helper function to generate a readable tile key for debug display
+	function generateTileKey(chunkId: ChunkIdentifier, lodLevel: { name: string; multiplier: number }): string {
+		// Create a shorter, more readable identifier
+		const chunkX = Math.floor(chunkId.x_min / (chunkSizeX * lodLevel.multiplier));
+		const chunkY = Math.floor(chunkId.y_min / (chunkSizeY * lodLevel.multiplier));
+		const chunkZ = Math.floor(chunkId.z_min / (chunkSizeZ * lodLevel.multiplier));
+		return `${lodLevel.name}[${chunkX},${chunkY},${chunkZ}]`;
+	}
+
 	// Function to render cached chunks
-	function renderCachedChunks(s: p5) {
+	function renderCachedChunks(s: p5, lodLevel: { multiplier: number; threshold: number }) {
 		if (!imageCache || currentVisibleChunks.length === 0) return;
+
+		// Calculate the scaling factor based on LOD multiplier
+		// Higher LOD multipliers mean we fetched smaller images that need to be scaled up
+		const scaleFactor = lodLevel.multiplier;
 
 		for (const chunkId of currentVisibleChunks) {
 			// Try to get the cached image first (individual chunk)
@@ -365,21 +383,21 @@ from BossDB and displays it on the canvas.
 				const renderWidth = chunkId.x_max - chunkId.x_min;
 				const renderHeight = chunkId.y_max - chunkId.y_min;
 
-				// Draw the individual cached image
+				// Draw the individual cached image with LOD scaling
+				// The image from higher resolution levels is smaller, so we scale it up
 				s.image(
 					image,
 					renderX,
 					renderY, // Destination position
 					renderWidth,
-					renderHeight, // Destination size
+					renderHeight, // Destination size (maintains visual appearance)
 					// The de-squishing factor:
 					0,
-					nav.layer * renderWidth,
-					renderWidth,
-					renderHeight // Source size
-					// image.width,
-					// image.height // Source size
+					nav.layer * (renderWidth / scaleFactor), // Adjusted source Y for smaller image
+					renderWidth / scaleFactor, // Source width (smaller due to higher res level)
+					renderHeight / scaleFactor // Source height (smaller due to higher res level)
 				);
+
 				continue; // Skip the rest if we found an image
 			}
 
@@ -393,19 +411,21 @@ from BossDB and displays it on the canvas.
 				const renderWidth = chunkId.x_max - chunkId.x_min;
 				const renderHeight = chunkId.y_max - chunkId.y_min;
 
-				// Render directly from filmstrip using source coordinates
+				// Render directly from filmstrip using source coordinates with LOD scaling
+				// The filmstrip from higher resolution levels has smaller dimensions
 				s.image(
 					filmstripInfo.filmstrip,
 					renderX,
 					renderY, // Destination position
 					renderWidth,
-					renderHeight, // Destination size
+					renderHeight, // Destination size (maintains visual appearance)
 					0,
-					// The de-squishing factor:
-					nav.layer * renderHeight,
-					filmstripInfo.sourceWidth,
-					filmstripInfo.sourceHeight // Source size
+					// The de-squishing factor adjusted for LOD:
+					nav.layer * (renderHeight / scaleFactor),
+					filmstripInfo.sourceWidth / scaleFactor, // Adjusted source width for smaller filmstrip
+					filmstripInfo.sourceHeight / scaleFactor // Adjusted source height for smaller filmstrip
 				);
+
 				continue; // Skip the rest if we rendered from filmstrip
 			}
 
@@ -513,7 +533,7 @@ from BossDB and displays it on the canvas.
 				y_max: centerChunk.y_max,
 				z_min: filmstripRange.z_min, // Filmstrip-aligned range
 				z_max: filmstripRange.z_max, // Filmstrip-aligned range
-				lod: resolution
+				lod: getBossResolution(resolution, currentLODLevel.multiplier)
 			};
 			// Check if we've moved to a different chunk or changed LOD level or layer
 			const chunkChanged =
@@ -537,7 +557,7 @@ from BossDB and displays it on the canvas.
 			}
 
 			// Render the cached chunks
-			renderCachedChunks(s);
+			renderCachedChunks(s, currentLODLevel);
 
 			if (debugEnabled) {
 				// axes:
