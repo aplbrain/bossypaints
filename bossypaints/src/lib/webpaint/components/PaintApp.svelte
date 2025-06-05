@@ -356,7 +356,10 @@ from BossDB and displays it on the canvas.
 	}
 
 	// Helper function to generate a readable tile key for debug display
-	function generateTileKey(chunkId: ChunkIdentifier, lodLevel: { name: string; multiplier: number }): string {
+	function generateTileKey(
+		chunkId: ChunkIdentifier,
+		lodLevel: { name: string; multiplier: number }
+	): string {
 		// Create a shorter, more readable identifier
 		const chunkX = Math.floor(chunkId.x_min / (chunkSizeX * lodLevel.multiplier));
 		const chunkY = Math.floor(chunkId.y_min / (chunkSizeY * lodLevel.multiplier));
@@ -383,19 +386,18 @@ from BossDB and displays it on the canvas.
 				const renderWidth = chunkId.x_max - chunkId.x_min;
 				const renderHeight = chunkId.y_max - chunkId.y_min;
 
-				// Draw the individual cached image with LOD scaling
-				// The image from higher resolution levels is smaller, so we scale it up
+				// Draw the individual cached image - need to extract correct layer if it's a filmstrip
 				s.image(
 					image,
 					renderX,
 					renderY, // Destination position
 					renderWidth,
 					renderHeight, // Destination size (maintains visual appearance)
-					// The de-squishing factor:
+					// Source coordinates - extract the correct layer from the image
 					0,
-					nav.layer * (renderWidth / scaleFactor), // Adjusted source Y for smaller image
-					renderWidth / scaleFactor, // Source width (smaller due to higher res level)
-					renderHeight / scaleFactor // Source height (smaller due to higher res level)
+					nav.layer * renderHeight, // Index into the filmstrip for the current layer
+					renderWidth, // Use chunk width
+					renderHeight // Use chunk height (single layer)
 				);
 
 				continue; // Skip the rest if we found an image
@@ -411,19 +413,18 @@ from BossDB and displays it on the canvas.
 				const renderWidth = chunkId.x_max - chunkId.x_min;
 				const renderHeight = chunkId.y_max - chunkId.y_min;
 
-				// Render directly from filmstrip using source coordinates with LOD scaling
-				// The filmstrip from higher resolution levels has smaller dimensions
+				// Render directly from filmstrip using actual source coordinates
 				s.image(
 					filmstripInfo.filmstrip,
 					renderX,
 					renderY, // Destination position
 					renderWidth,
 					renderHeight, // Destination size (maintains visual appearance)
-					0,
-					// The de-squishing factor adjusted for LOD:
-					nav.layer * (renderHeight / scaleFactor),
-					filmstripInfo.sourceWidth / scaleFactor, // Adjusted source width for smaller filmstrip
-					filmstripInfo.sourceHeight / scaleFactor // Adjusted source height for smaller filmstrip
+					0, //filmstripInfo.sourceX,
+					// de-sqishing:
+					nav.layer * renderHeight,
+					filmstripInfo.sourceWidth,
+					filmstripInfo.sourceHeight // Use actual filmstrip source dimensions
 				);
 
 				continue; // Skip the rest if we rendered from filmstrip

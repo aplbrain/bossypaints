@@ -1,1 +1,53 @@
-{"deea1428-6c66-43fb-bad9-f40a692a2e8e": {"collection": "Witvliet2020", "experiment": "Dataset_1", "channel": "em", "resolution": 3, "x_min": 936, "x_max": 1064, "y_min": 936, "y_max": 1064, "z_min": 0, "z_max": 17, "priority": 0, "destination_collection": "Matelsky2024", "destination_experiment": "Witvliet_1", "destination_channel": "seg", "id": "deea1428-6c66-43fb-bad9-f40a692a2e8e"}, "f007a988-a79e-44d6-8794-64321c25ff89": {"collection": "Witvliet2020", "experiment": "Dataset_1", "channel": "em", "resolution": 3, "x_min": 872, "x_max": 1128, "y_min": 872, "y_max": 1128, "z_min": 0, "z_max": 32, "priority": 0, "destination_collection": "Matelsky2024", "destination_experiment": "Witvliet_1", "destination_channel": "seg", "id": "f007a988-a79e-44d6-8794-64321c25ff89"}, "06f38d84-b029-48b4-a5fa-6f53e084770b": {"collection": "Witvliet2020", "experiment": "Dataset_1", "channel": "em", "resolution": 3, "x_min": 900, "x_max": 1100, "y_min": 900, "y_max": 1100, "z_min": 5, "z_max": 15, "priority": 0, "destination_collection": "Matelsky2024", "destination_experiment": "Witvliet_1", "destination_channel": "seg", "id": "06f38d84-b029-48b4-a5fa-6f53e084770b"}}
+{
+    "deea1428-6c66-43fb-bad9-f40a692a2e8e": {
+        "collection": "Witvliet2020",
+        "experiment": "Dataset_1",
+        "channel": "em",
+        "resolution": 2,
+        "x_min": 936,
+        "x_max": 1064,
+        "y_min": 936,
+        "y_max": 1064,
+        "z_min": 0,
+        "z_max": 17,
+        "priority": 0,
+        "destination_collection": "Matelsky2024",
+        "destination_experiment": "Witvliet_1",
+        "destination_channel": "seg",
+        "id": "deea1428-6c66-43fb-bad9-f40a692a2e8e"
+    },
+    "f007a988-a79e-44d6-8794-64321c25ff89": {
+        "collection": "Witvliet2020",
+        "experiment": "Dataset_1",
+        "channel": "em",
+        "resolution": 3,
+        "x_min": 872,
+        "x_max": 1128,
+        "y_min": 872,
+        "y_max": 1128,
+        "z_min": 0,
+        "z_max": 32,
+        "priority": 0,
+        "destination_collection": "Matelsky2024",
+        "destination_experiment": "Witvliet_1",
+        "destination_channel": "seg",
+        "id": "f007a988-a79e-44d6-8794-64321c25ff89"
+    },
+    "06f38d84-b029-48b4-a5fa-6f53e084770b": {
+        "collection": "Witvliet2020",
+        "experiment": "Dataset_1",
+        "channel": "em",
+        "resolution": 2,
+        "x_min": 900,
+        "x_max": 1100,
+        "y_min": 900,
+        "y_max": 1100,
+        "z_min": 5,
+        "z_max": 15,
+        "priority": 0,
+        "destination_collection": "Matelsky2024",
+        "destination_experiment": "Witvliet_1",
+        "destination_channel": "seg",
+        "id": "06f38d84-b029-48b4-a5fa-6f53e084770b"
+    }
+}
