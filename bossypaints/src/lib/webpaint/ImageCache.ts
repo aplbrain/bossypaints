@@ -1,7 +1,7 @@
 /**
  * @module ImageCache
  *
- * LRU Cache for managing image chunks with different LOD levels.
+ * LRU Cache for managing image chunks with different resolution levels.
  * Handles loading, caching, and eviction of image data from BossDB.
  */
 
@@ -18,7 +18,7 @@ export interface ChunkIdentifier {
     y_max: number;
     z_min: number;
     z_max: number;
-    lod: number;
+    resolution: number;
 }
 
 export interface CachedChunk {
@@ -105,7 +105,7 @@ export class ImageCache {
      * Generate a unique key for a chunk identifier
      */
     private generateKey(identifier: ChunkIdentifier): string {
-        return `${identifier.x_min}-${identifier.x_max}-${identifier.y_min}-${identifier.y_max}-${identifier.z_min}-${identifier.z_max}-${identifier.lod}`;
+        return `${identifier.x_min}-${identifier.x_max}-${identifier.y_min}-${identifier.y_max}-${identifier.z_min}-${identifier.z_max}-${identifier.resolution}`;
     }
 
     /**
@@ -135,10 +135,12 @@ export class ImageCache {
             this.cache.delete(key);
             this.cache.set(key, cached);
             this.stats.hits++;
+            // console.log(`CACHE HIT: ${key} (resolution ${identifier.resolution})`);
             return cached.image;
         }
 
         this.stats.misses++;
+        console.log(`CACHE MISS: ${key} (resolution ${identifier.resolution})`);
         return null;
     }
 
@@ -173,6 +175,7 @@ export class ImageCache {
         // Add new entry
         this.cache.set(key, chunk);
         this.currentSize += size;
+        console.log(`CACHE SET: ${key} (resolution ${identifier.resolution}) - Cache size: ${this.cache.size} items, ${(this.currentSize / 1024 / 1024).toFixed(1)}MB`);
 
         // Evict if necessary
         this.evictIfNecessary();
@@ -324,7 +327,7 @@ export class ImageCache {
             // Use getCutoutPNG method with the correct parameters
             const blob = await bossRemote.getCutoutPNG(
                 uri,
-                identifier.lod, // resolution level
+                identifier.resolution, // resolution level
                 [identifier.x_min, identifier.x_max], // x range
                 [identifier.y_min, identifier.y_max], // y range
                 [identifier.z_min, identifier.z_max]  // z range
@@ -453,8 +456,8 @@ export class ImageCache {
         const usage: { [key: string]: number } = {};
 
         for (const chunk of this.cache.values()) {
-            const lod = chunk.identifier.lod;
-            const key = `LOD${lod}`;
+            const resolution = chunk.identifier.resolution;
+            const key = `Resolution${resolution}`;
             usage[key] = (usage[key] || 0) + chunk.size;
         }
 
@@ -482,7 +485,7 @@ export class ImageCache {
             // Use getCutoutPNG method to load the image
             const blob = await this.bossRemote.getCutoutPNG(
                 this.datasetURI,
-                identifier.lod, // resolution level
+                identifier.resolution, // resolution level
                 [identifier.x_min, identifier.x_max], // x range
                 [identifier.y_min, identifier.y_max], // y range
                 [identifier.z_min, identifier.z_max]  // z range
@@ -564,13 +567,13 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Evict all chunks of a specific LOD level
+     * Legacy method: Evict all chunks of a specific resolution level
      */
-    evictLODLevel(multiplier: number): void {
+    evictResolutionLevel(resolutionLevel: number): void {
         const toRemove: string[] = [];
 
         for (const [key, chunk] of this.cache.entries()) {
-            if (chunk.identifier.lod === multiplier) {
+            if (chunk.identifier.resolution === resolutionLevel) {
                 toRemove.push(key);
             }
         }
@@ -581,7 +584,7 @@ export class ImageCache {
             this.currentSize -= chunk.size;
         }
 
-        console.log(`ImageCache: Evicted ${toRemove.length} chunks from LOD level ${multiplier}`);
+        console.log(`ImageCache: Evicted ${toRemove.length} chunks from resolution level ${resolutionLevel}`);
     }
 
     /**
@@ -591,36 +594,36 @@ export class ImageCache {
         // Check if we have a filmstrip that contains this layer
         const filmstripKey = this.generateKey(identifier);
         const filmstripChunk = this.cache.get(filmstripKey);
-        
+
         if (!filmstripChunk || !filmstripChunk.image) {
             return null;
         }
-        
+
         // Use the provided target layer, or default to the first layer in the filmstrip
         const layerToExtract = targetLayer !== undefined ? targetLayer : identifier.z_min;
-        
+
         // Verify that the target layer is within the filmstrip range
         if (layerToExtract < identifier.z_min || layerToExtract >= identifier.z_max) {
             console.warn(`Target layer ${layerToExtract} is outside filmstrip range [${identifier.z_min}, ${identifier.z_max})`);
             return null;
         }
-        
+
         // Calculate the relative position within the filmstrip
         const layerOffsetInFilmstrip = layerToExtract - identifier.z_min;
-        
+
         // Each layer in the filmstrip occupies a vertical slice
         // Filmstrip image height = imageHeight * batchSize (16 layers stacked vertically)
         const imageHeight = filmstripChunk.image.height / this.filmstripBatchSize;
         const imageWidth = filmstripChunk.image.width;
-        
+
         // Calculate source coordinates for extracting the specific layer
         const sourceX = 0; // Always start from left edge
         const sourceY = layerOffsetInFilmstrip * imageHeight; // Vertical offset for the target layer
         const sourceWidth = imageWidth; // Full width
         const sourceHeight = imageHeight; // Single layer height
-        
+
         console.log(`Filmstrip extraction: layer ${layerToExtract}, offset ${layerOffsetInFilmstrip}, sourceY=${sourceY}, sourceHeight=${sourceHeight}, total height=${filmstripChunk.image.height}`);
-        
+
         return {
             filmstrip: filmstripChunk.image,
             sourceX: sourceX,

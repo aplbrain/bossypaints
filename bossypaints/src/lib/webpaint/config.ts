@@ -30,16 +30,16 @@ const APP_CONFIG = {
     pinchZoomSpeed: 0.01,
 
     /**
-     * LOD (Level of Detail) system configuration.
-     * Defines multiple levels of detail with zoom thresholds and chunk multipliers.
-     * Lower zoom values trigger higher LOD levels (larger chunks).
+     * Resolution system configuration.
+     * Defines different resolution levels with zoom thresholds.
+     * Higher resolution levels are downsampled versions (res 1 = 2x downsample, res 2 = 4x downsample, etc.)
      */
-    lodLevels: [
-        { threshold: 0.8, multiplier: 1, color: [255, 255, 0], name: 'Normal' },      // Yellow - 1x (normal)
-        { threshold: 0.4, multiplier: 2, color: [255, 165, 0], name: 'LOD 2x' },      // Orange - 2x
-        { threshold: 0.2, multiplier: 4, color: [255, 69, 0], name: 'LOD 4x' },       // Red-Orange - 4x
-        { threshold: 0.1, multiplier: 8, color: [255, 0, 0], name: 'LOD 8x' },        // Red - 8x
-        { threshold: 0.0, multiplier: 16, color: [128, 0, 128], name: 'LOD 16x' }     // Purple - 16x
+    resolutionLevels: [
+        { threshold: 0.8, resolution: 0, color: [255, 255, 0], name: 'Res 0' },      // Yellow - full resolution
+        { threshold: 0.4, resolution: 1, color: [255, 165, 0], name: 'Res 1' },      // Orange - 2x downsample
+        { threshold: 0.2, resolution: 2, color: [255, 69, 0], name: 'Res 2' },       // Red-Orange - 4x downsample
+        { threshold: 0.1, resolution: 3, color: [255, 0, 0], name: 'Res 3' },        // Red - 8x downsample
+        { threshold: 0.0, resolution: 4, color: [128, 0, 128], name: 'Res 4' }       // Purple - 16x downsample
     ],
 
     /**

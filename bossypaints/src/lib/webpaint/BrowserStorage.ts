@@ -77,7 +77,7 @@ export class BrowserStorage {
      * Generate a storage key for a chunk
      */
     private generateStorageKey(chunkId: ChunkIdentifier, datasetURI: string): string {
-        return `${datasetURI}_${chunkId.resolution}_${chunkId.multiplier}x_${chunkId.x_min}-${chunkId.x_max}_${chunkId.y_min}-${chunkId.y_max}_${chunkId.z_min}-${chunkId.z_max}`;
+        return `${datasetURI}_${chunkId.resolution}_${chunkId.x_min}-${chunkId.x_max}_${chunkId.y_min}-${chunkId.y_max}_${chunkId.z_min}-${chunkId.z_max}`;
     }
 
     /**
