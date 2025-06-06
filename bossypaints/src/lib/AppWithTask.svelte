@@ -122,7 +122,7 @@
 					? 'bg-green-500 hover:bg-green-600'
 					: 'bg-gray-500 hover:bg-gray-600'} text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				on:click={() => nav.setDrawing(!nav.drawing)}
-				title="{nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}"
+				title={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
 			>
 				{#if nav.drawing}
 					<!-- Paintbrush icon -->

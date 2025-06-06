@@ -735,15 +735,6 @@ from BossDB and displays it on the canvas.
 				70
 			);
 
-			// Show if outside original ROI - fix the logic
-			if (isOutsideROI(centerOfScreen, nav.layer)) {
-				s.fill(255, 255, 0); // Yellow text
-				s.text('CENTER OUTSIDE ORIGINAL ROI', 10, 80);
-			} else {
-				s.fill(0, 255, 0); // Green text
-				s.text('CENTER INSIDE ORIGINAL ROI', 10, 80);
-			}
-
 			// Show cache statistics
 			if (imageCache) {
 				const stats = imageCache.getStats();
