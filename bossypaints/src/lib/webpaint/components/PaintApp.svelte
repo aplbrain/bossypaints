@@ -153,10 +153,10 @@ from BossDB and displays it on the canvas.
 					chunkOffsets.push({ dx, dy, distance });
 				}
 			}
-			
+
 			// Sort by distance from center (closest first)
 			chunkOffsets.sort((a, b) => a.distance - b.distance);
-			
+
 			// Generate chunks in priority order
 			for (const { dx, dy } of chunkOffsets) {
 				const chunkX = centerChunkX + dx;
@@ -348,7 +348,9 @@ from BossDB and displays it on the canvas.
 
 		// Load all chunks but don't wait for completion (async loading)
 		Promise.allSettled(chunkPromises).then(() => {
-			console.log(`LOAD: Completed loading ${chunks.length} chunks for resolution ${currentResolutionLevel.resolution}`);
+			console.log(
+				`LOAD: Completed loading ${chunks.length} chunks for resolution ${currentResolutionLevel.resolution}`
+			);
 		});
 
 		currentVisibleChunks = newVisibleChunks;
@@ -433,13 +435,12 @@ from BossDB and displays it on the canvas.
 			// Try to render directly from filmstrip
 			const filmstripInfo = imageCache.getFilmstripRenderInfo(chunkId, nav.layer);
 
+			// Calculate rendering position and size based on resolution level
+			const renderX = chunkId.x_min * displayScale;
+			const renderY = chunkId.y_min * displayScale;
+			const renderWidth = 256 * displayScale;
+			const renderHeight = 256 * displayScale;
 			if (filmstripInfo) {
-				// Calculate rendering position and size based on resolution level
-				const renderX = chunkId.x_min * displayScale;
-				const renderY = chunkId.y_min * displayScale;
-				const renderWidth = 256 * displayScale; // 256, 512, 1024, etc.
-				const renderHeight = 256 * displayScale; // 256, 512, 1024, etc.
-
 				// Render directly from filmstrip
 				s.image(
 					filmstripInfo.filmstrip,
@@ -454,6 +455,13 @@ from BossDB and displays it on the canvas.
 				);
 
 				continue;
+			}
+			if (debugEnabled) {
+				// Draw debug information (e.g., chunk boundaries)
+				s.stroke(255, 0, 0);
+				s.strokeWeight(5);
+				s.noFill();
+				s.rect(renderX, renderY, renderWidth, renderHeight);
 			}
 		}
 	}
@@ -599,36 +607,6 @@ from BossDB and displays it on the canvas.
 				// Draw all neighboring chunks
 				s.strokeWeight(1);
 				s.noFill();
-
-				for (let i = 0; i < allChunks.length; i++) {
-					const chunk = allChunks[i];
-
-					// Transform chunk coordinates to screen coordinates
-					const chunkTopLeft = nav.dataToScene(chunk.x_min, chunk.y_min);
-					const chunkBottomRight = nav.dataToScene(chunk.x_max, chunk.y_max);
-					const chunkScreenWidth = chunkBottomRight.x - chunkTopLeft.x;
-					const chunkScreenHeight = chunkBottomRight.y - chunkTopLeft.y;
-
-					// Check if this is the current chunk (contains center of screen)
-					const isCurrentChunk =
-						chunk.x_min === currentChunk.x_min &&
-						chunk.y_min === currentChunk.y_min &&
-						chunk.z_min === currentChunk.z_min;
-
-					// Use the color from the current resolution level
-					const [r, g, b] = currentResolutionLevelInfo.color;
-					if (isCurrentChunk) {
-						// Draw current chunk with bright color and thick stroke
-						s.stroke(r, g, b);
-						s.strokeWeight(4);
-					} else {
-						// Draw neighboring chunks with lighter color and thinner stroke
-						s.stroke(r * 0.8, g * 0.8, b * 0.8);
-						s.strokeWeight(2);
-					}
-
-					s.rect(chunkTopLeft.x, chunkTopLeft.y, chunkScreenWidth, chunkScreenHeight);
-				}
 
 				// Log current chunk coordinates when they change to avoid console spam
 				const coordinateScale = Math.pow(2, currentResolutionLevelInfo.resolution);
@@ -864,37 +842,6 @@ from BossDB and displays it on the canvas.
 
 			return true;
 		};
-
-		// Function to clear the cache
-		function clearCache() {
-			if (imageCache) {
-				console.log('UI: Clear cache button clicked, clearing cache and reloading data');
-				imageCache
-					.clearAll()
-					.then(() => {
-						// Force reload of current view after cache is cleared
-						const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
-						const currentResolutionLevelInfo = getCurrentResolutionLevel(nav.zoom);
-
-						// Clear our tracking variables to force reload
-						lastCenterChunk = null;
-						currentVisibleChunks = [];
-						loadedChunks.clear();
-
-						// Force reload visible chunks for current view
-						console.log('UI: Cache cleared, forcing reload of visible chunks');
-						loadVisibleChunks(centerOfScreen, nav.layer, currentResolutionLevelInfo);
-
-						// Force refresh of the UI
-						s.redraw();
-
-						console.log('UI: Cache cleared and view reload triggered');
-					})
-					.catch((error) => {
-						console.error('UI: Error clearing cache:', error);
-					});
-			}
-		}
 
 		function handleMouseEvent(eventType: MouseEventType, evt: MouseEvent | KeyboardEvent) {
 			for (const kb of keybindings.filter(
