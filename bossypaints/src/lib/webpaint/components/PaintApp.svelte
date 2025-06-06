@@ -428,7 +428,7 @@ from BossDB and displays it on the canvas.
 					renderWidth,
 					renderHeight,
 					0,
-					nav.layer * APP_CONFIG.fixedChunkSize.height, // Index into the filmstrip for the current layer
+					(nav.layer % APP_CONFIG.fixedChunkSize.depth) * APP_CONFIG.fixedChunkSize.height, // Index into the filmstrip for the current layer
 					APP_CONFIG.fixedChunkSize.width,
 					APP_CONFIG.fixedChunkSize.height
 				);
@@ -584,20 +584,15 @@ from BossDB and displays it on the canvas.
 			s.stroke(255, 255, 0); // Yellow color
 			s.strokeWeight(3);
 			s.noFill();
-			
+
 			// Calculate native coordinates (task region might be in higher-res coordinates)
 			const nativeTaskX1 = resolution !== undefined ? xs[0] * Math.pow(2, resolution) : xs[0];
 			const nativeTaskY1 = resolution !== undefined ? ys[0] * Math.pow(2, resolution) : ys[0];
 			const nativeTaskX2 = resolution !== undefined ? xs[1] * Math.pow(2, resolution) : xs[1];
 			const nativeTaskY2 = resolution !== undefined ? ys[1] * Math.pow(2, resolution) : ys[1];
-			
+
 			// Draw the task region rectangle
-			s.rect(
-				nativeTaskX1, 
-				nativeTaskY1, 
-				nativeTaskX2 - nativeTaskX1, 
-				nativeTaskY2 - nativeTaskY1
-			);
+			s.rect(nativeTaskX1, nativeTaskY1, nativeTaskX2 - nativeTaskX1, nativeTaskY2 - nativeTaskY1);
 
 			if (debugEnabled) {
 				// axes:
