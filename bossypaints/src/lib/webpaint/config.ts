@@ -7,8 +7,9 @@
 const APP_CONFIG = {
 
     /**
-     * Debug-mode.
-     * Show things like mouse position and axes.
+     * Global debug flag.
+     * When set to false, all console debugging statements will be suppressed.
+     * Set to true to enable debug logging for development and troubleshooting.
      */
     debug: true,
 

@@ -17,6 +17,7 @@ from BossDB and displays it on the canvas.
 	import BossRemote from '../intern';
 	import type { AnnotationManagerStore } from '../stores/AnnotationManagerStore.svelte';
 	import APP_CONFIG from '../config';
+	import { debug as debugUtil } from '../debug';
 	import Minimap from './Minimap.svelte';
 	import PolygonAnnotation from '../PolygonAnnotation';
 	import { ImageCache, type ChunkIdentifier } from '../ImageCache';
@@ -302,7 +303,7 @@ from BossDB and displays it on the canvas.
 		// Calculate filmstrip-aligned Z-range for efficient batch loading
 		const filmstripRange = getFilmstripZRange(currentZ);
 
-		console.log('LOAD: Loading visible chunks for:', {
+		debugUtil.log('LOAD: Loading visible chunks for:', {
 			center: `x:${centerOfScreen.x.toFixed(0)}, y:${centerOfScreen.y.toFixed(0)}`,
 			z: currentZ,
 			filmstrip: `${filmstripRange.z_min}:${filmstripRange.z_max}`,
@@ -334,18 +335,18 @@ from BossDB and displays it on the canvas.
 			newVisibleChunks.push(chunkId);
 
 			// Start loading the chunk asynchronously (prioritized by getAllNeighboringChunks order)
-			console.log(
+			debugUtil.log(
 				`LOAD: Requesting filmstrip chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:[${chunkId.z_min}-${chunkId.z_max}] (priority: ${chunks.indexOf(chunk)})`
 			);
 			const loadPromise = imageCache.getImage(chunkId).catch((err) => {
-				console.warn(`LOAD: Failed to load chunk:`, err);
+				debugUtil.warn(`LOAD: Failed to load chunk:`, err);
 			});
 			chunkPromises.push(loadPromise);
 		}
 
 		// Load all chunks but don't wait for completion (async loading)
 		Promise.allSettled(chunkPromises).then(() => {
-			console.log(
+			debugUtil.log(
 				`LOAD: Completed loading ${chunks.length} chunks for resolution ${currentResolutionLevel.resolution}`
 			);
 		});
@@ -479,7 +480,7 @@ from BossDB and displays it on the canvas.
 				nav.setY(savedNavState.y);
 				nav.setZoom(savedNavState.zoom);
 				nav.setLayer(savedNavState.layer);
-				console.log('Restored navigation state from storage');
+				debugUtil.log('Restored navigation state from storage');
 			} else {
 				// Set the nav to the center of the image (default behavior)
 				nav.setX((s.width - nav.imageWidth) / 2);
@@ -543,7 +544,7 @@ from BossDB and displays it on the canvas.
 				if (lastCenterChunk && lastCenterChunk.resolution !== centerChunkId.resolution) {
 					currentResolutionLevel = centerChunkId.resolution;
 					// Keep old resolution level cached for fast switching
-					console.log(
+					debugUtil.log(
 						`Resolution changed from ${lastCenterChunk.resolution} to ${centerChunkId.resolution} - keeping cache`
 					);
 				}
@@ -606,7 +607,7 @@ from BossDB and displays it on the canvas.
 				const coordinateScale = Math.pow(2, currentResolutionLevelInfo.resolution);
 				const chunkKey = `${currentResolutionLevelInfo.name}_${currentChunk.x_min}-${currentChunk.x_max}_${currentChunk.y_min}-${currentChunk.y_max}_${currentChunk.z_min}-${currentChunk.z_max}`;
 				if (chunkKey !== lastLoggedChunk) {
-					console.log(`Current ${currentResolutionLevelInfo.name} chunk XYZ coords:`, {
+					debugUtil.log(`Current ${currentResolutionLevelInfo.name} chunk XYZ coords:`, {
 						x: [currentChunk.x_min, currentChunk.x_max],
 						y: [currentChunk.y_min, currentChunk.y_max],
 						z: [currentChunk.z_min, currentChunk.z_max],
@@ -721,7 +722,7 @@ from BossDB and displays it on the canvas.
 				}
 
 				// Show pinch zoom debug info
-				if (APP_CONFIG.debugPinch) {
+				if (APP_CONFIG.debug) {
 					s.fill(255);
 					s.text(`Pinch Active: ${isPinching}`, 10, imageCache ? 110 : 80);
 					if (isPinching) {

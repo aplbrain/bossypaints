@@ -6,6 +6,7 @@
  */
 
 import type { ChunkIdentifier } from './ImageCache';
+import { debug } from './debug';
 
 export interface StoredChunk {
     chunkId: ChunkIdentifier;
