@@ -8,8 +8,8 @@
 -->
 <script lang="ts">
 	import p5 from 'p5';
-	import type { NavigationStore } from '$lib/stores/NavigationStore.svelte';
-	import type { AnnotationManagerStore } from '$lib/stores/AnnotationManagerStore.svelte';
+	import type { NavigationStore } from '../stores/NavigationStore.svelte';
+	import type { AnnotationManagerStore } from '../stores/AnnotationManagerStore.svelte';
 
 	export let annotationStore: AnnotationManagerStore;
 	export let nav: NavigationStore;
@@ -31,7 +31,7 @@
 		s.draw = () => {
 			s.clear();
 			s.fill(255, 255, 255, 100);
-			s.rect(0, 0, s.width - 10, 256);
+			s.rect(0, 0, s.width - 10, height);
 
 			s.strokeWeight(4);
 			s.stroke(255);
@@ -66,23 +66,23 @@
 
 		s.mousePressed = (event) => {
 			// Allow clicks to change layers
-            if (event.target !== s.canvas) return;
-            const mouseX = s.mouseX;
-            const mouseY = s.mouseY;
+			if (event.target !== s.canvas) return;
+			const mouseX = s.mouseX;
+			const mouseY = s.mouseY;
 
-            if (mouseX < 0 || mouseX > s.width || mouseY < 0 || mouseY > s.height) {
-                return;
-            }
+			if (mouseX < 0 || mouseX > s.width || mouseY < 0 || mouseY > s.height) {
+				return;
+			}
 
-            const totalLayers = nav.maxLayer - nav.minLayer;
-            const clickedLayer = Math.floor(s.map(mouseY, 0, height, 0, totalLayers));
-            const newLayer = Math.max(nav.minLayer, Math.min(nav.maxLayer - 1, clickedLayer));
-            nav.setLayer(newLayer);
+			const totalLayers = nav.maxLayer - nav.minLayer;
+			const clickedLayer = Math.floor(s.map(mouseY, 0, height, 0, totalLayers));
+			const newLayer = Math.max(nav.minLayer, Math.min(nav.maxLayer - 1, clickedLayer));
+			nav.setLayer(newLayer);
 
-            event.preventDefault();
-            event.stopPropagation();
-            return false;
-        };
+			event.preventDefault();
+			event.stopPropagation();
+			return false;
+		};
 	};
 
 	export const minimap = new p5(minimapSketch);

@@ -81,7 +81,7 @@ from BossDB and displays it on the canvas.
 	}
 
 	// Helper function to get chunk coordinates for a given point
-	// Returns coordinates that BossDB expects (always 256 pixels apart)
+	// Returns coordinates that BossDB expects
 	function getChunkForPoint(
 		x: number,
 		y: number,
@@ -96,24 +96,21 @@ from BossDB and displays it on the canvas.
 		z_max: number;
 	} {
 		// At higher resolution levels, chunks cover more world space
-		// res 0: 256x256 world pixels per chunk
-		// res 1: 512x512 world pixels per chunk
-		// res 2: 1024x1024 world pixels per chunk
-		const chunkWorldSize = 256 * Math.pow(2, resolutionLevel);
+		const chunkWorldSize = APP_CONFIG.fixedChunkSize.width * Math.pow(2, resolutionLevel);
 
 		// Find which logical chunk contains this world point
 		const chunkX = Math.floor(x / chunkWorldSize);
 		const chunkY = Math.floor(y / chunkWorldSize);
 		const chunkZ = Math.floor(z / 16);
 
-		// Convert back to base resolution coordinates for BossDB (always 256 pixels apart)
+		// Convert back to base resolution coordinates for BossDB
 		return {
-			x_min: chunkX * 256,
-			x_max: (chunkX + 1) * 256,
-			y_min: chunkY * 256,
-			y_max: (chunkY + 1) * 256,
-			z_min: chunkZ * 16,
-			z_max: (chunkZ + 1) * 16
+			x_min: chunkX * APP_CONFIG.fixedChunkSize.width,
+			x_max: (chunkX + 1) * APP_CONFIG.fixedChunkSize.width,
+			y_min: chunkY * APP_CONFIG.fixedChunkSize.height,
+			y_max: (chunkY + 1) * APP_CONFIG.fixedChunkSize.height,
+			z_min: chunkZ * APP_CONFIG.fixedChunkSize.depth,
+			z_max: (chunkZ + 1) * APP_CONFIG.fixedChunkSize.depth
 		};
 	}
 
@@ -133,12 +130,12 @@ from BossDB and displays it on the canvas.
 		const chunks = [];
 
 		// At higher resolution levels, chunks cover more world space
-		const chunkWorldSize = 256 * Math.pow(2, resolutionLevel);
+		const chunkWorldSize = APP_CONFIG.fixedChunkSize.width * Math.pow(2, resolutionLevel);
 
 		// Find which logical chunk contains the center point
 		const centerChunkX = Math.floor(centerOfScreen.x / chunkWorldSize);
 		const centerChunkY = Math.floor(centerOfScreen.y / chunkWorldSize);
-		const centerChunkZ = Math.floor(currentZ / 16);
+		const centerChunkZ = Math.floor(currentZ / APP_CONFIG.fixedChunkSize.depth);
 
 		const radius = APP_CONFIG.chunkLoading.radius;
 		const prioritizeCenter = APP_CONFIG.chunkLoading.prioritizeCenter;
@@ -166,14 +163,14 @@ from BossDB and displays it on the canvas.
 				// Skip chunks that would be negative
 				if (chunkX < 0 || chunkY < 0 || chunkZ < 0) continue;
 
-				// Convert back to base resolution coordinates for BossDB (always 256 pixels apart)
+				// Convert back to base resolution coordinates for BossDB
 				chunks.push({
-					x_min: chunkX * 256,
-					x_max: (chunkX + 1) * 256,
-					y_min: chunkY * 256,
-					y_max: (chunkY + 1) * 256,
-					z_min: chunkZ * 16,
-					z_max: (chunkZ + 1) * 16
+					x_min: chunkX * APP_CONFIG.fixedChunkSize.width,
+					x_max: (chunkX + 1) * APP_CONFIG.fixedChunkSize.width,
+					y_min: chunkY * APP_CONFIG.fixedChunkSize.height,
+					y_max: (chunkY + 1) * APP_CONFIG.fixedChunkSize.height,
+					z_min: chunkZ * APP_CONFIG.fixedChunkSize.depth,
+					z_max: (chunkZ + 1) * APP_CONFIG.fixedChunkSize.depth
 				});
 			}
 		} else {
@@ -187,14 +184,14 @@ from BossDB and displays it on the canvas.
 					// Skip chunks that would be negative
 					if (chunkX < 0 || chunkY < 0 || chunkZ < 0) continue;
 
-					// Convert back to base resolution coordinates for BossDB (always 256 pixels apart)
+					// Convert back to base resolution coordinates for BossDB
 					chunks.push({
-						x_min: chunkX * 256,
-						x_max: (chunkX + 1) * 256,
-						y_min: chunkY * 256,
-						y_max: (chunkY + 1) * 256,
-						z_min: chunkZ * 16,
-						z_max: (chunkZ + 1) * 16
+						x_min: chunkX * APP_CONFIG.fixedChunkSize.width,
+						x_max: (chunkX + 1) * APP_CONFIG.fixedChunkSize.width,
+						y_min: chunkY * APP_CONFIG.fixedChunkSize.height,
+						y_max: (chunkY + 1) * APP_CONFIG.fixedChunkSize.height,
+						z_min: chunkZ * APP_CONFIG.fixedChunkSize.depth,
+						z_max: (chunkZ + 1) * APP_CONFIG.fixedChunkSize.depth
 					});
 				}
 			}
@@ -408,13 +405,10 @@ from BossDB and displays it on the canvas.
 
 			if (image) {
 				// Calculate rendering position and size based on resolution level
-				// At res 0: chunk covers 256x256 world pixels, render at chunkId coordinates
-				// At res 1: chunk covers 512x512 world pixels, render 512x512 at scaled position
-				// At res 2: chunk covers 1024x1024 world pixels, render 1024x1024 at scaled position
 				const renderX = chunkId.x_min * displayScale;
 				const renderY = chunkId.y_min * displayScale;
-				const renderWidth = 256 * displayScale; // 256, 512, 1024, etc.
-				const renderHeight = 256 * displayScale; // 256, 512, 1024, etc.
+				const renderWidth = APP_CONFIG.fixedChunkSize.width * displayScale; // 256, 512, 1024, etc.
+				const renderHeight = APP_CONFIG.fixedChunkSize.height * displayScale; // 256, 512, 1024, etc.
 
 				// Draw the individual cached image - extract correct layer from filmstrip
 				s.image(
@@ -424,9 +418,9 @@ from BossDB and displays it on the canvas.
 					renderWidth,
 					renderHeight,
 					0,
-					nav.layer * 256, // Index into the filmstrip for the current layer
-					256, // Source width is always 256
-					256 // Source height is always 256
+					nav.layer * APP_CONFIG.fixedChunkSize.height, // Index into the filmstrip for the current layer
+					APP_CONFIG.fixedChunkSize.width,
+					APP_CONFIG.fixedChunkSize.height
 				);
 
 				continue;
@@ -438,8 +432,8 @@ from BossDB and displays it on the canvas.
 			// Calculate rendering position and size based on resolution level
 			const renderX = chunkId.x_min * displayScale;
 			const renderY = chunkId.y_min * displayScale;
-			const renderWidth = 256 * displayScale;
-			const renderHeight = 256 * displayScale;
+			const renderWidth = APP_CONFIG.fixedChunkSize.width * displayScale;
+			const renderHeight = APP_CONFIG.fixedChunkSize.height * displayScale;
 			if (filmstripInfo) {
 				// Render directly from filmstrip
 				s.image(
@@ -449,7 +443,7 @@ from BossDB and displays it on the canvas.
 					renderWidth,
 					renderHeight,
 					0,
-					nav.layer * 256,
+					nav.layer * APP_CONFIG.fixedChunkSize.height,
 					filmstripInfo.sourceWidth,
 					filmstripInfo.sourceHeight
 				);
