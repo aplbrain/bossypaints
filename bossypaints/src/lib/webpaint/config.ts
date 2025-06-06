@@ -11,12 +11,7 @@ const APP_CONFIG = {
      * When set to false, all console debugging statements will be suppressed.
      * Set to true to enable debug logging for development and troubleshooting.
      */
-    debug: true,
-
-    /**
-     * Debug pinch zoom gestures.
-     */
-    debugPinch: true,
+    debug: false,
 
     /**
      * Zoom speed.

@@ -30,19 +30,12 @@ from BossDB and displays it on the canvas.
 	export let xs: [number, number];
 	export let ys: [number, number];
 	export let zs: [number, number];
-	export let resolution: number;
 
 	// Expose the on:submit event to the parent component:
 	export let onSubmitData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
 	export let onCheckpointData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
-	export let debugMode: boolean = false;
-	export let debug: boolean = true; // Default to true for debug mode
 
 	const remote = new BossRemote();
-
-	const imageWidth = xs[1] - xs[0] - 1;
-	const imageHeight = ys[1] - ys[0] - 1;
-	const imageDepth = Math.max(1, zs[1] - zs[0] - 1);
 
 	// Fixed chunk sizes for consistent performance across all resolutions
 	const chunkSizeX = APP_CONFIG.fixedChunkSize.width;
@@ -285,7 +278,7 @@ from BossDB and displays it on the canvas.
 	document.body.appendChild(canvas);
 
 	// Use the debug prop, fallback to config, then debugMode for compatibility
-	const debugEnabled = debug ?? (APP_CONFIG.debug || debugMode);
+	const debugEnabled = APP_CONFIG.debug;
 
 	// Function to load and cache visible chunks based on current view
 	async function loadVisibleChunks(

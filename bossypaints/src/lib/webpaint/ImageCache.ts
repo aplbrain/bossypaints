@@ -9,6 +9,7 @@
 // import type p5 from 'p5';
 import type BossRemote from './intern';
 import { BrowserStorage } from './BrowserStorage';
+import { debug as debugUtil } from './debug';
 import APP_CONFIG from './config';
 
 export interface ChunkIdentifier {
@@ -135,12 +136,12 @@ export class ImageCache {
             this.cache.delete(key);
             this.cache.set(key, cached);
             this.stats.hits++;
-            // console.log(`CACHE HIT: ${key} (resolution ${identifier.resolution})`);
+            // debugUtil.log(`CACHE HIT: ${key} (resolution ${identifier.resolution})`);
             return cached.image;
         }
 
         this.stats.misses++;
-        console.log(`CACHE MISS: ${key} (resolution ${identifier.resolution})`);
+        debugUtil.log(`CACHE MISS: ${key} (resolution ${identifier.resolution})`);
         return null;
     }
 
@@ -175,7 +176,7 @@ export class ImageCache {
         // Add new entry
         this.cache.set(key, chunk);
         this.currentSize += size;
-        console.log(`CACHE SET: ${key} (resolution ${identifier.resolution}) - Cache size: ${this.cache.size} items, ${(this.currentSize / 1024 / 1024).toFixed(1)}MB`);
+        debugUtil.log(`CACHE SET: ${key} (resolution ${identifier.resolution}) - Cache size: ${this.cache.size} items, ${(this.currentSize / 1024 / 1024).toFixed(1)}MB`);
 
         // Evict if necessary
         this.evictIfNecessary();
@@ -339,7 +340,7 @@ export class ImageCache {
                 this.set(identifier, blob);
             }
         } catch (error) {
-            console.warn('Failed to preload chunk:', error);
+            debugUtil.warn('Failed to preload chunk:', error);
         }
     }
 
@@ -356,10 +357,10 @@ export class ImageCache {
             if (cacheConfig) {
                 // Note: We can't restore actual p5.Image objects from JSON
                 // This would need to be implemented with actual image data serialization
-                console.log('Cache metadata loaded from persistent storage');
+                debugUtil.log('Cache metadata loaded from persistent storage');
             }
         } catch (error) {
-            console.warn('Failed to load cache from persistent storage:', error);
+            debugUtil.warn('Failed to load cache from persistent storage:', error);
         }
     }
 
@@ -383,7 +384,7 @@ export class ImageCache {
             // Use localStorage as a fallback since BrowserStorage doesn't have direct setItem
             localStorage.setItem('imageCacheMetadata', JSON.stringify(metadata));
         } catch (error) {
-            console.warn('Failed to save cache to persistent storage:', error);
+            debugUtil.warn('Failed to save cache to persistent storage:', error);
         }
     }
 
@@ -401,7 +402,7 @@ export class ImageCache {
             // Clear dataset-specific data through BrowserStorage
             // Note: We'd need a dataset URI to clear specific data
         } catch (error) {
-            console.warn('Failed to clear persistent storage:', error);
+            debugUtil.warn('Failed to clear persistent storage:', error);
         }
     }
 
@@ -477,7 +478,7 @@ export class ImageCache {
 
         // If not cached, we need to load it
         if (!this.bossRemote || !this.datasetURI) {
-            console.warn('ImageCache.getImage: Image not in cache and BossRemote/URI not available for loading');
+            debugUtil.warn('ImageCache.getImage: Image not in cache and BossRemote/URI not available for loading');
             return null;
         }
 
@@ -506,7 +507,7 @@ export class ImageCache {
 
             return null;
         } catch (error) {
-            console.warn('ImageCache.getImage: Failed to load image:', error);
+            debugUtil.warn('ImageCache.getImage: Failed to load image:', error);
             return null;
         }
     }
@@ -555,7 +556,7 @@ export class ImageCache {
      */
     async preloadNeighboringChunks(centerIdentifier: ChunkIdentifier, radius: number): Promise<void> {
         // For now, just log that this would preload neighbors
-        console.log(`ImageCache: Would preload ${radius} radius neighbors around chunk`, centerIdentifier);
+        debugUtil.log(`ImageCache: Would preload ${radius} radius neighbors around chunk`, centerIdentifier);
     }
 
     /**
@@ -563,7 +564,7 @@ export class ImageCache {
      */
     async preloadNeighboringFilmstrips(centerIdentifier: ChunkIdentifier): Promise<void> {
         // For now, just log that this would preload filmstrips
-        console.log('ImageCache: Would preload neighboring filmstrips for chunk', centerIdentifier);
+        debugUtil.log('ImageCache: Would preload neighboring filmstrips for chunk', centerIdentifier);
     }
 
     /**
@@ -584,7 +585,7 @@ export class ImageCache {
             this.currentSize -= chunk.size;
         }
 
-        console.log(`ImageCache: Evicted ${toRemove.length} chunks from resolution level ${resolutionLevel}`);
+        debugUtil.log(`ImageCache: Evicted ${toRemove.length} chunks from resolution level ${resolutionLevel}`);
     }
 
     /**
@@ -604,7 +605,7 @@ export class ImageCache {
 
         // Verify that the target layer is within the filmstrip range
         if (layerToExtract < identifier.z_min || layerToExtract >= identifier.z_max) {
-            console.warn(`Target layer ${layerToExtract} is outside filmstrip range [${identifier.z_min}, ${identifier.z_max})`);
+            debugUtil.warn(`Target layer ${layerToExtract} is outside filmstrip range [${identifier.z_min}, ${identifier.z_max})`);
             return null;
         }
 
@@ -622,7 +623,7 @@ export class ImageCache {
         const sourceWidth = imageWidth; // Full width
         const sourceHeight = imageHeight; // Single layer height
 
-        console.log(`Filmstrip extraction: layer ${layerToExtract}, offset ${layerOffsetInFilmstrip}, sourceY=${sourceY}, sourceHeight=${sourceHeight}, total height=${filmstripChunk.image.height}`);
+        debugUtil.log(`Filmstrip extraction: layer ${layerToExtract}, offset ${layerOffsetInFilmstrip}, sourceY=${sourceY}, sourceHeight=${sourceHeight}, total height=${filmstripChunk.image.height}`);
 
         return {
             filmstrip: filmstripChunk.image,
