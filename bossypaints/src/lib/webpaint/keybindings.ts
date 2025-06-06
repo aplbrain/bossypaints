@@ -162,6 +162,16 @@ export const keybindings: Keybinding[] = [
         eventType: 'key',
     },
     {
+        key: 'a',
+        action: 'Toggle axes and task region visibility',
+        matcher: (s) => s.key === 'a' || s.key === 'A',
+        handler: () => {
+            // Note: This handler is not actually used - functionality is implemented directly in PaintApp.svelte
+            // This entry is here only for display in the keybindings table
+        },
+        eventType: 'key',
+    },
+    {
         key: 'n',
         action: 'Increment segment ID',
         matcher: (s) => s.key === 'n' || s.key === 'N',
