@@ -20,17 +20,17 @@
 	export let task: TaskInDB;
 	let annotationStore: AnnotationManagerStore;
 	let nav: NavigationStore;
+	let showKeybindings = false;
 
 	async function loadTask() {
-
-		annotationStore = createAnnotationManagerStore(Math.max(1, (task.z_max - task.z_min - 1)));
+		annotationStore = createAnnotationManagerStore(Math.max(1, task.z_max - task.z_min - 1));
 		nav = createNavigationStore({
 			minLayer: task.z_min,
 			maxLayer: task.z_max - 1,
-			layer: Math.floor((task.z_max + task.z_min) / 2),  
+			layer: Math.floor((task.z_max + task.z_min) / 2),
 			imageWidth: task.x_max - task.x_min,
 			imageHeight: task.y_max - task.y_min
-		});	
+		});
 
 		let checkpointResponse = await API.getTaskCheckpoints(task.id);
 		if (checkpointResponse.checkpoints) {
@@ -87,7 +87,6 @@
 			ys={[task.y_min, task.y_max]}
 			zs={[task.z_min, task.z_max]}
 			resolution={task.resolution}
-			debugMode
 			onCheckpointData={(data) => {
 				API.checkpointTask({ taskId: task.id, checkpoint: data }).then(() => {
 					notyf.success('Checkpoint saved');
@@ -101,18 +100,25 @@
 		/>
 
 		<InfoTable {annotationStore} {nav} />
-		<KeybindingsTable show={false} />
+		<KeybindingsTable bind:show={showKeybindings} />
 
+		<!-- Percentage Complete Bar - slides down to hide, hover to show -->
 		<div
-			class="fixed bottom-0 p-4 bg-white border border-gray-300 rounded-lg text-center left-1/2 transform -translate-x-1/2"
+			class="fixed bottom-0 left-1/2 transform -translate-x-1/2 transition-transform duration-300 ease-in-out translate-y-16 hover:translate-y-0"
 		>
-			<p>Percentage Complete: {getPercentageComplete(task, annotationStore).toFixed(2)}%</p>
-			<p>Task ID: {task.id}</p>
+			<div class="p-4 bg-white border border-gray-300 rounded-t-lg text-center shadow-lg">
+				<p class="text-sm font-medium">
+					Percentage Complete: {getPercentageComplete(task, annotationStore).toFixed(2)}%
+				</p>
+				<p class="text-xs text-gray-600">Task ID: {task.id}</p>
+			</div>
 		</div>
 
-		<div class="fixed bottom-72 left-0 m-4">
+		<!-- Floating Menu - Bottom Right -->
+		<div class="fixed bottom-4 right-4 flex flex-col gap-2">
+			<!-- Save/Checkpoint Buttons -->
 			<button
-				class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-4 mr-0 shadow-lg rounded-l-full"
+				class="bg-cyan-500 hover:bg-cyan-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				on:click={() => {
 					API.checkpointTask({
 						taskId: task.id,
@@ -121,11 +127,21 @@
 						notyf.success('Checkpoint saved.');
 					});
 				}}
+				title="Checkpoint (Alt+S)"
 			>
-				Checkpoint
+				<!-- Checkpoint icon -->
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
+					></path>
+				</svg>
 			</button>
+
 			<button
-				class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 ml-0 shadow-lg rounded-r-full"
+				class="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				on:click={() => {
 					API.saveTask({ taskId: task.id, checkpoint: annotationStore.getAllAnnotations() }).then(
 						() => {
@@ -137,8 +153,34 @@
 						}
 					);
 				}}
+				title="Submit (Alt+Shift+S)"
 			>
-				Submit
+				<!-- Submit/Save icon -->
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+					></path>
+				</svg>
+			</button>
+
+			<!-- Help/Keybindings Toggle -->
+			<button
+				class="bg-gray-500 hover:bg-gray-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				on:click={() => (showKeybindings = !showKeybindings)}
+				title="Toggle Keybindings (H)"
+			>
+				<!-- Help icon -->
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+					></path>
+				</svg>
 			</button>
 		</div>
 	{/if}
