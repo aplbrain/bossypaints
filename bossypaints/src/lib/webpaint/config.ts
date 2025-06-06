@@ -64,6 +64,15 @@ const APP_CONFIG = {
     },
 
     /**
+     * Chunk loading configuration.
+     * Controls how many chunks to load around the camera focus.
+     */
+    chunkLoading: {
+        radius: 2,  // Load chunks in a (2*radius+1) x (2*radius+1) grid around camera (default: 5x5 grid)
+        prioritizeCenter: true  // Load chunks closest to camera first
+    },
+
+    /**
      * Zoom speed with keys.
      */
     slowKeyZoomSpeed: 0.1,

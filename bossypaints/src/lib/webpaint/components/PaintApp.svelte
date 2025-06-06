@@ -140,9 +140,25 @@ from BossDB and displays it on the canvas.
 		const centerChunkY = Math.floor(centerOfScreen.y / chunkWorldSize);
 		const centerChunkZ = Math.floor(currentZ / 16);
 
-		// Generate all 9 chunks (3x3 grid) around the center chunk
-		for (let dx = -1; dx <= 1; dx++) {
-			for (let dy = -1; dy <= 1; dy++) {
+		const radius = APP_CONFIG.chunkLoading.radius;
+		const prioritizeCenter = APP_CONFIG.chunkLoading.prioritizeCenter;
+
+		// Generate chunks in order of priority (center-out) or simple grid order
+		if (prioritizeCenter) {
+			// Create an array of chunk offsets sorted by distance from center
+			const chunkOffsets = [];
+			for (let dx = -radius; dx <= radius; dx++) {
+				for (let dy = -radius; dy <= radius; dy++) {
+					const distance = Math.sqrt(dx * dx + dy * dy);
+					chunkOffsets.push({ dx, dy, distance });
+				}
+			}
+			
+			// Sort by distance from center (closest first)
+			chunkOffsets.sort((a, b) => a.distance - b.distance);
+			
+			// Generate chunks in priority order
+			for (const { dx, dy } of chunkOffsets) {
 				const chunkX = centerChunkX + dx;
 				const chunkY = centerChunkY + dy;
 				const chunkZ = centerChunkZ;
@@ -159,6 +175,28 @@ from BossDB and displays it on the canvas.
 					z_min: chunkZ * 16,
 					z_max: (chunkZ + 1) * 16
 				});
+			}
+		} else {
+			// Generate chunks in simple grid order
+			for (let dx = -radius; dx <= radius; dx++) {
+				for (let dy = -radius; dy <= radius; dy++) {
+					const chunkX = centerChunkX + dx;
+					const chunkY = centerChunkY + dy;
+					const chunkZ = centerChunkZ;
+
+					// Skip chunks that would be negative
+					if (chunkX < 0 || chunkY < 0 || chunkZ < 0) continue;
+
+					// Convert back to base resolution coordinates for BossDB (always 256 pixels apart)
+					chunks.push({
+						x_min: chunkX * 256,
+						x_max: (chunkX + 1) * 256,
+						y_min: chunkY * 256,
+						y_max: (chunkY + 1) * 256,
+						z_min: chunkZ * 16,
+						z_max: (chunkZ + 1) * 16
+					});
+				}
 			}
 		}
 
@@ -282,7 +320,8 @@ from BossDB and displays it on the canvas.
 		);
 		const newVisibleChunks: ChunkIdentifier[] = [];
 
-		// Convert chunk bounds to ChunkIdentifier format
+		// Convert chunk bounds to ChunkIdentifier format and load chunks in priority order
+		const chunkPromises: Promise<void>[] = [];
 		for (const chunk of chunks) {
 			// Load each chunk using filmstrip-aligned Z-range for efficient batch fetching
 			const chunkId: ChunkIdentifier = {
@@ -297,14 +336,20 @@ from BossDB and displays it on the canvas.
 
 			newVisibleChunks.push(chunkId);
 
-			// Start loading the chunk (this will use cache if already loaded)
+			// Start loading the chunk asynchronously (prioritized by getAllNeighboringChunks order)
 			console.log(
-				`LOAD: Requesting filmstrip chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:[${chunkId.z_min}-${chunkId.z_max}]`
+				`LOAD: Requesting filmstrip chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:[${chunkId.z_min}-${chunkId.z_max}] (priority: ${chunks.indexOf(chunk)})`
 			);
-			imageCache.getImage(chunkId).catch((err) => {
+			const loadPromise = imageCache.getImage(chunkId).catch((err) => {
 				console.warn(`LOAD: Failed to load chunk:`, err);
 			});
+			chunkPromises.push(loadPromise);
 		}
+
+		// Load all chunks but don't wait for completion (async loading)
+		Promise.allSettled(chunkPromises).then(() => {
+			console.log(`LOAD: Completed loading ${chunks.length} chunks for resolution ${currentResolutionLevel.resolution}`);
+		});
 
 		currentVisibleChunks = newVisibleChunks;
 
@@ -325,8 +370,8 @@ from BossDB and displays it on the canvas.
 			resolution: getResolutionLevel(currentResolutionLevel.resolution)
 		};
 
-		// Preload with a radius of 1 (immediate neighbors)
-		imageCache.preloadNeighboringChunks(centerChunkId, 1);
+		// Preload with configurable radius around the center chunk
+		imageCache.preloadNeighboringChunks(centerChunkId, APP_CONFIG.chunkLoading.radius);
 
 		// Preload neighboring filmstrip batches for efficient Z-navigation
 		imageCache.preloadNeighboringFilmstrips(centerChunkId);
@@ -648,13 +693,21 @@ from BossDB and displays it on the canvas.
 					60
 				);
 
+				// Show chunk loading configuration
+				const totalChunks = (2 * APP_CONFIG.chunkLoading.radius + 1) ** 2;
+				s.text(
+					`Chunk Loading: ${totalChunks} chunks (${2 * APP_CONFIG.chunkLoading.radius + 1}x${2 * APP_CONFIG.chunkLoading.radius + 1} grid, radius=${APP_CONFIG.chunkLoading.radius}, center-first=${APP_CONFIG.chunkLoading.prioritizeCenter})`,
+					10,
+					70
+				);
+
 				// Show if outside original ROI - fix the logic
 				if (isOutsideROI(centerOfScreen, nav.layer)) {
 					s.fill(255, 255, 0); // Yellow text
-					s.text('CENTER OUTSIDE ORIGINAL ROI', 10, 70);
+					s.text('CENTER OUTSIDE ORIGINAL ROI', 10, 80);
 				} else {
 					s.fill(0, 255, 0); // Green text
-					s.text('CENTER INSIDE ORIGINAL ROI', 10, 70);
+					s.text('CENTER INSIDE ORIGINAL ROI', 10, 80);
 				}
 
 				// Show cache statistics
@@ -664,17 +717,17 @@ from BossDB and displays it on the canvas.
 					s.text(
 						`Memory Cache: ${imageCache.isCacheEnabled() ? 'ENABLED' : 'DISABLED'}, ${stats.entryCount} entries, ${(stats.cacheSize / 1024 / 1024).toFixed(1)}MB / ${(stats.maxCacheSize / 1024 / 1024).toFixed(0)}MB (${stats.utilizationPercent.toFixed(1)}%)`,
 						10,
-						80
+						90
 					);
 					s.text(
 						`Filmstrip Cache: ${stats.filmstripCount} batches, ${stats.totalSlicesInFilmstrips} slices`,
 						10,
-						90
+						100
 					);
 					s.text(
 						`Loading: ${stats.loadingCount} chunks, ${stats.filmstripLoadingCount} filmstrips`,
 						10,
-						100
+						110
 					);
 
 					// Show storage stats (async, so we'll update periodically)
@@ -686,7 +739,7 @@ from BossDB and displays it on the canvas.
 								s.text(
 									`Browser Storage: ${combinedStats.storage.totalChunks} chunks, ${(combinedStats.storage.estimatedSize / 1024 / 1024).toFixed(1)}MB`,
 									10,
-									110
+									120
 								);
 							}
 						})
