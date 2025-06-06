@@ -146,9 +146,8 @@ export const keybindings: Keybinding[] = [
         matcher: (s) => s.keyCode === s.ESCAPE,
         handler: (s, annotationStore, nav) => {
             nav.reset();
-            // set x and y to center the data in the viewport
-            nav.setX((s.width - nav.imageWidth) / 2);
-            nav.setY((s.height - nav.imageHeight) / 2);
+            // Pan to the original task center (ROI), or fallback to centering the data in viewport
+            nav.panToOriginalTaskCenter(s.width, s.height);
         },
         eventType: 'key',
     },

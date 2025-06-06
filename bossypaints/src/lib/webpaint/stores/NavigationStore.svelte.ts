@@ -26,6 +26,10 @@ export function createNavigationStore({
     const _imageWidth = $state(imageWidth);
     const _imageHeight = $state(imageHeight);
 
+    // Store original task center coordinates in native resolution
+    let _originalTaskCenterX = $state<number | null>(null);
+    let _originalTaskCenterY = $state<number | null>(null);
+
     return {
 
         /** Get the status "drawing" (true/false).
@@ -48,6 +52,20 @@ export function createNavigationStore({
         get imageWidth() { return _imageWidth; },
         /** Get the image height of the underlying data. */
         get imageHeight() { return _imageHeight; },
+
+        /** Set the original task center coordinates in native resolution */
+        setOriginalTaskCenter: (centerX: number, centerY: number) => {
+            _originalTaskCenterX = centerX;
+            _originalTaskCenterY = centerY;
+        },
+
+        /** Pan to the original task center (used by escape key and initial load) */
+        panToOriginalTaskCenter: (canvasWidth: number, canvasHeight: number) => {
+            if (_originalTaskCenterX !== null && _originalTaskCenterY !== null) {
+                _x = canvasWidth / 2 - _originalTaskCenterX;
+                _y = canvasHeight / 2 - _originalTaskCenterY;
+            }
+        },
 
         get x() { return _x; },
         setX: (newX: number) => {

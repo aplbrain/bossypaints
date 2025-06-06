@@ -30,6 +30,7 @@ from BossDB and displays it on the canvas.
 	export let xs: [number, number];
 	export let ys: [number, number];
 	export let zs: [number, number];
+	export let resolution: number | undefined = undefined;
 
 	// Expose the on:submit event to the parent component:
 	export let onSubmitData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
@@ -222,6 +223,21 @@ from BossDB and displays it on the canvas.
 	let lastTouchDistance: number = 0;
 	let isPinching: boolean = false;
 	let pinchCenter: { x: number; y: number } = { x: 0, y: 0 };
+
+	// Function to calculate native task center coordinates
+	function calculateNativeTaskCenter() {
+		// Calculate the center of the task region
+		const taskCenterX = (xs[0] + xs[1]) / 2;
+		const taskCenterY = (ys[0] + ys[1]) / 2;
+
+		// If resolution is provided, multiply to get native resolution position
+		const nativeCenterX =
+			resolution !== undefined ? taskCenterX * Math.pow(2, resolution) : taskCenterX;
+		const nativeCenterY =
+			resolution !== undefined ? taskCenterY * Math.pow(2, resolution) : taskCenterY;
+
+		return { nativeCenterX, nativeCenterY };
+	}
 
 	// Helper function to calculate distance between two touch points (p5.js version)
 	function getTouchDistance(s: p5): number {
@@ -443,6 +459,11 @@ from BossDB and displays it on the canvas.
 				);
 
 				continue;
+			} else {
+				// If debug is disabled, just draw a placeholder rectangle
+				s.fill(100, 100, 100, 100);
+				s.noStroke();
+				s.rect(renderX, renderY, renderWidth, renderHeight);
 			}
 			if (debugEnabled) {
 				// Draw debug information (e.g., chunk boundaries)
@@ -468,17 +489,27 @@ from BossDB and displays it on the canvas.
 
 			// Try to restore navigation state from storage
 			const savedNavState = browserStorage.loadNavigationState(datasetURI);
-			if (savedNavState) {
-				nav.setX(savedNavState.x);
-				nav.setY(savedNavState.y);
-				nav.setZoom(savedNavState.zoom);
-				nav.setLayer(savedNavState.layer);
-				debugUtil.log('Restored navigation state from storage');
-			} else {
-				// Set the nav to the center of the image (default behavior)
-				nav.setX((s.width - nav.imageWidth) / 2);
-				nav.setY((s.height - nav.imageHeight) / 2);
-			}
+			// if (savedNavState) {
+			// 	nav.setX(savedNavState.x);
+			// 	nav.setY(savedNavState.y);
+			// 	nav.setZoom(savedNavState.zoom);
+			// 	nav.setLayer(savedNavState.layer);
+			// 	debugUtil.log('Restored navigation state from storage');
+			// } else {
+			// Default camera to task center position
+			// Calculate and store the original task center in native coordinates
+			const { nativeCenterX, nativeCenterY } = calculateNativeTaskCenter();
+			nav.setOriginalTaskCenter(nativeCenterX, nativeCenterY);
+
+			// Center the viewport on the task center
+			nav.panToOriginalTaskCenter(s.width, s.height);
+
+			debugUtil.log('Centered camera on task position:', {
+				taskCenter: { x: (xs[0] + xs[1]) / 2, y: (ys[0] + ys[1]) / 2 },
+				nativeCenter: { x: nativeCenterX, y: nativeCenterY },
+				resolution: resolution
+			});
+			// }
 
 			// Load initial chunks
 			const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
@@ -549,6 +580,25 @@ from BossDB and displays it on the canvas.
 			// Render the cached chunks
 			renderCachedChunks(s, currentResolutionLevelInfo);
 
+			// Draw yellow cube around the complete task region
+			s.stroke(255, 255, 0); // Yellow color
+			s.strokeWeight(3);
+			s.noFill();
+			
+			// Calculate native coordinates (task region might be in higher-res coordinates)
+			const nativeTaskX1 = resolution !== undefined ? xs[0] * Math.pow(2, resolution) : xs[0];
+			const nativeTaskY1 = resolution !== undefined ? ys[0] * Math.pow(2, resolution) : ys[0];
+			const nativeTaskX2 = resolution !== undefined ? xs[1] * Math.pow(2, resolution) : xs[1];
+			const nativeTaskY2 = resolution !== undefined ? ys[1] * Math.pow(2, resolution) : ys[1];
+			
+			// Draw the task region rectangle
+			s.rect(
+				nativeTaskX1, 
+				nativeTaskY1, 
+				nativeTaskX2 - nativeTaskX1, 
+				nativeTaskY2 - nativeTaskY1
+			);
+
 			if (debugEnabled) {
 				// axes:
 				s.stroke(255, 0, 0);
@@ -611,7 +661,7 @@ from BossDB and displays it on the canvas.
 				}
 			}
 
-			if (debugEnabled) {
+			if (true) {
 				// axes in center of viewport:
 				s.stroke(255, 0, 0);
 				s.line(s.width / 2, s.height / 2, s.width / 2 + 100, s.height / 2);
