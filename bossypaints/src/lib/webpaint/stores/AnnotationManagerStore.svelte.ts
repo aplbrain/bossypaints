@@ -136,8 +136,10 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
 
                 if (sameIDAnnotations.length > 1) {
                     let polyboolPolys: Polygon[] = sameIDAnnotations.map((a) => {
+                        // Support existing holes - include all regions (outer boundary + holes)
+                        const allRegions = [a.points, ...a.holes];
                         return {
-                            regions: [a.points],
+                            regions: allRegions,
                             inverted: false
                         };
                     });
@@ -171,8 +173,10 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
             console.log(sameIDAnnotations.length);
             if (sameIDAnnotations.length > 0) {
                 let polyboolPolys: Polygon[] = sameIDAnnotations.map((a) => {
+                    // Support existing holes - include all regions (outer boundary + holes)
+                    const allRegions = [a.points, ...a.holes];
                     return {
-                        regions: [a.points],
+                        regions: allRegions,
                         inverted: false
                     };
                 });

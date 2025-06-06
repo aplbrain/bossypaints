@@ -17,10 +17,11 @@ class PolygonAnnotation {
     constructor(startingPoints?: Array<[number, number]> | Array<Array<[number, number]>>, segmentID?: number, editing = true, z = 0) {
         // Handle both old single-region format and new multi-region format
         if (startingPoints && startingPoints.length > 0 && Array.isArray(startingPoints[0]) && Array.isArray(startingPoints[0][0])) {
-            // Multi-region format: first region is outer boundary, rest are holes
+            // Multi-region format: classify regions by winding order
             const regions = startingPoints as Array<Array<[number, number]>>;
-            this.points = regions[0] || [];
-            this.holes = regions.slice(1) || [];
+            const classifiedRegions = this.classifyRegionsByWindingOrder(regions);
+            this.points = classifiedRegions.outerBoundary;
+            this.holes = classifiedRegions.holes;
         } else {
             // Single region format (backward compatibility)
             this.points = (startingPoints as Array<[number, number]>) || [];
@@ -105,6 +106,70 @@ class PolygonAnnotation {
             if (intersect) inside = !inside;
         }
         return inside;
+    }
+
+    /**
+     * Calculate the signed area of a polygon to determine winding order.
+     * Positive area = counter-clockwise (outer boundary)
+     * Negative area = clockwise (hole)
+     */
+    private calculateSignedArea(polygon: Array<[number, number]>): number {
+        if (polygon.length < 3) return 0;
+
+        let area = 0;
+        for (let i = 0; i < polygon.length; i++) {
+            const j = (i + 1) % polygon.length;
+            area += (polygon[j][0] - polygon[i][0]) * (polygon[j][1] + polygon[i][1]);
+        }
+        return area / 2;
+    }
+
+    /**
+     * Classify regions from polybool result based on winding order.
+     * According to polybool docs: exterior paths are counter-clockwise, holes are clockwise.
+     */
+    private classifyRegionsByWindingOrder(regions: Array<Array<[number, number]>>): {
+        outerBoundary: Array<[number, number]>;
+        holes: Array<Array<[number, number]>>;
+    } {
+        if (regions.length === 0) {
+            return { outerBoundary: [], holes: [] };
+        }
+
+        const classified = regions.map(region => ({
+            region,
+            signedArea: this.calculateSignedArea(region),
+            isOuterBoundary: this.calculateSignedArea(region) > 0 // counter-clockwise = positive area
+        }));
+
+        // Debug: log the classification results
+        console.log('Classifying regions:', classified.map(c => ({
+            area: c.signedArea,
+            isOuter: c.isOuterBoundary,
+            pointCount: c.region.length
+        })));
+
+        // Find the outer boundary (should be the largest counter-clockwise region)
+        const outerBoundaries = classified.filter(c => c.isOuterBoundary);
+        const holes = classified.filter(c => !c.isOuterBoundary);
+
+        // Use the largest outer boundary as the main boundary
+        let outerBoundary: Array<[number, number]> = [];
+        if (outerBoundaries.length > 0) {
+            outerBoundary = outerBoundaries.reduce((largest, current) =>
+                Math.abs(current.signedArea) > Math.abs(largest.signedArea) ? current : largest
+            ).region;
+        } else if (regions.length > 0) {
+            // Fallback: if no counter-clockwise regions found, use the first region
+            outerBoundary = regions[0];
+        }
+
+        console.log(`Classification result: ${outerBoundaries.length} outer boundaries, ${holes.length} holes`);
+
+        return {
+            outerBoundary,
+            holes: holes.map(h => h.region)
+        };
     }
 
     removeLatestVertex() {
