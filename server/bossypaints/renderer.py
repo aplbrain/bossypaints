@@ -26,15 +26,28 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
         for checkpoint in checkpoints:
             for poly in checkpoint.polygons:
                 z = poly.z
+
+                # Rasterize outer boundary
                 points = np.array(poly.points)
-                if points.ndim != 2:
+                if points.ndim != 2 or len(points) < 3:
                     continue
-                # points[:, 0] = np.clip(points[:, 0], task.x_min, task.x_max)
-                # points[:, 1] = np.clip(points[:, 1], task.y_min, task.y_max)
+
                 rr, cc = polygon(points[:, 0], points[:, 1])
                 rr = np.clip(rr, 0, x_size - 1)
                 cc = np.clip(cc, 0, y_size - 1)
                 volume[rr, cc, z] = poly.segmentID
+
+                # Subtract holes (set back to 0)
+                for hole in poly.holes:
+                    hole_points = np.array(hole)
+                    if hole_points.ndim != 2 or len(hole_points) < 3:
+                        continue
+
+                    hole_rr, hole_cc = polygon(hole_points[:, 0], hole_points[:, 1])
+                    hole_rr = np.clip(hole_rr, 0, x_size - 1)
+                    hole_cc = np.clip(hole_cc, 0, y_size - 1)
+                    volume[hole_rr, hole_cc, z] = 0  # Clear the hole area
+
         return volume
 
 

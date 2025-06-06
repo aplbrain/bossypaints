@@ -36,15 +36,32 @@
 		if (checkpointResponse.checkpoints) {
 			checkpointResponse.checkpoints.forEach((checkpoint) => {
 				checkpoint.polygons.forEach((annotation) => {
-					annotationStore.addAnnotation(
-						annotation.z,
-						new PolygonAnnotation(
-							annotation.points,
+					// Handle both old and new annotation formats
+					let polygonAnnotation: PolygonAnnotation;
+
+					if (annotation.positiveRegions && annotation.positiveRegions.length > 0) {
+						// New format with positive/negative regions
+						polygonAnnotation = new PolygonAnnotation(
+							{
+								positiveRegions: annotation.positiveRegions,
+								negativeRegions: annotation.negativeRegions || []
+							},
 							annotation.segmentID,
 							annotation.editing,
 							annotation.z
-						)
-					);
+						);
+					} else {
+						// Legacy format with points and holes
+						const regions = [annotation.points, ...(annotation.holes || [])];
+						polygonAnnotation = new PolygonAnnotation(
+							regions,
+							annotation.segmentID,
+							annotation.editing,
+							annotation.z
+						);
+					}
+
+					annotationStore.addAnnotation(annotation.z, polygonAnnotation);
 				});
 			});
 		}
@@ -69,15 +86,21 @@
 			(task.x_max - task.x_min) * (task.y_max - task.y_min) * (task.z_max - task.z_min);
 		let annotatedArea = 0;
 		annoStore.getAllAnnotations().forEach((annotation) => {
-			// Calculate outer boundary area
-			let shapeArea = calculatePolygonArea(annotation.points);
-
-			// Subtract hole areas
-			annotation.holes.forEach((hole) => {
-				shapeArea -= calculatePolygonArea(hole);
+			// Calculate total positive area
+			let positiveArea = 0;
+			annotation.positiveRegions.forEach((region) => {
+				positiveArea += calculatePolygonArea(region);
 			});
 
-			annotatedArea += shapeArea;
+			// Subtract negative area (holes)
+			let negativeArea = 0;
+			annotation.negativeRegions.forEach((region) => {
+				negativeArea += calculatePolygonArea(region);
+			});
+
+			// Net area for this annotation
+			const netArea = positiveArea - negativeArea;
+			annotatedArea += Math.max(0, netArea); // Ensure non-negative
 		});
 		return (annotatedArea / totalArea) * 100;
 	}

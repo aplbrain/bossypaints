@@ -6,7 +6,14 @@ from bossypaints.tasks import TaskID
 
 
 class Polygon(pydantic.BaseModel):
-    points: list[tuple[float, float]]
+    # Legacy fields for backward compatibility
+    points: list[tuple[float, float]] = []
+    holes: list[list[tuple[float, float]]] = []  # Support for genus 1 shapes
+
+    # New positive/negative regions approach
+    positiveRegions: list[list[tuple[float, float]]] = []
+    negativeRegions: list[list[tuple[float, float]]] = []
+
     editing: bool
     segmentID: int
     color: list[int] | None
