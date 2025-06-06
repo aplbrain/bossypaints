@@ -69,7 +69,15 @@
 			(task.x_max - task.x_min) * (task.y_max - task.y_min) * (task.z_max - task.z_min);
 		let annotatedArea = 0;
 		annoStore.getAllAnnotations().forEach((annotation) => {
-			annotatedArea += calculatePolygonArea(annotation.points);
+			// Calculate outer boundary area
+			let shapeArea = calculatePolygonArea(annotation.points);
+
+			// Subtract hole areas
+			annotation.holes.forEach((hole) => {
+				shapeArea -= calculatePolygonArea(hole);
+			});
+
+			annotatedArea += shapeArea;
 		});
 		return (annotatedArea / totalArea) * 100;
 	}

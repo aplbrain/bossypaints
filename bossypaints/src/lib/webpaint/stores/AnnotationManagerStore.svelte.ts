@@ -20,7 +20,7 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
     let currentAnnotation = createAnnotationStore(new PolygonAnnotation([], currentSegmentID));
     let hoveredAnnotation: PolygonAnnotation | null = $state(null);
 
-    return {
+    const store = {
         /**
          * Get the raw annotations array.
          * @returns {Array<Array<PolygonAnnotation>>}
@@ -144,14 +144,13 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
 
                     // Reduce:
                     // TODO: https://github.com/velipso/polybool?tab=readme-ov-file#advanced-example-1
-                    let result: Polygon;
+                    let result: Polygon = polyboolPolys[0];
                     for (let i = 1; i < polyboolPolys.length; i++) {
-                        result = polybool.union(polyboolPolys[0], polyboolPolys[i]);
-                        polyboolPolys[0] = result;
+                        result = polybool.union(result, polyboolPolys[i]);
                     }
 
-                    // TODO: Support genus > 0
-                    const mergedAnnotations = result.regions.map((r) => new PolygonAnnotation(r as Array<[number, number]>, currentSegmentID, false, layerIndex));
+                    // Support genus > 0 - use all regions from polybool result
+                    const mergedAnnotations = [new PolygonAnnotation(result.regions as Array<Array<[number, number]>>, currentSegmentID, false, layerIndex)];
                     layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID !== currentSegmentID);
                     layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].concat(mergedAnnotations);
                 }
@@ -180,10 +179,10 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
 
                 // Subtract the current annotation from each:
                 const subtractedPolys = polyboolPolys.map((p) => {
-                    // TODO: Support genus > 0
+                    // Support genus > 0 - keep all regions including holes
                     return polybool.difference(p, subtractingAnnotation);
                 });
-                const subtractedAnnotations = subtractedPolys.map((p) => new PolygonAnnotation(p.regions[0] as Array<[number, number]>, currentSegmentID, false, layerIndex));
+                const subtractedAnnotations = subtractedPolys.map((p) => new PolygonAnnotation(p.regions as Array<Array<[number, number]>>, currentSegmentID, false, layerIndex));
                 layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID !== currentSegmentID);
                 layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].concat(subtractedAnnotations);
             }
@@ -221,11 +220,13 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
             // Draw the annotations with bounds checking
             if (nav.layer >= 0 && nav.layer < layerwiseAnnotations.length) {
                 layerwiseAnnotations[nav.layer].forEach((annotation) => {
-                    annotation.draw(p, nav, this);
+                    annotation.draw(p, nav, store);
                 });
             }
         }
     };
+
+    return store;
 }
 
 export type AnnotationManagerStore = ReturnType<typeof createAnnotationManagerStore>;

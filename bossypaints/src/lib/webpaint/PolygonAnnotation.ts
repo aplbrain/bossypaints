@@ -7,14 +7,26 @@ import type { AnnotationManagerStore } from "./stores/AnnotationManagerStore.sve
 class PolygonAnnotation {
 
     points: Array<[number, number]>;
+    holes: Array<Array<[number, number]>>;
     editing: boolean;
     segmentID: number;
     color: number[];
     z: number;
 
 
-    constructor(startingPoints?: Array<[number, number]>, segmentID?: number, editing = true, z = 0) {
-        this.points = startingPoints || [];
+    constructor(startingPoints?: Array<[number, number]> | Array<Array<[number, number]>>, segmentID?: number, editing = true, z = 0) {
+        // Handle both old single-region format and new multi-region format
+        if (startingPoints && startingPoints.length > 0 && Array.isArray(startingPoints[0]) && Array.isArray(startingPoints[0][0])) {
+            // Multi-region format: first region is outer boundary, rest are holes
+            const regions = startingPoints as Array<Array<[number, number]>>;
+            this.points = regions[0] || [];
+            this.holes = regions.slice(1) || [];
+        } else {
+            // Single region format (backward compatibility)
+            this.points = (startingPoints as Array<[number, number]>) || [];
+            this.holes = [];
+        }
+
         this.editing = true;
         this.segmentID = segmentID || 1;
         this.color = segmentIdToRGB(this.segmentID);
@@ -49,6 +61,16 @@ class PolygonAnnotation {
         this.points.forEach((pt: [number, number]) => {
             p.vertex(pt[0], pt[1]);
         });
+
+        // Add holes as contours
+        this.holes.forEach((hole: Array<[number, number]>) => {
+            p.beginContour();
+            hole.forEach((pt: [number, number]) => {
+                p.vertex(pt[0], pt[1]);
+            });
+            p.endContour();
+        });
+
         p.endShape();
 
         if (hover && !this.editing) {
@@ -61,13 +83,22 @@ class PolygonAnnotation {
     }
 
     pointIsInside(pt: [number, number]): boolean {
-        // is point inside polygon?
+        // Check if point is inside outer boundary
+        const insideOuter = this.raycast(pt, this.points);
 
+        // Check if point is inside any hole
+        const insideAnyHole = this.holes.some(hole => this.raycast(pt, hole));
+
+        // Point is inside shape if it's in outer boundary but not in any hole
+        return insideOuter && !insideAnyHole;
+    }
+
+    private raycast(pt: [number, number], polygon: Array<[number, number]>): boolean {
         // ray-casting algorithm
         let inside = false;
-        for (let i = 0, j = this.points.length - 1; i < this.points.length; j = i++) {
-            const xi = this.points[i][0], yi = this.points[i][1];
-            const xj = this.points[j][0], yj = this.points[j][1];
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i][0], yi = polygon[i][1];
+            const xj = polygon[j][0], yj = polygon[j][1];
 
             const intersect = ((yi > pt[1]) !== (yj > pt[1])) &&
                 (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi);
