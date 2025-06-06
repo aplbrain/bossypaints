@@ -55,9 +55,14 @@ manager and navigation store.
 		}
 	}
 
-	// Get the current segment color
+	// Get the current segment color - make it reactive to changes
 	$: currentSegmentColor = segmentIdToRGB(annotationStore.currentSegmentID);
 	$: colorStyle = `rgb(${currentSegmentColor[0]}, ${currentSegmentColor[1]}, ${currentSegmentColor[2]})`;
+
+	// Update temp segment ID when the current segment ID changes
+	$: if (!editingSegmentId) {
+		tempSegmentId = annotationStore.currentSegmentID.toString();
+	}
 
 	console.log(annotationStore.getLayerAnnotations);
 </script>

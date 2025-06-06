@@ -73,6 +73,10 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         setCurrentSegmentID: (id: number): void => {
             currentSegmentID = id;
+            // If the current annotation has no vertices, also update its segment ID:
+            if (currentAnnotation.annotation.points.length === 0) {
+                currentAnnotation.annotation.segmentID = currentSegmentID;
+            }
         },
 
         /**
