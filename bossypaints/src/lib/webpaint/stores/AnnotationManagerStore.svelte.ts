@@ -168,7 +168,9 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         subtractCurrentAnnotation: (layerIndex: number) => {
             const sameIDAnnotations = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID === currentSegmentID);
-            const subtractingAnnotation = { regions: [currentAnnotation.annotation.points], inverted: false };
+            // Use the first positive region for subtraction (or empty array if none exists)
+            const currentRegion = currentAnnotation.annotation.positiveRegions[0] || [];
+            const subtractingAnnotation = { regions: [currentRegion], inverted: false };
             currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID, false, layerIndex));
 
             if (sameIDAnnotations.length > 0) {
