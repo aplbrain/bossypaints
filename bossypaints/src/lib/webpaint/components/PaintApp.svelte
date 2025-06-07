@@ -342,6 +342,24 @@ from BossDB and displays it on the canvas.
 		}
 	};
 
+	// Debug overlay element reference
+	let debugOverlayElement: HTMLElement;
+
+	// Function to copy debug info to clipboard
+	function copyDebugInfo() {
+		if (debugOverlayElement) {
+			const text = debugOverlayElement.innerText;
+			navigator.clipboard
+				.writeText(text)
+				.then(() => {
+					console.log('Debug info copied to clipboard');
+				})
+				.catch((err) => {
+					console.error('Failed to copy debug info:', err);
+				});
+		}
+	}
+
 	// Function to load and cache visible chunks based on current view
 	async function loadVisibleChunks(
 		centerOfScreen: { x: number; y: number },
@@ -972,7 +990,7 @@ from BossDB and displays it on the canvas.
 
 <!-- Debug information overlay -->
 <!-- {#if debugEnabled} -->
-<div class="debug-overlay">
+<div class="debug-overlay" on:click={copyDebugInfo} bind:this={debugOverlayElement}>
 	<div class="debug-line">Scene Mouse: {debugInfo.sceneMouseX}, {debugInfo.sceneMouseY}</div>
 	<div class="debug-line">
 		Data Mouse: {debugInfo.dataMouseX.toFixed(3)}, {debugInfo.dataMouseY.toFixed(3)}
@@ -1041,16 +1059,25 @@ from BossDB and displays it on the canvas.
 	.debug-overlay {
 		position: fixed;
 		top: 10px;
-		left: 10px;
+		left: 0;
+		transform: translateX(-98%);
 		background: rgba(0, 0, 0, 0.8);
 		color: white;
 		font-family: monospace;
 		font-size: 12px;
 		padding: 10px;
-		border-radius: 5px;
+		border-radius: 0 5px 5px 0;
 		z-index: 1000;
-		pointer-events: none;
+		pointer-events: auto;
 		max-width: 600px;
+		cursor: pointer;
+		transition: transform 0.3s ease;
+		opacity: 0.3;
+	}
+
+	.debug-overlay:hover {
+		transform: translateX(0);
+		opacity: 1;
 	}
 
 	.debug-line {

@@ -78,12 +78,12 @@ async def save_task(task_id: TaskID, checkpoint: dict):
     checkpoint_store.save_checkpoint(checkpoint_obj)
     # Render this volume:
     task = task_store.get(task_id)
-    # ImageStackVolumePolygonRenderer(
-    #     fmt="tif", directory="./exports/"
-    # ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
-    BossDBInternVolumePolygonRenderer().render_from_checkpoints(
-        task, checkpoint_store.get_checkpoints_for_task(task_id)
-    )
+    ImageStackVolumePolygonRenderer(
+        fmt="tif", directory="./exports/"
+    ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
+    # BossDBInternVolumePolygonRenderer().render_from_checkpoints(
+    #     task, checkpoint_store.get_checkpoints_for_task(task_id)
+    # )
 
 
 @api_router.post("/tasks/{task_id}/checkpoint")

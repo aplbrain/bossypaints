@@ -106,7 +106,7 @@ class ImageStackVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
                 continue
             imsave(
                 f"{self.directory}{task.collection}_{task.experiment}_{task.channel}_{task.resolution}_{task.id}.{z}.{self.fmt}",
-                volume[:, :, z]
+                volume[:, :, z].astype(np.uint16)
             )
 
 
