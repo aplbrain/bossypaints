@@ -45,15 +45,13 @@
 			s.noStroke();
 			annotationStore.annotations.forEach((annolist, layer) => {
 				annolist.forEach((anno) => {
-					s.fill(...anno.color, 10);
-					anno.points.forEach((pt) => {
-						s.ellipse(
-							s.map(pt[0], 0, nav.imageWidth, 0, s.width),
-							s.map(layer, 0, nav.maxLayer - nav.minLayer, 0, height),
-							10,
-							10
-						);
-					});
+					s.fill(anno.color[0], anno.color[1], anno.color[2], 150);
+					s.ellipse(
+						anno.segmentID,
+						s.map(layer, 0, nav.maxLayer - nav.minLayer, 0, height),
+						10,
+						10
+					);
 					// s.ellipse(
 					// 	s.map(anno.points[0][0], 0, nav.imageWidth, 0, s.width),
 					// 	s.map(layer, 0, nav.maxLayer - nav.minLayer, 0, height),

@@ -40,93 +40,49 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
                     logger.warning(f"Polygon z={poly.z} is outside volume bounds (z_min={task.z_min}, z_max={task.z_max})")
                     continue
 
-                # Check if we have the new positiveRegions/negativeRegions schema
-                if poly.positiveRegions and len(poly.positiveRegions) > 0:
-                    # New schema: use positive and negative regions
-                    logger.info(f"Rendering polygon with new schema: {len(poly.positiveRegions)} positive regions, {len(poly.negativeRegions)} negative regions")
+                # Use the new positiveRegions/negativeRegions schema
+                logger.info(f"Rendering polygon: {len(poly.positiveRegions)} positive regions, {len(poly.negativeRegions)} negative regions")
 
-                    # Rasterize all positive regions (outer boundaries)
-                    for positive_region in poly.positiveRegions:
-                        points = np.array(positive_region)
-                        if points.ndim != 2 or len(points) < 3:
-                            continue
+                # Rasterize all positive regions (outer boundaries)
+                for positive_region in poly.positiveRegions:
+                    points = np.array(positive_region)
+                    if points.ndim != 2 or len(points) < 3:
+                        continue
 
-                        # Scale down coordinates by resolution factor and offset points to be relative to task bounds
-                        points_scaled = points / resolution_factor
-                        points_offset = points_scaled.copy()
-                        points_offset[:, 0] -= task.x_min
-                        points_offset[:, 1] -= task.y_min
+                    # Scale down coordinates by resolution factor and offset points to be relative to task bounds
+                    points_scaled = points / resolution_factor
+                    points_offset = points_scaled.copy()
+                    points_offset[:, 0] -= task.x_min
+                    points_offset[:, 1] -= task.y_min
 
-                        logger.info(f"Positive region: Original coords range x:[{points[:, 0].min():.1f}, {points[:, 0].max():.1f}], y:[{points[:, 1].min():.1f}, {points[:, 1].max():.1f}]")
-                        logger.info(f"Positive region: Scaled coords range x:[{points_offset[:, 0].min():.1f}, {points_offset[:, 0].max():.1f}], y:[{points_offset[:, 1].min():.1f}, {points_offset[:, 1].max():.1f}]")
+                    logger.info(f"Positive region: Original coords range x:[{points[:, 0].min():.1f}, {points[:, 0].max():.1f}], y:[{points[:, 1].min():.1f}, {points[:, 1].max():.1f}]")
+                    logger.info(f"Positive region: Scaled coords range x:[{points_offset[:, 0].min():.1f}, {points_offset[:, 0].max():.1f}], y:[{points_offset[:, 1].min():.1f}, {points_offset[:, 1].max():.1f}]")
 
-                        rr, cc = polygon(points_offset[:, 1], points_offset[:, 0])  # Note: y, x order for polygon
-                        rr = np.clip(rr, 0, y_size - 1)
-                        cc = np.clip(cc, 0, x_size - 1)
+                    rr, cc = polygon(points_offset[:, 1], points_offset[:, 0])  # Note: y, x order for polygon
+                    rr = np.clip(rr, 0, y_size - 1)
+                    cc = np.clip(cc, 0, x_size - 1)
 
-                        logger.info(f"Positive region: {len(rr)} pixels set to segmentID {poly.segmentID}")
-                        volume[cc, rr, z] = poly.segmentID
+                    logger.info(f"Positive region: {len(rr)} pixels set to segmentID {poly.segmentID}")
+                    volume[cc, rr, z] = poly.segmentID
 
-                    # Subtract all negative regions (holes)
-                    for negative_region in poly.negativeRegions:
-                        hole_points = np.array(negative_region)
-                        if hole_points.ndim != 2 or len(hole_points) < 3:
-                            continue
+                # Subtract all negative regions (holes)
+                for negative_region in poly.negativeRegions:
+                    hole_points = np.array(negative_region)
+                    if hole_points.ndim != 2 or len(hole_points) < 3:
+                        continue
 
-                        # Scale down coordinates by resolution factor and offset hole points to be relative to task bounds
-                        hole_points_scaled = hole_points / resolution_factor
-                        hole_points_offset = hole_points_scaled.copy()
-                        hole_points_offset[:, 0] -= task.x_min
-                        hole_points_offset[:, 1] -= task.y_min
+                    # Scale down coordinates by resolution factor and offset hole points to be relative to task bounds
+                    hole_points_scaled = hole_points / resolution_factor
+                    hole_points_offset = hole_points_scaled.copy()
+                    hole_points_offset[:, 0] -= task.x_min
+                    hole_points_offset[:, 1] -= task.y_min
 
-                        hole_rr, hole_cc = polygon(hole_points_offset[:, 1], hole_points_offset[:, 0])  # Note: y, x order
-                        hole_rr = np.clip(hole_rr, 0, y_size - 1)
-                        hole_cc = np.clip(hole_cc, 0, x_size - 1)
+                    hole_rr, hole_cc = polygon(hole_points_offset[:, 1], hole_points_offset[:, 0])  # Note: y, x order
+                    hole_rr = np.clip(hole_rr, 0, y_size - 1)
+                    hole_cc = np.clip(hole_cc, 0, x_size - 1)
 
-                        logger.info(f"Negative region: {len(hole_rr)} pixels cleared")
-                        volume[hole_cc, hole_rr, z] = 0  # Clear the hole area
-
-                else:
-                    # Legacy schema: use points and holes for backward compatibility
-                    logger.info(f"Rendering polygon with legacy schema: {len(poly.points)} points, {len(poly.holes)} holes")
-
-                    if len(poly.points) >= 3:
-                        points = np.array(poly.points)
-
-                        # Scale down coordinates by resolution factor and offset points to be relative to task bounds
-                        points_scaled = points / resolution_factor
-                        points_offset = points_scaled.copy()
-                        points_offset[:, 0] -= task.x_min
-                        points_offset[:, 1] -= task.y_min
-
-                        logger.info(f"Legacy positive: Original coords range x:[{points[:, 0].min():.1f}, {points[:, 0].max():.1f}], y:[{points[:, 1].min():.1f}, {points[:, 1].max():.1f}]")
-                        logger.info(f"Legacy positive: Scaled coords range x:[{points_offset[:, 0].min():.1f}, {points_offset[:, 0].max():.1f}], y:[{points_offset[:, 1].min():.1f}, {points_offset[:, 1].max():.1f}]")
-
-                        rr, cc = polygon(points_offset[:, 1], points_offset[:, 0])  # Note: y, x order
-                        rr = np.clip(rr, 0, y_size - 1)
-                        cc = np.clip(cc, 0, x_size - 1)
-
-                        logger.info(f"Legacy positive region: {len(rr)} pixels set to segmentID {poly.segmentID}")
-                        volume[cc, rr, z] = poly.segmentID
-
-                        # Subtract holes (set back to 0)
-                        for hole in poly.holes:
-                            hole_points = np.array(hole)
-                            if hole_points.ndim != 2 or len(hole_points) < 3:
-                                continue
-
-                            # Scale down coordinates by resolution factor and offset hole points to be relative to task bounds
-                            hole_points_scaled = hole_points / resolution_factor
-                            hole_points_offset = hole_points_scaled.copy()
-                            hole_points_offset[:, 0] -= task.x_min
-                            hole_points_offset[:, 1] -= task.y_min
-
-                            hole_rr, hole_cc = polygon(hole_points_offset[:, 1], hole_points_offset[:, 0])  # Note: y, x order
-                            hole_rr = np.clip(hole_rr, 0, y_size - 1)
-                            hole_cc = np.clip(hole_cc, 0, x_size - 1)
-
-                            logger.info(f"Legacy negative region: {len(hole_rr)} pixels cleared")
-                            volume[hole_cc, hole_rr, z] = 0  # Clear the hole area
+                    logger.info(f"Negative region: {len(hole_rr)} pixels cleared")
+                    volume[hole_cc, hole_rr, z] = 0  # Clear the hole area
 
                 logger.info(f"Sum of volume at z={z}: {np.sum(volume[:, :, z])}")
 

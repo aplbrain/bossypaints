@@ -6,11 +6,7 @@ from bossypaints.tasks import TaskID
 
 
 class Polygon(pydantic.BaseModel):
-    # Legacy fields for backward compatibility
-    points: list[tuple[float, float]] = []
-    holes: list[list[tuple[float, float]]] = []  # Support for genus 1 shapes
-
-    # New positive/negative regions approach
+    # Positive/negative regions approach
     positiveRegions: list[list[tuple[float, float]]] = []
     negativeRegions: list[list[tuple[float, float]]] = []
 
@@ -18,25 +14,6 @@ class Polygon(pydantic.BaseModel):
     segmentID: int
     color: list[int] | None = None
     z: int
-
-    def model_post_init(self, __context) -> None:
-        """Ensure compatibility between old and new schema formats"""
-        # If we have positiveRegions but no points (new format), populate points for backward compatibility
-        if self.positiveRegions and not self.points:
-            if len(self.positiveRegions) > 0:
-                self.points = self.positiveRegions[0]  # Use first positive region as main points
-
-        # If we have negativeRegions but no holes (new format), populate holes for backward compatibility
-        if self.negativeRegions and not self.holes:
-            self.holes = self.negativeRegions
-
-        # If we have points but no positiveRegions (legacy format), populate positiveRegions
-        if self.points and not self.positiveRegions:
-            self.positiveRegions = [self.points]
-
-        # If we have holes but no negativeRegions (legacy format), populate negativeRegions
-        if self.holes and not self.negativeRegions:
-            self.negativeRegions = self.holes
 
 
 class Checkpoint(pydantic.BaseModel):

@@ -6,13 +6,9 @@ import type { AnnotationManagerStore } from "./stores/AnnotationManagerStore.sve
 
 class PolygonAnnotation {
 
-    // New approach: ALL shapes use positive/negative regions
+    // Positive/negative regions approach
     positiveRegions: Array<Array<[number, number]>>;
     negativeRegions: Array<Array<[number, number]>>;
-
-    // Keep old properties for backward compatibility during transition
-    points: Array<[number, number]>;
-    holes: Array<Array<[number, number]>>;
 
     editing: boolean;
     segmentID: number;
@@ -21,7 +17,7 @@ class PolygonAnnotation {
 
 
     constructor(
-        input?: Array<[number, number]> | Array<Array<[number, number]>> | {
+        input?: {
             positiveRegions?: Array<Array<[number, number]>>;
             negativeRegions?: Array<Array<[number, number]>>;
         },
@@ -29,64 +25,21 @@ class PolygonAnnotation {
         editing = true,
         z = 0
     ) {
-        this.editing = true;
+        this.editing = editing;
         this.segmentID = segmentID || 1;
         this.color = segmentIdToRGB(this.segmentID);
         this.z = z;
-        this.editing = editing;
 
         // Initialize regions
-        this.positiveRegions = [];
-        this.negativeRegions = [];
-        this.points = [];
-        this.holes = [];
-
-        if (input) {
-            if ('positiveRegions' in input || 'negativeRegions' in input) {
-                // New format: explicit positive/negative regions
-                this.positiveRegions = input.positiveRegions || [];
-                this.negativeRegions = input.negativeRegions || [];
-
-                // For backward compatibility, set points/holes from first positive region
-                if (this.positiveRegions.length > 0) {
-                    this.points = this.positiveRegions[0];
-                }
-                this.holes = [...this.negativeRegions];
-
-            } else if (Array.isArray(input) && input.length > 0 && Array.isArray(input[0]) && Array.isArray(input[0][0])) {
-                // Multi-region format: classify regions by winding order and convert to positive/negative
-                const regions = input as Array<Array<[number, number]>>;
-                const classifiedRegions = this.classifyRegionsByWindingOrder(regions);
-
-                // Convert to positive/negative format
-                this.positiveRegions = classifiedRegions.outerBoundaries;
-                this.negativeRegions = classifiedRegions.holes;
-
-                // For backward compatibility
-                if (this.positiveRegions.length > 0) {
-                    this.points = this.positiveRegions[0];
-                }
-                this.holes = [...this.negativeRegions];
-
-            } else {
-                // Single region format (backward compatibility)
-                const points = input as Array<[number, number]>;
-                if (points.length > 0) {
-                    this.positiveRegions = [points];
-                    this.points = points;
-                }
-            }
-        }
+        this.positiveRegions = input?.positiveRegions || [];
+        this.negativeRegions = input?.negativeRegions || [];
     }
 
 
     addVertex(pt: [number, number]): void {
         this.color = segmentIdToRGB(this.segmentID);
 
-        // Add to backward compatibility points array
-        this.points.push(pt);
-
-        // Also add to the first positive region (or create one if none exists)
+        // Add to the first positive region (or create one if none exists)
         if (this.positiveRegions.length === 0) {
             this.positiveRegions.push([]);
         }
@@ -220,11 +173,6 @@ class PolygonAnnotation {
     }
 
     removeLatestVertex() {
-        // Remove from backward compatibility points array
-        if (this.points.length > 0) {
-            this.points.pop();
-        }
-
         // Remove from the first positive region
         if (this.positiveRegions.length > 0 && this.positiveRegions[0].length > 0) {
             this.positiveRegions[0].pop();
@@ -233,8 +181,6 @@ class PolygonAnnotation {
 
     /**
      * Create a SINGLE PolygonAnnotation from polybool results using positive/negative geometry.
-     * This replaces the old approach of creating multiple PolygonAnnotation objects for disconnected components.
-     * ALL shapes now use a single PolygonAnnotation with multiple positive and negative regions.
      */
     static fromPolyboolRegions(regions: Array<Array<[number, number]>>, segmentID: number, editing: boolean, z: number): PolygonAnnotation {
         if (regions.length === 0) {
@@ -258,59 +204,6 @@ class PolygonAnnotation {
             positiveRegions,
             negativeRegions
         }, segmentID, editing, z);
-    }
-
-    /**
-     * Legacy method for backward compatibility.
-     * Creates multiple PolygonAnnotation objects from polybool results.
-     * @deprecated Use fromPolyboolRegions for the new positive/negative approach.
-     */
-    static fromPolyboolRegionsLegacy(regions: Array<Array<[number, number]>>, segmentID: number, editing: boolean, z: number): PolygonAnnotation[] {
-        if (regions.length === 0) {
-            return [];
-        }
-
-        // Classify all regions by winding order
-        const classified = regions.map(region => ({
-            region,
-            signedArea: PolygonAnnotation.calculateSignedAreaStatic(region),
-            isOuterBoundary: PolygonAnnotation.calculateSignedAreaStatic(region) > 0
-        }));
-
-        const outerBoundaries = classified.filter(c => c.isOuterBoundary);
-        const holes = classified.filter(c => !c.isOuterBoundary);
-
-        console.log(`Creating PolygonAnnotations: ${outerBoundaries.length} outer boundaries, ${holes.length} holes`);
-
-        if (outerBoundaries.length === 0) {
-            // No outer boundaries found - this shouldn't happen but handle gracefully
-            return regions.length > 0 ? [new PolygonAnnotation(regions[0], segmentID, editing, z)] : [];
-        }
-
-        if (outerBoundaries.length === 1) {
-            // Single component - create one PolygonAnnotation with holes
-            return [new PolygonAnnotation([outerBoundaries[0].region, ...holes.map(h => h.region)], segmentID, editing, z)];
-        }
-
-        // Multiple components - create separate PolygonAnnotation for each outer boundary
-        // For now, assign holes to the largest outer boundary (this is a simplification)
-        const largestBoundary = outerBoundaries.reduce((largest, current) =>
-            Math.abs(current.signedArea) > Math.abs(largest.signedArea) ? current : largest
-        );
-
-        const results: PolygonAnnotation[] = [];
-
-        outerBoundaries.forEach(boundary => {
-            if (boundary === largestBoundary) {
-                // Largest boundary gets all the holes
-                results.push(new PolygonAnnotation([boundary.region, ...holes.map(h => h.region)], segmentID, editing, z));
-            } else {
-                // Other boundaries become simple shapes without holes
-                results.push(new PolygonAnnotation(boundary.region, segmentID, editing, z));
-            }
-        });
-
-        return results;
     }
 
     /**

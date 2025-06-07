@@ -144,13 +144,6 @@ manager and navigation store.
 	<!-- Statistics -->
 	<div class="space-y-2 text-sm">
 		<div class="flex items-center justify-between">
-			<span class="text-gray-600">Current Points</span>
-			<span class="font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
-				{annotationStore.currentAnnotation.vertices.length}
-			</span>
-		</div>
-
-		<div class="flex items-center justify-between">
 			<span class="text-gray-600">Layer Annotations</span>
 			<span class="font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
 				{annotationStore.getLayerAnnotations(nav.layer).length}

@@ -36,30 +36,16 @@
 		if (checkpointResponse.checkpoints) {
 			checkpointResponse.checkpoints.forEach((checkpoint) => {
 				checkpoint.polygons.forEach((annotation) => {
-					// Handle both old and new annotation formats
-					let polygonAnnotation: PolygonAnnotation;
-
-					if (annotation.positiveRegions && annotation.positiveRegions.length > 0) {
-						// New format with positive/negative regions
-						polygonAnnotation = new PolygonAnnotation(
-							{
-								positiveRegions: annotation.positiveRegions,
-								negativeRegions: annotation.negativeRegions || []
-							},
-							annotation.segmentID,
-							annotation.editing,
-							annotation.z
-						);
-					} else {
-						// Legacy format with points and holes
-						const regions = [annotation.points, ...(annotation.holes || [])];
-						polygonAnnotation = new PolygonAnnotation(
-							regions,
-							annotation.segmentID,
-							annotation.editing,
-							annotation.z
-						);
-					}
+					// Use the new positive/negative regions format
+					const polygonAnnotation = new PolygonAnnotation(
+						{
+							positiveRegions: annotation.positiveRegions,
+							negativeRegions: annotation.negativeRegions || []
+						},
+						annotation.segmentID,
+						annotation.editing,
+						annotation.z
+					);
 
 					annotationStore.addAnnotation(annotation.z, polygonAnnotation);
 				});
