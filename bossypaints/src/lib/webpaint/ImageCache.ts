@@ -86,17 +86,18 @@ export class ImageCache {
             this.enablePersistence = options.enablePersistence ?? true;
             this.enablePreloading = options.enablePreloading ?? true;
             this.filmstripBatchSize = options.filmstripBatchSize || APP_CONFIG.filmstrip.batchSize;
-        } else {
-            // Legacy constructor with individual parameters
-            this.bossRemote = bossRemoteOrOptions as BossRemote;
-            this.datasetURI = datasetURI;
-            this.p5Instance = p5Instance;
-            this.maxSizeBytes = (maxSizeMB || 100) * 1024 * 1024; // Convert MB to bytes
-            this.maxItems = 1000;
-            this.enablePersistence = true;
-            this.enablePreloading = true;
-            this.filmstripBatchSize = APP_CONFIG.filmstrip.batchSize;
         }
+        // else {
+        //     // Legacy constructor with individual parameters
+        //     this.bossRemote = bossRemoteOrOptions as BossRemote;
+        //     this.datasetURI = datasetURI;
+        //     this.p5Instance = p5Instance;
+        //     this.maxSizeBytes = (maxSizeMB || 100) * 1024 * 1024; // Convert MB to bytes
+        //     this.maxItems = 1000;
+        //     this.enablePersistence = true;
+        //     this.enablePreloading = true;
+        //     this.filmstripBatchSize = APP_CONFIG.filmstrip.batchSize;
+        // }
 
         this.storage = new BrowserStorage();
         this.loadFromPersistentStorage();
@@ -466,7 +467,6 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Get an image for a chunk identifier
      * This method loads the image if not cached and returns it
      */
     async getImage(identifier: ChunkIdentifier): Promise<any> {
@@ -513,21 +513,21 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Get a cached image (alias for get method)
+     * Get a cached image (alias for get method)
      */
     getCachedImage(identifier: ChunkIdentifier): any | null {
         return this.get(identifier);
     }
 
     /**
-     * Legacy method: Check if cache is enabled (always true now)
+     * Check if cache is enabled (always true now)
      */
     isCacheEnabled(): boolean {
         return true; // Cache is always enabled now
     }
 
     /**
-     * Legacy method: Get cache statistics (alias for getStatistics)
+     * Get cache statistics (alias for getStatistics)
      */
     getStats(): any {
         const stats = this.getStatistics();
@@ -545,14 +545,14 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Clear all cache data (alias for clear)
+     * Clear all cache data (alias for clear)
      */
     async clearAll(): Promise<void> {
         this.clear();
     }
 
     /**
-     * Legacy method: Preload neighboring chunks around a center chunk
+     * Preload neighboring chunks around a center chunk
      */
     async preloadNeighboringChunks(centerIdentifier: ChunkIdentifier, radius: number): Promise<void> {
         // For now, just log that this would preload neighbors
@@ -560,7 +560,7 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Preload neighboring filmstrip batches
+     * Preload neighboring filmstrip batches
      */
     async preloadNeighboringFilmstrips(centerIdentifier: ChunkIdentifier): Promise<void> {
         // For now, just log that this would preload filmstrips
@@ -568,7 +568,7 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Evict all chunks of a specific resolution level
+     * Evict all chunks of a specific resolution level
      */
     evictResolutionLevel(resolutionLevel: number): void {
         const toRemove: string[] = [];
@@ -589,7 +589,7 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Get filmstrip render info for a chunk
+     * Get filmstrip render info for a chunk
      */
     getFilmstripRenderInfo(identifier: ChunkIdentifier, targetLayer?: number): any | null {
         // Check if we have a filmstrip that contains this layer
@@ -635,7 +635,7 @@ export class ImageCache {
     }
 
     /**
-     * Legacy method: Get combined cache and storage statistics
+     * Get combined cache and storage statistics
      */
     async getCombinedStats(): Promise<any> {
         const cacheStats = this.getStatistics();
