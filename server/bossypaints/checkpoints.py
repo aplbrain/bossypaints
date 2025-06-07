@@ -16,8 +16,27 @@ class Polygon(pydantic.BaseModel):
 
     editing: bool
     segmentID: int
-    color: list[int] | None
+    color: list[int] | None = None
     z: int
+
+    def model_post_init(self, __context) -> None:
+        """Ensure compatibility between old and new schema formats"""
+        # If we have positiveRegions but no points (new format), populate points for backward compatibility
+        if self.positiveRegions and not self.points:
+            if len(self.positiveRegions) > 0:
+                self.points = self.positiveRegions[0]  # Use first positive region as main points
+
+        # If we have negativeRegions but no holes (new format), populate holes for backward compatibility
+        if self.negativeRegions and not self.holes:
+            self.holes = self.negativeRegions
+
+        # If we have points but no positiveRegions (legacy format), populate positiveRegions
+        if self.points and not self.positiveRegions:
+            self.positiveRegions = [self.points]
+
+        # If we have holes but no negativeRegions (legacy format), populate negativeRegions
+        if self.holes and not self.negativeRegions:
+            self.negativeRegions = self.holes
 
 
 class Checkpoint(pydantic.BaseModel):
@@ -27,7 +46,20 @@ class Checkpoint(pydantic.BaseModel):
     # When receiving dict, convert to Polygon
     @pydantic.validator("polygons", pre=True)
     def convert_polygons(cls, v):
-        return [Polygon(**polygon) for polygon in v]
+        if isinstance(v, list):
+            result = []
+            for polygon in v:
+                if isinstance(polygon, Polygon):
+                    # Already a Polygon object
+                    result.append(polygon)
+                elif isinstance(polygon, dict):
+                    # Dict that needs to be converted
+                    result.append(Polygon(**polygon))
+                else:
+                    # Unexpected type
+                    raise ValueError(f"Polygon must be dict or Polygon object, got {type(polygon)}")
+            return result
+        return v
 
 
 class CheckpointStore(Protocol):

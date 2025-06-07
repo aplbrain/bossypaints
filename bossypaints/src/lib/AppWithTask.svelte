@@ -209,9 +209,9 @@
 						() => {
 							notyf.success('Volume finalized and saved.');
 							// After the default 2000 timeout, nav back to home:
-							setTimeout(() => {
-								goto('/');
-							}, 2000);
+							// setTimeout(() => {
+							// 	goto('/');
+							// }, 2000);
 						}
 					);
 				}}
