@@ -87,17 +87,17 @@ export class ImageCache {
             this.enablePreloading = options.enablePreloading ?? true;
             this.filmstripBatchSize = options.filmstripBatchSize || APP_CONFIG.filmstrip.batchSize;
         }
-        // else {
-        //     // Legacy constructor with individual parameters
-        //     this.bossRemote = bossRemoteOrOptions as BossRemote;
-        //     this.datasetURI = datasetURI;
-        //     this.p5Instance = p5Instance;
-        //     this.maxSizeBytes = (maxSizeMB || 100) * 1024 * 1024; // Convert MB to bytes
-        //     this.maxItems = 1000;
-        //     this.enablePersistence = true;
-        //     this.enablePreloading = true;
-        //     this.filmstripBatchSize = APP_CONFIG.filmstrip.batchSize;
-        // }
+        else {
+            // Legacy constructor with individual parameters
+            this.bossRemote = bossRemoteOrOptions as BossRemote;
+            this.datasetURI = datasetURI;
+            this.p5Instance = p5Instance;
+            this.maxSizeBytes = (maxSizeMB || 100) * 1024 * 1024; // Convert MB to bytes
+            this.maxItems = 1000;
+            this.enablePersistence = true;
+            this.enablePreloading = true;
+            this.filmstripBatchSize = APP_CONFIG.filmstrip.batchSize;
+        }
 
         this.storage = new BrowserStorage();
         this.loadFromPersistentStorage();
