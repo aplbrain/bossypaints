@@ -725,59 +725,60 @@ from BossDB and displays it on the canvas.
 			// Debug information is now displayed via HTML overlay instead of P5.js text
 
 			// Update debug information for HTML display
-			if (debugEnabled) {
-				const worldCoords = nav.sceneToData(s.mouseX, s.mouseY);
-				const displayCenterOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
-				const displayResolutionLevelInfo = getCurrentResolutionLevel(nav.zoom);
-				
-				// Update mouse and scene info
-				debugInfo.sceneMouseX = s.mouseX;
-				debugInfo.sceneMouseY = s.mouseY;
-				debugInfo.dataMouseX = worldCoords.x;
-				debugInfo.dataMouseY = worldCoords.y;
-				debugInfo.centerX = displayCenterOfScreen.x;
-				debugInfo.centerY = displayCenterOfScreen.y;
-				debugInfo.layer = nav.layer;
-				debugInfo.zoom = nav.zoom;
-				debugInfo.resolutionName = displayResolutionLevelInfo.name;
-				debugInfo.resolutionLevel = displayResolutionLevelInfo.resolution;
+			// if (debugEnabled) {
+			const worldCoords = nav.sceneToData(s.mouseX, s.mouseY);
+			const displayCenterOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
+			const displayResolutionLevelInfo = getCurrentResolutionLevel(nav.zoom);
 
-				// Update chunk info
-				const currentChunk = getChunkForPoint(
-					displayCenterOfScreen.x,
-					displayCenterOfScreen.y,
-					nav.layer,
-					displayResolutionLevelInfo.resolution
-				);
-				debugInfo.chunkInfo = `x:[${currentChunk.x_min}, ${currentChunk.x_max}] y:[${currentChunk.y_min}, ${currentChunk.y_max}] z:[${currentChunk.z_min}, ${currentChunk.z_max}]`;
+			// Update mouse and scene info
+			debugInfo.sceneMouseX = s.mouseX;
+			debugInfo.sceneMouseY = s.mouseY;
+			debugInfo.dataMouseX = worldCoords.x;
+			debugInfo.dataMouseY = worldCoords.y;
+			debugInfo.centerX = displayCenterOfScreen.x;
+			debugInfo.centerY = displayCenterOfScreen.y;
+			debugInfo.layer = nav.layer;
+			debugInfo.zoom = nav.zoom;
+			debugInfo.resolutionName = displayResolutionLevelInfo.name;
+			debugInfo.resolutionLevel = displayResolutionLevelInfo.resolution;
 
-				// Update cache stats
-				if (imageCache) {
-					const stats = imageCache.getStats();
-					debugInfo.cacheStats = {
-						enabled: imageCache.isCacheEnabled(),
-						entryCount: stats.entryCount,
-						cacheSize: stats.cacheSize,
-						maxCacheSize: stats.maxCacheSize,
-						utilizationPercent: stats.utilizationPercent,
-						filmstripCount: stats.filmstripCount,
-						totalSlicesInFilmstrips: stats.totalSlicesInFilmstrips,
-						loadingCount: stats.loadingCount,
-						filmstripLoadingCount: stats.filmstripLoadingCount
-					};
+			// Update chunk info
+			const currentChunk = getChunkForPoint(
+				displayCenterOfScreen.x,
+				displayCenterOfScreen.y,
+				nav.layer,
+				displayResolutionLevelInfo.resolution
+			);
+			debugInfo.chunkInfo = `x:[${currentChunk.x_min}, ${currentChunk.x_max}] y:[${currentChunk.y_min}, ${currentChunk.y_max}] z:[${currentChunk.z_min}, ${currentChunk.z_max}]`;
 
-					// Update storage stats (async)
-					imageCache.getCombinedStats()
-						.then((combinedStats) => {
-							debugInfo.storageStats = {
-								totalChunks: combinedStats.storage.totalChunks,
-								estimatedSize: combinedStats.storage.estimatedSize
-							};
-						})
-						.catch(() => {
-							// Ignore errors in debug display
-						});
-				}
+			// Update cache stats
+			if (imageCache) {
+				const stats = imageCache.getStats();
+				debugInfo.cacheStats = {
+					enabled: imageCache.isCacheEnabled(),
+					entryCount: stats.entryCount,
+					cacheSize: stats.cacheSize,
+					maxCacheSize: stats.maxCacheSize,
+					utilizationPercent: stats.utilizationPercent,
+					filmstripCount: stats.filmstripCount,
+					totalSlicesInFilmstrips: stats.totalSlicesInFilmstrips,
+					loadingCount: stats.loadingCount,
+					filmstripLoadingCount: stats.filmstripLoadingCount
+				};
+
+				// Update storage stats (async)
+				imageCache
+					.getCombinedStats()
+					.then((combinedStats) => {
+						debugInfo.storageStats = {
+							totalChunks: combinedStats.storage.totalChunks,
+							estimatedSize: combinedStats.storage.estimatedSize
+						};
+					})
+					.catch(() => {
+						// Ignore errors in debug display
+					});
+				// }
 
 				// Update pinch info
 				debugInfo.pinchInfo = {
@@ -970,33 +971,69 @@ from BossDB and displays it on the canvas.
 </script>
 
 <!-- Debug information overlay -->
-{#if debugEnabled}
-	<div class="debug-overlay">
-		<div class="debug-line">Scene Mouse: {debugInfo.sceneMouseX}, {debugInfo.sceneMouseY}</div>
-		<div class="debug-line">Data Mouse: {debugInfo.dataMouseX.toFixed(3)}, {debugInfo.dataMouseY.toFixed(3)}</div>
-		<div class="debug-line">Center of Screen: x: {debugInfo.centerX.toFixed(3)}, y: {debugInfo.centerY.toFixed(3)} (z: {debugInfo.layer})</div>
-		<div class="debug-line">Zoom: {debugInfo.zoom.toFixed(3)} | Current Resolution: {debugInfo.resolutionName} (Level {debugInfo.resolutionLevel})</div>
-		<div class="debug-line">Original ROI: x:[{xs[0]}, {xs[1]}] y:[{ys[0]}, {ys[1]}] z:[{zs[0]}, {zs[1]}]</div>
-		<div class="debug-line">Current {debugInfo.resolutionName} Chunk: {debugInfo.chunkInfo}</div>
-		
-		<div class="debug-line">Chunk Loading: {(2 * APP_CONFIG.chunkLoading.radius + 1) ** 2} chunks ({2 * APP_CONFIG.chunkLoading.radius + 1}x{2 * APP_CONFIG.chunkLoading.radius + 1} grid, radius={APP_CONFIG.chunkLoading.radius}, center-first={APP_CONFIG.chunkLoading.prioritizeCenter})</div>
-		
-		{#if imageCache}
-			<div class="debug-line">Memory Cache: {debugInfo.cacheStats.enabled ? 'ENABLED' : 'DISABLED'}, {debugInfo.cacheStats.entryCount} entries, {(debugInfo.cacheStats.cacheSize / 1024 / 1024).toFixed(1)}MB / {(debugInfo.cacheStats.maxCacheSize / 1024 / 1024).toFixed(0)}MB ({debugInfo.cacheStats.utilizationPercent.toFixed(1)}%)</div>
-			<div class="debug-line">Filmstrip Cache: {debugInfo.cacheStats.filmstripCount} batches, {debugInfo.cacheStats.totalSlicesInFilmstrips} slices</div>
-			<div class="debug-line">Loading: {debugInfo.cacheStats.loadingCount} chunks, {debugInfo.cacheStats.filmstripLoadingCount} filmstrips</div>
-			<div class="debug-line storage-stats">Browser Storage: {debugInfo.storageStats.totalChunks} chunks, {(debugInfo.storageStats.estimatedSize / 1024 / 1024).toFixed(1)}MB</div>
-		{/if}
-		
-		{#if APP_CONFIG.debug}
-			<div class="debug-line">Pinch Active: {debugInfo.pinchInfo.active}</div>
-			{#if debugInfo.pinchInfo.active}
-				<div class="debug-line">Touch Distance: {debugInfo.pinchInfo.touchDistance.toFixed(2)}</div>
-				<div class="debug-line">Pinch Center: {debugInfo.pinchInfo.centerX.toFixed(1)}, {debugInfo.pinchInfo.centerY.toFixed(1)}</div>
-			{/if}
-		{/if}
+<!-- {#if debugEnabled} -->
+<div class="debug-overlay">
+	<div class="debug-line">Scene Mouse: {debugInfo.sceneMouseX}, {debugInfo.sceneMouseY}</div>
+	<div class="debug-line">
+		Data Mouse: {debugInfo.dataMouseX.toFixed(3)}, {debugInfo.dataMouseY.toFixed(3)}
 	</div>
-{/if}
+	<div class="debug-line">
+		Center of Screen: x: {debugInfo.centerX.toFixed(3)}, y: {debugInfo.centerY.toFixed(3)} (z: {debugInfo.layer})
+	</div>
+	<div class="debug-line">
+		Zoom: {debugInfo.zoom.toFixed(3)} | Current Resolution: {debugInfo.resolutionName} (Level {debugInfo.resolutionLevel})
+	</div>
+	<div class="debug-line">
+		Original ROI: x:[{xs[0]}, {xs[1]}] y:[{ys[0]}, {ys[1]}] z:[{zs[0]}, {zs[1]}]
+	</div>
+	<div class="debug-line">Current {debugInfo.resolutionName} Chunk: {debugInfo.chunkInfo}</div>
+
+	<div class="debug-line">
+		Chunk Loading: {(2 * APP_CONFIG.chunkLoading.radius + 1) ** 2} chunks ({2 *
+			APP_CONFIG.chunkLoading.radius +
+			1}x{2 * APP_CONFIG.chunkLoading.radius + 1} grid, radius={APP_CONFIG.chunkLoading.radius},
+		center-first={APP_CONFIG.chunkLoading.prioritizeCenter})
+	</div>
+
+	{#if imageCache}
+		<div class="debug-line">
+			Memory Cache: {debugInfo.cacheStats.enabled ? 'ENABLED' : 'DISABLED'}, {debugInfo.cacheStats
+				.entryCount} entries, {(debugInfo.cacheStats.cacheSize / 1024 / 1024).toFixed(1)}MB / {(
+				debugInfo.cacheStats.maxCacheSize /
+				1024 /
+				1024
+			).toFixed(0)}MB ({debugInfo.cacheStats.utilizationPercent.toFixed(1)}%)
+		</div>
+		<div class="debug-line">
+			Filmstrip Cache: {debugInfo.cacheStats.filmstripCount} batches, {debugInfo.cacheStats
+				.totalSlicesInFilmstrips} slices
+		</div>
+		<div class="debug-line">
+			Loading: {debugInfo.cacheStats.loadingCount} chunks, {debugInfo.cacheStats
+				.filmstripLoadingCount} filmstrips
+		</div>
+		<div class="debug-line storage-stats">
+			Browser Storage: {debugInfo.storageStats.totalChunks} chunks, {(
+				debugInfo.storageStats.estimatedSize /
+				1024 /
+				1024
+			).toFixed(1)}MB
+		</div>
+	{/if}
+
+	{#if APP_CONFIG.debug}
+		<div class="debug-line">Pinch Active: {debugInfo.pinchInfo.active}</div>
+		{#if debugInfo.pinchInfo.active}
+			<div class="debug-line">Touch Distance: {debugInfo.pinchInfo.touchDistance.toFixed(2)}</div>
+			<div class="debug-line">
+				Pinch Center: {debugInfo.pinchInfo.centerX.toFixed(1)}, {debugInfo.pinchInfo.centerY.toFixed(
+					1
+				)}
+			</div>
+		{/if}
+	{/if}
+</div>
+<!-- {/if} -->
 
 <Minimap {annotationStore} {nav} />
 
