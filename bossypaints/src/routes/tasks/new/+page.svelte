@@ -1,6 +1,7 @@
 <script lang="ts">
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
+	import Header from '$lib/Header.svelte';
 	let collection = '';
 	let experiment = '';
 	let channel = '';
@@ -182,50 +183,20 @@
 
 <!-- Main Container -->
 <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-	<!-- Header -->
-	<header class="bg-white shadow-sm border-b">
-		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-			<div class="flex justify-between items-center py-6">
-				<div class="flex items-center space-x-4">
-					<!-- Logo/Icon -->
-					<div
-						class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center"
-					>
-						<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zM21 5a2 2 0 00-2-2h-4a2 2 0 00-2 2v6a2 2 0 002 2h4a2 2 0 002-2V5z"
-							></path>
-						</svg>
-					</div>
-					<div>
-						<h1 class="text-2xl font-bold text-gray-900">Create New Task</h1>
-						<p class="text-sm text-gray-600">Configure volumetric annotation parameters</p>
-					</div>
-				</div>
-
-				<!-- Header Actions -->
-				<div class="flex items-center space-x-4">
-					<a
-						href="/"
-						class="inline-flex items-center px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors duration-200"
-					>
-						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M10 19l-7-7m0 0l7-7m-7 7h18"
-							></path>
-						</svg>
-						Back to Tasks
-					</a>
-				</div>
-			</div>
-		</div>
-	</header>
+	<Header
+		title="Create New Task"
+		subtitle="Configure volumetric annotation parameters"
+		showNewTaskButton={false}
+		showSettingsButton={false}
+		customActions={[
+			{
+				href: '/',
+				text: 'Back to Tasks',
+				icon: 'back',
+				variant: 'ghost'
+			}
+		]}
+	/>
 
 	<!-- Main Content -->
 	<main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
