@@ -44,9 +44,7 @@
 				experiment: null,
 				channel: null
 			});
-			collectionSuggestions = response.resources
-				.map((r) => r[0])
-				.filter((r): r is string => r !== null);
+			collectionSuggestions = response.resources;
 		} else {
 			collectionSuggestions = [];
 		}
@@ -64,9 +62,7 @@
 				experiment,
 				channel: null
 			});
-			experimentSuggestions = response.resources
-				.map((r) => r[1])
-				.filter((r): r is string => r !== null);
+			experimentSuggestions = response.resources;
 		} else {
 			experimentSuggestions = [];
 		}
@@ -80,9 +76,7 @@
 	async function fetchChannelSuggestions() {
 		if (channel.length > minAutoCompleteLength) {
 			const response = await API.autocompleteBossDBResource({ collection, experiment, channel });
-			channelSuggestions = response.resources
-				.map((r) => r[2])
-				.filter((r): r is string => r !== null);
+			channelSuggestions = response.resources;
 		} else {
 			channelSuggestions = [];
 		}

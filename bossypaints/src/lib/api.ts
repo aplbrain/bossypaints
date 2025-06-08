@@ -29,7 +29,7 @@ export type TaskInDB = Task & {
 class API {
     async get(url: string) {
         url = url.startsWith('/') ? url : `/${url}`;
-        const headers = {
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
         if (localStorage.getItem('apiToken')) {
@@ -43,7 +43,7 @@ class API {
 
     async post(url: string, data: any) {
         url = url.startsWith('/') ? url : `/${url}`;
-        const headers = {
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
         if (localStorage.getItem('apiToken')) {
@@ -103,7 +103,7 @@ class API {
         collection: string;
         experiment: string | null;
         channel: string | null;
-    }): Promise<{ resources: Array<[string | string | null, string | null]> }> {
+    }): Promise<{ resources: string[] }> {
         let res = await this.get(`/api/bossdb/autocomplete?collection=${collection}&experiment=${experiment || ''}&channel=${channel || ''}`);
         return res;
     }
