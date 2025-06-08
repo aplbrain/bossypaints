@@ -2,6 +2,8 @@
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
 	import Header from '$lib/Header.svelte';
+	import { parseNewNeuroglancerUrl, extractBossDBInfoFromUrl } from '$lib/neuroglancer';
+
 	let collection = '';
 	let experiment = '';
 	let channel = '';
@@ -16,6 +18,12 @@
 	let destination_experiment = '';
 	let destination_channel = '';
 	let message = '';
+
+	// Neuroglancer URL parsing variables
+	let neuroglancerUrl = '';
+	let showUrlInput = false;
+	let urlParseMessage = '';
+
 	let collectionSuggestions: string[] = [];
 	let experimentSuggestions: string[] = [];
 	let channelSuggestions: string[] = [];
@@ -53,7 +61,7 @@
 
 	function debounceFetchCollectionSuggestions() {
 		clearTimeout(debounceTimeout);
-		debounceTimeout = setTimeout(fetchCollectionSuggestions, 300);
+		deounceTimeout = setTimeout(fetchCollectionSuggestions, 300);
 	}
 
 	async function fetchExperimentSuggestions() {
@@ -135,6 +143,94 @@
 		setZExtent();
 	}
 
+	/**
+	 * Parse a neuroglancer URL and populate form fields
+	 */
+	function parseNeuroglancerUrl() {
+		if (!neuroglancerUrl.trim()) {
+			urlParseMessage = 'Please enter a neuroglancer URL';
+			return;
+		}
+
+		try {
+			// Extract BossDB information from the URL
+			const bossInfo = extractBossDBInfoFromUrl(neuroglancerUrl);
+			if (!bossInfo) {
+				urlParseMessage = 'Could not extract BossDB information from URL';
+				return;
+			}
+
+			// Parse the neuroglancer state for position and dimensions
+			const state = parseNewNeuroglancerUrl(neuroglancerUrl);
+			if (!state) {
+				urlParseMessage = 'Could not parse neuroglancer URL';
+				return;
+			}
+
+			// Populate form fields with extracted data
+			collection = bossInfo.collection;
+			experiment = bossInfo.experiment;
+			channel = bossInfo.channel;
+
+			// Set position if available
+			if (state.position && state.position.length >= 3) {
+				x_center = Math.round(state.position[0]);
+				y_center = Math.round(state.position[1]);
+				z_center = Math.round(state.position[2]);
+			}
+
+			// Set some reasonable default radius values (you might want to adjust these)
+			x_radius = 512;
+			y_radius = 512;
+			z_radius = 32;
+
+			// Try to determine resolution from crossSectionScale if available
+			if (state.crossSectionScale) {
+				// This is a rough approximation - you might need to adjust based on your data
+				const scale = state.crossSectionScale;
+				if (scale <= 1) {
+					resolution = 0;
+				} else if (scale <= 2) {
+					resolution = 1;
+				} else if (scale <= 4) {
+					resolution = 2;
+				} else if (scale <= 8) {
+					resolution = 3;
+				} else {
+					resolution = 4;
+				}
+			}
+
+			urlParseMessage = `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`;
+
+			// Clear the URL input and hide the section
+			neuroglancerUrl = '';
+			showUrlInput = false;
+
+			// Trigger coordinate frame fetch
+			if (collection && experiment) {
+				fetchCoordFrame();
+			}
+		} catch (error) {
+			console.error('Error parsing neuroglancer URL:', error);
+			urlParseMessage = 'Error parsing URL: ' + (error as Error).message;
+		}
+	}
+
+	/**
+	 * Clear URL parse message after a delay
+	 */
+	function clearUrlParseMessage() {
+		setTimeout(() => {
+			urlParseMessage = '';
+		}, 5000);
+	}
+
+	// Watch for URL parse message changes to auto-clear them
+	$: if (urlParseMessage) {
+		clearUrlParseMessage();
+	}
+
 	async function createTask() {
 		const task = {
 			collection,
@@ -201,6 +297,119 @@
 	<!-- Main Content -->
 	<main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 		<form on:submit|preventDefault={createTask} class="space-y-8">
+			<!-- Neuroglancer URL Input Section -->
+			<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+				<div class="px-6 py-4 border-b border-gray-200 bg-blue-50">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center">
+							<div
+								class="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center"
+							>
+								<svg
+									class="w-4 h-4 text-blue-600"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+									></path>
+								</svg>
+							</div>
+							<div class="ml-3">
+								<h3 class="text-lg font-semibold text-gray-900">Parse Neuroglancer URL</h3>
+								<p class="text-sm text-gray-600">
+									Optional: Paste a neuroglancer URL to auto-populate form fields
+								</p>
+							</div>
+						</div>
+						<button
+							type="button"
+							on:click={() => (showUrlInput = !showUrlInput)}
+							class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+						>
+							{showUrlInput ? 'Hide' : 'Show'} URL Input
+						</button>
+					</div>
+				</div>
+
+				{#if showUrlInput}
+					<div class="p-6">
+						<div class="space-y-4">
+							<div>
+								<label for="neuroglancer_url" class="block text-sm font-medium text-gray-700 mb-2">
+									Neuroglancer URL
+								</label>
+								<div class="flex gap-3">
+									<input
+										id="neuroglancer_url"
+										type="url"
+										bind:value={neuroglancerUrl}
+										placeholder="Paste neuroglancer URL here (e.g., https://neuroglancer.bossdb.io/#!...)"
+										class="flex-1 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+									/>
+									<button
+										type="button"
+										on:click={parseNeuroglancerUrl}
+										class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+									>
+										Parse URL
+									</button>
+								</div>
+								<p class="mt-1 text-xs text-gray-500">
+									This will extract the collection, experiment, channel, and position from the URL
+								</p>
+							</div>
+
+							{#if urlParseMessage}
+								<div
+									class="p-3 rounded-lg {urlParseMessage.includes('Successfully')
+										? 'bg-green-50 border border-green-200'
+										: 'bg-red-50 border border-red-200'}"
+								>
+									<div class="flex items-center">
+										{#if urlParseMessage.includes('Successfully')}
+											<svg
+												class="w-4 h-4 text-green-600 mr-2"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M5 13l4 4L19 7"
+												></path>
+											</svg>
+											<p class="text-green-800 text-sm font-medium">{urlParseMessage}</p>
+										{:else}
+											<svg
+												class="w-4 h-4 text-red-600 mr-2"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M6 18L18 6M6 6l12 12"
+												></path>
+											</svg>
+											<p class="text-red-800 text-sm font-medium">{urlParseMessage}</p>
+										{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
+
 			<!-- Data Source Section -->
 			<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
 				<div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
@@ -380,7 +589,7 @@
 								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
 								required
 							/>
-							<p class="mt-1 text-xs text-gray-500">Higher values = lower resolution</p>
+							<p class="mt-1 text-xs text-gray-500">Higher values = coarser resolution</p>
 						</div>
 					</div>
 				</div>
