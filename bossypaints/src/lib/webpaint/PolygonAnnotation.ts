@@ -154,17 +154,8 @@ class PolygonAnnotation {
             isOuterBoundary: this.calculateSignedArea(region) > 0 // counter-clockwise = positive area
         }));
 
-        // Debug: log the classification results
-        console.log('Classifying regions:', classified.map(c => ({
-            area: c.signedArea,
-            isOuter: c.isOuterBoundary,
-            pointCount: c.region.length
-        })));
-
         const outerBoundaries = classified.filter(c => c.isOuterBoundary).map(c => c.region);
         const holes = classified.filter(c => !c.isOuterBoundary).map(c => c.region);
-
-        console.log(`Classification result: ${outerBoundaries.length} outer boundaries, ${holes.length} holes`);
 
         return {
             outerBoundaries,
@@ -196,8 +187,6 @@ class PolygonAnnotation {
 
         const positiveRegions = classified.filter(c => c.isOuterBoundary).map(c => c.region);
         const negativeRegions = classified.filter(c => !c.isOuterBoundary).map(c => c.region);
-
-        console.log(`Creating single PolygonAnnotation: ${positiveRegions.length} positive regions, ${negativeRegions.length} negative regions`);
 
         // Always create exactly ONE PolygonAnnotation containing all positive and negative regions
         return new PolygonAnnotation({
