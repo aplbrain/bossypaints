@@ -172,6 +172,15 @@ export const keybindings: Keybinding[] = [
         eventType: 'key',
     },
     {
+        key: 'v',
+        action: 'Toggle annotation visibility',
+        matcher: (s) => s.key === 'v' || s.key === 'V',
+        handler: (s, annotationStore, nav) => {
+            nav.toggleAnnotationsVisible();
+        },
+        eventType: 'key',
+    },
+    {
         key: 'n',
         action: 'Increment segment ID',
         matcher: (s) => s.key === 'n' || s.key === 'N',

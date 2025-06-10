@@ -678,15 +678,18 @@ from BossDB and displays it on the canvas.
 				s.line(0, 0, 0, 100);
 			}
 
-			annotationStore.currentAnnotation.annotation.draw(s, nav, annotationStore);
+			// Draw annotations only if they're visible
+			if (nav.annotationsVisible) {
+				annotationStore.currentAnnotation.annotation.draw(s, nav, annotationStore);
 
-			// Optimize hover detection - calculate mouse position once
-			const dataPosition = nav.sceneToData(s.mouseX, s.mouseY);
+				// Optimize hover detection - calculate mouse position once
+				const dataPosition = nav.sceneToData(s.mouseX, s.mouseY);
 
-			for (let anno of annotationStore.getLayerAnnotations(nav.layer) || []) {
-				anno.draw(s, nav, annotationStore);
-				if (anno.pointIsInside([dataPosition.x, dataPosition.y])) {
-					annotationStore.setHoveredAnnotation(anno);
+				for (let anno of annotationStore.getLayerAnnotations(nav.layer) || []) {
+					anno.draw(s, nav, annotationStore);
+					if (anno.pointIsInside([dataPosition.x, dataPosition.y])) {
+						annotationStore.setHoveredAnnotation(anno);
+					}
 				}
 			}
 			s.pop();

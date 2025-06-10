@@ -23,6 +23,7 @@ export function createNavigationStore({
     const _minLayer = $state(minLayer);
     const _maxLayer = $state(maxLayer);
     let _drawing = $state(false);
+    let _annotationsVisible = $state(true);
     const _imageWidth = $state(imageWidth);
     const _imageHeight = $state(imageHeight);
 
@@ -46,6 +47,27 @@ export function createNavigationStore({
          */
         setDrawing: (newDrawing: boolean) => {
             _drawing = newDrawing;
+        },
+
+        /** Get the annotation visibility status.
+         * If true, annotations are visible.
+         * If false, annotations are hidden.
+         */
+        get annotationsVisible() { return _annotationsVisible; },
+
+        /** Set the annotation visibility status.
+         * @param newVisible - The new visibility state for annotations.
+         * @returns {void}
+         */
+        setAnnotationsVisible: (newVisible: boolean) => {
+            _annotationsVisible = newVisible;
+        },
+
+        /** Toggle annotation visibility.
+         * @returns {void}
+         */
+        toggleAnnotationsVisible: () => {
+            _annotationsVisible = !_annotationsVisible;
         },
 
         /** Get the image width of the underlying data. */
