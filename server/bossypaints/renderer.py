@@ -1,3 +1,4 @@
+import pathlib
 from bossypaints.checkpoints import Checkpoint
 from bossypaints.tasks import TaskInDB
 
@@ -21,11 +22,24 @@ class VolumePolygonRenderer:
 
 class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
 
-    def _materialize_xyz_volume(self, task: TaskInDB, checkpoints: list[Checkpoint]):
+    def _materialize_xyz_volume(self, task: TaskInDB, checkpoints: list[Checkpoint], as_channels: bool = False):
+        """Materialize a volume in Numpy array format from a list of Checkpoints.
+
+        Arguments:
+            - task: TaskInDB object containing task metadata.
+            - checkpoints: List of Checkpoint objects to render.
+            - as_channels: If True, render each seg ID as a separate channel in the volume.
+
+        """
         x_size = task.x_max - task.x_min
         y_size = task.y_max - task.y_min
         z_size = task.z_max - task.z_min
-        volume = np.zeros((x_size, y_size, z_size), dtype=np.uint64)
+
+        ids = sorted(set(poly.segmentID for checkpoint in checkpoints for poly in checkpoint.polygons))
+        id_count = len(ids)
+        logger.info(f"Total unique segment IDs found: {id_count}")
+
+        volume = np.zeros((x_size, y_size, z_size, id_count) if as_channels else (x_size, y_size, z_size), dtype=np.uint64)
 
         logger.info(f"Creating volume of size {x_size}x{y_size}x{z_size}")
 
@@ -63,7 +77,10 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
                     cc = np.clip(cc, 0, x_size - 1)
 
                     logger.info(f"Positive region: {len(rr)} pixels set to segmentID {poly.segmentID}")
-                    volume[cc, rr, z] = poly.segmentID
+                    if as_channels:
+                        volume[cc, rr, z, ids.index(poly.segmentID)] = poly.segmentID
+                    else:
+                        volume[cc, rr, z] = poly.segmentID
 
                 # Subtract all negative regions (holes)
                 for negative_region in poly.negativeRegions:
@@ -82,9 +99,10 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
                     hole_cc = np.clip(hole_cc, 0, x_size - 1)
 
                     logger.info(f"Negative region: {len(hole_rr)} pixels cleared")
-                    volume[hole_cc, hole_rr, z] = 0  # Clear the hole area
-
-                logger.info(f"Sum of volume at z={z}: {np.sum(volume[:, :, z])}")
+                    if as_channels:
+                        volume[hole_cc, hole_rr, z, ids.index(poly.segmentID)] = 0
+                    else:
+                        volume[hole_cc, hole_rr, z] = 0
 
         return volume
 
@@ -94,6 +112,7 @@ class ImageStackVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
     def __init__(self, directory: str = "./", fmt: str = "tif"):
         self.fmt = fmt
         self.directory = directory
+        pathlib.Path(self.directory).mkdir(parents=True, exist_ok=True)
 
     def render_from_checkpoints(self, task: TaskInDB, checkpoints: list[Checkpoint]):
         """Render a volume in Numpy array format from a list of Checkpoints"""

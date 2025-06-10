@@ -35,6 +35,9 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         addAnnotation: (layerIndex: number, annotation: PolygonAnnotation): void => {
             annotation.z = layerIndex;
+            if (layerwiseAnnotations[layerIndex] === undefined) {
+                layerwiseAnnotations[layerIndex] = [];
+            }
             layerwiseAnnotations[layerIndex].push(annotation);
             layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].slice();
         },
@@ -131,11 +134,14 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         saveCurrentAndCreateNewAnnotation: (layerIndex: number, mergeByID: boolean = true) => {
             currentAnnotation.annotation.z = layerIndex;
+            if (layerwiseAnnotations[layerIndex] === undefined) {
+                layerwiseAnnotations[layerIndex] = [];
+            }
             layerwiseAnnotations[layerIndex].push(currentAnnotation.annotation);
             currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID, true, layerIndex));
 
             if (mergeByID) {
-                const sameIDAnnotations = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID === currentSegmentID);
+                const sameIDAnnotations = (layerwiseAnnotations[layerIndex] || []).filter((a) => a.segmentID === currentSegmentID);
 
                 if (sameIDAnnotations.length > 1) {
                     let polyboolPolys: Polygon[] = sameIDAnnotations.map((a) => {

@@ -679,7 +679,7 @@ from BossDB and displays it on the canvas.
 			}
 
 			annotationStore.currentAnnotation.annotation.draw(s, nav, annotationStore);
-			for (let anno of annotationStore.getLayerAnnotations(nav.layer)) {
+			for (let anno of annotationStore.getLayerAnnotations(nav.layer) || []) {
 				anno.draw(s, nav, annotationStore);
 
 				if (anno.pointIsInside([s.mouseX, s.mouseY])) {

@@ -1,18 +1,13 @@
-import os
 from typing import Optional
 
 import fastapi
 import httpx
-from fastapi import FastAPI, Request, Response, APIRouter
-from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, Request, Response, APIRouter, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from bossypaints.renderer import (
-    ImageStackVolumePolygonRenderer,
-    BossDBInternVolumePolygonRenderer,
-)
+
+from bossypaints.background import render_and_mesh
 from bossypaints.tasks import JSONFileTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
 
@@ -33,24 +28,6 @@ app.add_middleware(
 )
 
 task_store = JSONFileTaskQueueStore("tasks.json")
-# task_store.put(
-#     Task(
-#         collection="Witvliet2020",
-#         experiment="Dataset_1",
-#         channel="em",
-#         resolution=3,
-#         x_min=1256,
-#         x_max=1768,
-#         y_min=1256,
-#         y_max=1768,
-#         z_min=0,
-#         z_max=32,
-#         priority=0,
-#         destination_collection="Matelsky2024",
-#         destination_experiment="Witvliet_1",
-#         destination_channel="seg",
-#     )
-# )
 
 checkpoint_store = JSONCheckpointStore("checkpoints.json")
 
@@ -71,19 +48,17 @@ async def get_next_task():
     else:
         return {"task": None}
 
-
 @api_router.post("/tasks/{task_id}/save")
-async def save_task(task_id: TaskID, checkpoint: dict):
+async def save_task(task_id: TaskID, checkpoint: dict, background_tasks: BackgroundTasks):
     checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
     checkpoint_store.save_checkpoint(checkpoint_obj)
     # Render this volume:
     task = task_store.get(task_id)
-    ImageStackVolumePolygonRenderer(
-        fmt="tif", directory="./exports/"
-    ).render_from_checkpoints(task, checkpoint_store.get_checkpoints_for_task(task_id))
-    # BossDBInternVolumePolygonRenderer().render_from_checkpoints(
-    #     task, checkpoint_store.get_checkpoints_for_task(task_id)
-    # )
+
+    # Kick off a background task to render the volume
+    background_tasks.add_task(render_and_mesh, task_id, task, checkpoint_store.get_checkpoints_for_task(task_id))
+    return {"message": "Checkpoint received and rendering started"}
+
 
 
 @api_router.post("/tasks/{task_id}/checkpoint")
