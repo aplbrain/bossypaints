@@ -4,25 +4,26 @@
 A prettier info panel that displays information about the current state of the annotation
 manager and navigation store.
 
-@prop annotationStore {AnnotationManagerStore} - The annotation manager store to
-  display information about.
-@prop nav {NavigationStore} - The navigation store to display information about.
+@prop currentLayer {number} - The current layer number
+@prop currentSegmentID {number} - The current segment ID
+@prop layerAnnotationCount {number} - Number of annotations on current layer
+@prop onSegmentIDChange {function} - Callback to change segment ID
 -->
 <script lang="ts">
-	import { type AnnotationManagerStore } from '$lib/webpaint/stores/AnnotationManagerStore.svelte';
-	import { type NavigationStore } from '$lib/webpaint/stores/NavigationStore.svelte';
 	import { segmentIdToRGB } from '$lib/webpaint/colorutils';
 
-	export let annotationStore: AnnotationManagerStore;
-	export let nav: NavigationStore;
+	export let currentLayer: number;
+	export let currentSegmentID: number;
+	export let layerAnnotationCount: number;
+	export let onSegmentIDChange: (id: number) => void;
 
 	let editingSegmentId = false;
-	let tempSegmentId = annotationStore.currentSegmentID.toString();
+	let tempSegmentId = currentSegmentID.toString();
 	let inputElement: HTMLInputElement;
 
 	function startEditingSegmentId() {
 		editingSegmentId = true;
-		tempSegmentId = annotationStore.currentSegmentID.toString();
+		tempSegmentId = currentSegmentID.toString();
 		// Focus the input after it's rendered
 		setTimeout(() => {
 			if (inputElement) {
@@ -35,15 +36,15 @@ manager and navigation store.
 	function saveSegmentId() {
 		const newId = parseInt(tempSegmentId);
 		if (!isNaN(newId) && newId > 0) {
-			annotationStore.setCurrentSegmentID(newId);
+			onSegmentIDChange(newId);
 		} else {
-			tempSegmentId = annotationStore.currentSegmentID.toString();
+			tempSegmentId = currentSegmentID.toString();
 		}
 		editingSegmentId = false;
 	}
 
 	function cancelEditingSegmentId() {
-		tempSegmentId = annotationStore.currentSegmentID.toString();
+		tempSegmentId = currentSegmentID.toString();
 		editingSegmentId = false;
 	}
 
@@ -56,15 +57,13 @@ manager and navigation store.
 	}
 
 	// Get the current segment color - make it reactive to changes
-	$: currentSegmentColor = segmentIdToRGB(annotationStore.currentSegmentID);
+	$: currentSegmentColor = segmentIdToRGB(currentSegmentID);
 	$: colorStyle = `rgb(${currentSegmentColor[0]}, ${currentSegmentColor[1]}, ${currentSegmentColor[2]})`;
 
 	// Update temp segment ID when the current segment ID changes
 	$: if (!editingSegmentId) {
-		tempSegmentId = annotationStore.currentSegmentID.toString();
+		tempSegmentId = currentSegmentID.toString();
 	}
-
-	console.log(annotationStore.getLayerAnnotations);
 </script>
 
 <!-- Info Panel - Top Right -->
@@ -77,7 +76,7 @@ manager and navigation store.
 		<span
 			class="text-lg font-bold text-gray-900 bg-blue-50 px-3 py-1 rounded-full border border-blue-200"
 		>
-			{nav.layer}
+			{currentLayer}
 		</span>
 	</div>
 
@@ -136,7 +135,7 @@ manager and navigation store.
 				class="text-lg font-bold text-gray-900 bg-gray-50 hover:bg-gray-100 px-3 py-1 rounded-full border border-gray-200 transition-colors cursor-pointer"
 				title="Click to edit segment ID"
 			>
-				{annotationStore.currentSegmentID}
+				{currentSegmentID}
 			</button>
 		{/if}
 	</div>
@@ -146,15 +145,15 @@ manager and navigation store.
 		<div class="flex items-center justify-between">
 			<span class="text-gray-600">Layer Annotations</span>
 			<span class="font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
-				{annotationStore.getLayerAnnotations(nav.layer).length}
+				{layerAnnotationCount}
 			</span>
 		</div>
 
-		<div class="flex items-center justify-between">
+		<!-- <div class="flex items-center justify-between">
 			<span class="text-gray-600">Total Annotations</span>
 			<span class="font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
 				{annotationStore.getAllAnnotations().flat().length}
 			</span>
-		</div>
+		</div> -->
 	</div>
 </div>

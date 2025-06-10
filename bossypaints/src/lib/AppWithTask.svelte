@@ -116,7 +116,12 @@
 			}}
 		/>
 
-		<InfoTable {annotationStore} {nav} />
+		<InfoTable
+			currentLayer={nav.layer}
+			currentSegmentID={annotationStore.currentSegmentID}
+			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
+			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
+		/>
 		<KeybindingsTable bind:show={showKeybindings} />
 
 		<!-- Percentage Complete Bar - slides down to hide, hover to show -->

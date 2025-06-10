@@ -679,13 +679,12 @@ from BossDB and displays it on the canvas.
 			}
 
 			annotationStore.currentAnnotation.annotation.draw(s, nav, annotationStore);
+
+			// Optimize hover detection - calculate mouse position once
+			const dataPosition = nav.sceneToData(s.mouseX, s.mouseY);
+
 			for (let anno of annotationStore.getLayerAnnotations(nav.layer) || []) {
 				anno.draw(s, nav, annotationStore);
-
-				if (anno.pointIsInside([s.mouseX, s.mouseY])) {
-					annotationStore.setHoveredAnnotation(anno);
-				}
-				let dataPosition = nav.sceneToData(s.mouseX, s.mouseY);
 				if (anno.pointIsInside([dataPosition.x, dataPosition.y])) {
 					annotationStore.setHoveredAnnotation(anno);
 				}
