@@ -21,6 +21,8 @@
 	canvas.id = 'minimap';
 	document.body.appendChild(canvas);
 
+	const indicatorSize = 4; // Size of the indicator circles in the minimap
+
 	const minimapSketch = (s: p5) => {
 		s.setup = () => {
 			// runs once
@@ -47,10 +49,10 @@
 				annolist.forEach((anno) => {
 					s.fill(anno.color[0], anno.color[1], anno.color[2], 150);
 					s.ellipse(
-						anno.segmentID,
+						anno.segmentID * indicatorSize,
 						s.map(layer, 0, nav.maxLayer - nav.minLayer, 0, height),
-						10,
-						10
+						indicatorSize,
+						indicatorSize
 					);
 					// s.ellipse(
 					// 	s.map(anno.points[0][0], 0, nav.imageWidth, 0, s.width),
