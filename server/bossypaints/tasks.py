@@ -2,6 +2,7 @@ import abc
 import json
 import uuid
 import pydantic
+from typing import List
 
 TaskID = str
 
@@ -21,6 +22,7 @@ class Task(pydantic.BaseModel):
     destination_collection: str | None = None
     destination_experiment: str | None = None
     destination_channel: str | None = None
+    assigned_to: str | None = None  # BossDB username of the assigned user
 
 
 class TaskInDB(Task):
@@ -47,7 +49,11 @@ class TaskQueueStore(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def list(self) -> list[TaskInDB]:
+    def list(self) -> List[TaskInDB]:
+        pass
+
+    @abc.abstractmethod
+    def list_for_user(self, username: str) -> List[TaskInDB]:
         pass
 
 
@@ -67,8 +73,12 @@ class InMemoryTaskQueueStore(TaskQueueStore):
     def delete(self, task_id: TaskID) -> None:
         del self._tasks[task_id]
 
-    def list(self) -> list[TaskInDB]:
+    def list(self) -> List[TaskInDB]:
         return list(self._tasks.values())
+
+    def list_for_user(self, username: str) -> List[TaskInDB]:
+        return [task for task in self._tasks.values()
+                if task.assigned_to == username]
 
 
 class JSONFileTaskQueueStore(TaskQueueStore):
@@ -111,6 +121,11 @@ class JSONFileTaskQueueStore(TaskQueueStore):
         del tasks[task_id]
         self._write_to_file(tasks)
 
-    def list(self) -> list[TaskInDB]:
+    def list(self) -> List[TaskInDB]:
         tasks = self._load_latest_from_file()
         return list(tasks.values())
+
+    def list_for_user(self, username: str) -> List[TaskInDB]:
+        tasks = self._load_latest_from_file()
+        return [task for task in tasks.values()
+                if task.assigned_to == username]

@@ -1,3 +1,7 @@
+<svelte:head>
+	<title>BossyPaints - Task Dashboard</title>
+</svelte:head>
+
 <script lang="ts">
 	import API from '$lib/api';
 	import type { TaskInDB } from '$lib/api';

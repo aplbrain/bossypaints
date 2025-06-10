@@ -1,3 +1,7 @@
+<svelte:head>
+	<title>Annotation App - BossyPaints</title>
+</svelte:head>
+
 <script lang="ts">
 	import AppWithTask from '$lib/AppWithTask.svelte';
 	import API, { type TaskInDB } from '$lib/api';

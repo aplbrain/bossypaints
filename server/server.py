@@ -2,7 +2,7 @@ from typing import Optional
 
 import fastapi
 import httpx
-from fastapi import FastAPI, Request, Response, APIRouter, BackgroundTasks
+from fastapi import FastAPI, Request, Response, APIRouter, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -34,26 +34,60 @@ checkpoint_store = JSONCheckpointStore("checkpoints.json")
 api_router = APIRouter()
 
 
+async def get_username_from_request(request: Request) -> str:
+    """Extract username from BossDB token in request headers."""
+    token = request.headers.get("Authorization", "").split(" ")[1] if request.headers.get("Authorization") else None
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization token required")
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                "https://api.bossdb.io/v1/groups/",
+                headers={
+                    "Authorization": f"Token {token}",
+                    "Accept": "application/json",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            username = [grp for grp in data["groups"] if grp.endswith("-primary")][0].split(
+                "-primary"
+            )[0]
+            return username
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Invalid authorization token: {str(e)}")
+
+
 @api_router.get("/tasks")
-async def get_tasks():
-    tasks = task_store.list()
+async def get_tasks(request: Request):
+    username = await get_username_from_request(request)
+    tasks = task_store.list_for_user(username)
     return {"tasks": tasks}
 
 
 @api_router.get("/tasks/next")
-async def get_next_task():
-    tasks = task_store.list()
+async def get_next_task(request: Request):
+    username = await get_username_from_request(request)
+    tasks = task_store.list_for_user(username)
     if tasks:
+        # Sort by priority (higher priority first) and return the first one
+        tasks.sort(key=lambda t: t.priority, reverse=True)
         return {"task": tasks[0]}
     else:
         return {"task": None}
 
 @api_router.post("/tasks/{task_id}/save")
-async def save_task(task_id: TaskID, checkpoint: dict, background_tasks: BackgroundTasks):
+async def save_task(request: Request, task_id: TaskID, checkpoint: dict, background_tasks: BackgroundTasks):
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+    
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+    
     checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
     checkpoint_store.save_checkpoint(checkpoint_obj)
-    # Render this volume:
-    task = task_store.get(task_id)
 
     # Kick off a background task to render the volume
     background_tasks.add_task(render_and_mesh, task_id, task, checkpoint_store.get_checkpoints_for_task(task_id))
@@ -62,45 +96,48 @@ async def save_task(task_id: TaskID, checkpoint: dict, background_tasks: Backgro
 
 
 @api_router.post("/tasks/{task_id}/checkpoint")
-async def checkpoint_task(task_id: TaskID, checkpoint: dict):
+async def checkpoint_task(request: Request, task_id: TaskID, checkpoint: dict):
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+    
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+    
     checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
     checkpoint_store.save_checkpoint(checkpoint_obj)
     return {"message": "Checkpoint received"}
 
 
 @api_router.get("/tasks/{task_id}/checkpoints")
-async def get_task_checkpoints(task_id: TaskID):
+async def get_task_checkpoints(request: Request, task_id: TaskID):
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+    
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+    
     checkpoints = checkpoint_store.get_checkpoints_for_task(task_id)
     return {"checkpoints": checkpoints}
 
 
 @api_router.get("/tasks/{task_id}")
-async def get_task_by_id(task_id: TaskID):
+async def get_task_by_id(request: Request, task_id: TaskID):
+    username = await get_username_from_request(request)
     task = task_store.get(task_id)
-    if task:
-        return {"task": task}
-    else:
-        return {"task": None}
+    
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+    
+    return {"task": task}
 
 
 @api_router.get("/bossdb/username")
 async def get_bossdb_username(request: Request):
-    # TODO: This is a really janky way to get the username.
-    token = request.headers.get("Authorization", "").split(" ")[1]
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://api.bossdb.io/v1/groups/",
-            headers={
-                "Authorization": f"Token {token}",
-                "Accept": "application/json",
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-        username = [grp for grp in data["groups"] if grp.endswith("-primary")][0].split(
-            "-primary"
-        )[0]
-        return {"username": username}
+    username = await get_username_from_request(request)
+    return {"username": username}
 
 
 @api_router.get("/bossdb/autocomplete")
@@ -191,6 +228,9 @@ class CreateTaskRequest(BaseModel):
 async def create_task(
     request: Request, response: Response, new_task: CreateTaskRequest
 ):
+    # Get the username from the request to assign the task to this user
+    username = await get_username_from_request(request)
+    
     # Check if the collection exists and the user has access to it
     async with httpx.AsyncClient() as client:
         chan_exists_resp = await client.get(
@@ -246,6 +286,7 @@ async def create_task(
             destination_collection=new_task.destination_collection,
             destination_experiment=new_task.destination_experiment,
             destination_channel=new_task.destination_channel,
+            assigned_to=username,  # Assign the task to the user creating it
         )
 
         # Create or confirm access to the destination collection, experiment, and channel
@@ -380,6 +421,40 @@ async def create_task(
         return {"task": task, "task_id": task_id}
 
 
+
+
+class AssignTaskRequest(BaseModel):
+    assigned_to: str
+
+
+@api_router.post("/tasks/{task_id}/assign")
+async def assign_task(request: Request, task_id: TaskID, assign_request: AssignTaskRequest):
+    """Assign a task to a specific user. Currently allows any authenticated user to reassign tasks."""
+    username = await get_username_from_request(request)  # Verify the requester is authenticated
+    
+    task = task_store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Update the task assignment
+    task.assigned_to = assign_request.assigned_to
+    
+    # Save the updated task back to the store
+    tasks = task_store._load_latest_from_file()
+    tasks[task_id] = task
+    task_store._write_to_file(tasks)
+    
+    return {"message": f"Task {task_id} assigned to {assign_request.assigned_to}"}
+
+
+@api_router.get("/tasks/unassigned")
+async def get_unassigned_tasks(request: Request):
+    """Get all tasks that are not assigned to any user."""
+    username = await get_username_from_request(request)  # Verify the requester is authenticated
+    
+    tasks = task_store.list()
+    unassigned_tasks = [task for task in tasks if task.assigned_to is None]
+    return {"tasks": unassigned_tasks}
 
 
 app.include_router(api_router, prefix="/api")
