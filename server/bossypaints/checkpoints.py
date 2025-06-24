@@ -6,10 +6,13 @@ from bossypaints.tasks import TaskID
 
 
 class Polygon(pydantic.BaseModel):
-    points: list[tuple[float, float]]
+    # Positive/negative regions approach
+    positiveRegions: list[list[tuple[float, float]]] = []
+    negativeRegions: list[list[tuple[float, float]]] = []
+
     editing: bool
     segmentID: int
-    color: list[int] | None
+    color: list[int] | None = None
     z: int
 
 
@@ -20,7 +23,20 @@ class Checkpoint(pydantic.BaseModel):
     # When receiving dict, convert to Polygon
     @pydantic.validator("polygons", pre=True)
     def convert_polygons(cls, v):
-        return [Polygon(**polygon) for polygon in v]
+        if isinstance(v, list):
+            result = []
+            for polygon in v:
+                if isinstance(polygon, Polygon):
+                    # Already a Polygon object
+                    result.append(polygon)
+                elif isinstance(polygon, dict):
+                    # Dict that needs to be converted
+                    result.append(Polygon(**polygon))
+                else:
+                    # Unexpected type
+                    raise ValueError(f"Polygon must be dict or Polygon object, got {type(polygon)}")
+            return result
+        return v
 
 
 class CheckpointStore(Protocol):

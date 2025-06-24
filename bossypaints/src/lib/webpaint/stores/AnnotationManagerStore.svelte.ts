@@ -17,10 +17,10 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
 
     const layerwiseAnnotations: Array<Array<PolygonAnnotation>> = $state(new Array(numberOfLayers).fill(0).map(() => []));
     let currentSegmentID = $state(1);
-    let currentAnnotation = createAnnotationStore(new PolygonAnnotation([], currentSegmentID));
+    let currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID));
     let hoveredAnnotation: PolygonAnnotation | null = $state(null);
 
-    return {
+    const store = {
         /**
          * Get the raw annotations array.
          * @returns {Array<Array<PolygonAnnotation>>}
@@ -35,6 +35,9 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         addAnnotation: (layerIndex: number, annotation: PolygonAnnotation): void => {
             annotation.z = layerIndex;
+            if (layerwiseAnnotations[layerIndex] === undefined) {
+                layerwiseAnnotations[layerIndex] = [];
+            }
             layerwiseAnnotations[layerIndex].push(annotation);
             layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].slice();
         },
@@ -44,7 +47,13 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          * @param layerIndex - The index of the layer.
          * @returns {Array<PolygonAnnotation>}
          */
-        getLayerAnnotations: (layerIndex: number): Array<PolygonAnnotation> => layerwiseAnnotations[layerIndex],
+        getLayerAnnotations: (layerIndex: number): Array<PolygonAnnotation> => {
+            // Defensive programming: return empty array if layer index is out of bounds
+            if (layerIndex < 0 || layerIndex >= layerwiseAnnotations.length) {
+                return [];
+            }
+            return layerwiseAnnotations[layerIndex];
+        },
 
         /**
          * Get all annotations as a flat array.
@@ -67,6 +76,11 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         setCurrentSegmentID: (id: number): void => {
             currentSegmentID = id;
+            // If the current annotation has no vertices, also update its segment ID:
+            if (currentAnnotation.annotation.points.length === 0 &&
+                currentAnnotation.annotation.positiveRegions.every(region => region.length === 0)) {
+                currentAnnotation.annotation.segmentID = currentSegmentID;
+            }
         },
 
         /**
@@ -76,7 +90,8 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
         incrementSegmentID: (): void => {
             currentSegmentID += 1;
             // If the current annotation has no vertices, also update its segment ID:
-            if (currentAnnotation.annotation.points.length === 0) {
+            if (currentAnnotation.annotation.points.length === 0 &&
+                currentAnnotation.annotation.positiveRegions.every(region => region.length === 0)) {
                 currentAnnotation.annotation.segmentID = currentSegmentID;
             }
         },
@@ -88,7 +103,8 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
         decrementSegmentID: (): void => {
             currentSegmentID = Math.max(1, currentSegmentID - 1);
             // If the current annotation has no vertices, also update its segment ID:
-            if (currentAnnotation.annotation.points.length === 0) {
+            if (currentAnnotation.annotation.points.length === 0 &&
+                currentAnnotation.annotation.positiveRegions.every(region => region.length === 0)) {
                 currentAnnotation.annotation.segmentID = currentSegmentID;
             }
         },
@@ -118,32 +134,35 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         saveCurrentAndCreateNewAnnotation: (layerIndex: number, mergeByID: boolean = true) => {
             currentAnnotation.annotation.z = layerIndex;
+            if (layerwiseAnnotations[layerIndex] === undefined) {
+                layerwiseAnnotations[layerIndex] = [];
+            }
             layerwiseAnnotations[layerIndex].push(currentAnnotation.annotation);
-            currentAnnotation = createAnnotationStore(new PolygonAnnotation([], currentSegmentID, true, layerIndex));
+            currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID, true, layerIndex));
 
             if (mergeByID) {
-                const sameIDAnnotations = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID === currentSegmentID);
+                const sameIDAnnotations = (layerwiseAnnotations[layerIndex] || []).filter((a) => a.segmentID === currentSegmentID);
 
                 if (sameIDAnnotations.length > 1) {
                     let polyboolPolys: Polygon[] = sameIDAnnotations.map((a) => {
+                        // Use positive/negative regions for polybool operations
+                        const allRegions = [...a.positiveRegions, ...a.negativeRegions];
                         return {
-                            regions: [a.points],
+                            regions: allRegions,
                             inverted: false
                         };
                     });
 
-                    // Reduce:
-                    // TODO: https://github.com/velipso/polybool?tab=readme-ov-file#advanced-example-1
-                    let result: Polygon;
+                    // Reduce using union operations
+                    let result: Polygon = polyboolPolys[0];
                     for (let i = 1; i < polyboolPolys.length; i++) {
-                        result = polybool.union(polyboolPolys[0], polyboolPolys[i]);
-                        polyboolPolys[0] = result;
+                        result = polybool.union(result, polyboolPolys[i]);
                     }
 
-                    // TODO: Support genus > 0
-                    const mergedAnnotations = result.regions.map((r) => new PolygonAnnotation(r as Array<[number, number]>, currentSegmentID, false, layerIndex));
+                    // Create single PolygonAnnotation with positive/negative regions
+                    const mergedAnnotation = PolygonAnnotation.fromPolyboolRegions(result.regions as Array<Array<[number, number]>>, currentSegmentID, false, layerIndex);
                     layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID !== currentSegmentID);
-                    layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].concat(mergedAnnotations);
+                    layerwiseAnnotations[layerIndex].push(mergedAnnotation);
                 }
             }
         },
@@ -155,27 +174,63 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         subtractCurrentAnnotation: (layerIndex: number) => {
             const sameIDAnnotations = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID === currentSegmentID);
-            const subtractingAnnotation = { regions: [currentAnnotation.annotation.points], inverted: false };
-            currentAnnotation = createAnnotationStore(new PolygonAnnotation([], currentSegmentID, false, layerIndex));
+            // Use the first positive region for subtraction (or empty array if none exists)
+            const currentRegion = currentAnnotation.annotation.positiveRegions[0] || [];
+            const subtractingAnnotation = { regions: [currentRegion], inverted: false };
+            currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID, false, layerIndex));
 
-            // If there are multiple annotations with the same segment ID, subtract the current annotation from each:
-            console.log(sameIDAnnotations.length);
             if (sameIDAnnotations.length > 0) {
-                let polyboolPolys: Polygon[] = sameIDAnnotations.map((a) => {
-                    return {
-                        regions: [a.points],
+                // Step 1: First, union all existing annotations with the same segment ID into one shape
+                let combinedExistingPolygon: Polygon;
+
+                if (sameIDAnnotations.length === 1) {
+                    // Single annotation to subtract from
+                    const allRegions = [...sameIDAnnotations[0].positiveRegions, ...sameIDAnnotations[0].negativeRegions];
+                    combinedExistingPolygon = {
+                        regions: allRegions,
                         inverted: false
                     };
+                } else {
+                    // Multiple annotations - union them first
+                    let polyboolPolys: Polygon[] = sameIDAnnotations.map((a) => {
+                        const allRegions = [...a.positiveRegions, ...a.negativeRegions];
+                        return {
+                            regions: allRegions,
+                            inverted: false
+                        };
+                    });
+
+                    combinedExistingPolygon = polyboolPolys[0];
+                    for (let i = 1; i < polyboolPolys.length; i++) {
+                        combinedExistingPolygon = polybool.union(combinedExistingPolygon, polyboolPolys[i]);
+                    }
+                }
+
+                // Step 2: Subtract the current annotation from the combined shape
+                const subtractedResult = polybool.difference(combinedExistingPolygon, subtractingAnnotation);
+
+                console.log('Subtraction result:', {
+                    inputRegions: combinedExistingPolygon.regions.length,
+                    outputRegions: subtractedResult.regions.length,
+                    outputRegionSizes: subtractedResult.regions.map(r => r.length)
                 });
 
-                // Subtract the current annotation from each:
-                const subtractedPolys = polyboolPolys.map((p) => {
-                    // TODO: Support genus > 0
-                    return polybool.difference(p, subtractingAnnotation);
+                // Step 3: Create a SINGLE PolygonAnnotation from the result with positive/negative regions
+                const resultAnnotation = PolygonAnnotation.fromPolyboolRegions(
+                    subtractedResult.regions as Array<Array<[number, number]>>,
+                    currentSegmentID,
+                    false,
+                    layerIndex
+                );
+
+                console.log('Result annotation created with positive/negative regions:', {
+                    positiveRegions: resultAnnotation.positiveRegions.length,
+                    negativeRegions: resultAnnotation.negativeRegions.length
                 });
-                const subtractedAnnotations = subtractedPolys.map((p) => new PolygonAnnotation(p.regions[0] as Array<[number, number]>, currentSegmentID, false, layerIndex));
+
+                // Step 4: Replace all old annotations with the new single result annotation
                 layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].filter((a) => a.segmentID !== currentSegmentID);
-                layerwiseAnnotations[layerIndex] = layerwiseAnnotations[layerIndex].concat(subtractedAnnotations);
+                layerwiseAnnotations[layerIndex].push(resultAnnotation);
             }
         },
 
@@ -184,7 +239,7 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          * @returns {void}
         */
         resetCurrentAnnotation: (): void => {
-            currentAnnotation = createAnnotationStore(new PolygonAnnotation([], currentSegmentID));
+            currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID));
         },
 
         /**
@@ -208,12 +263,16 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          * @returns {void}
          */
         draw: (p: p5, nav: NavigationStore) => {
-            // Draw the annotations:
-            layerwiseAnnotations[nav.layer].forEach((annotation) => {
-                annotation.draw(p, nav, this);
-            });
+            // Draw the annotations with bounds checking
+            if (nav.layer >= 0 && nav.layer < layerwiseAnnotations.length) {
+                layerwiseAnnotations[nav.layer].forEach((annotation) => {
+                    annotation.draw(p, nav, store);
+                });
+            }
         }
     };
+
+    return store;
 }
 
 export type AnnotationManagerStore = ReturnType<typeof createAnnotationManagerStore>;

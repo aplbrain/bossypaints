@@ -7,7 +7,7 @@ import type PolygonAnnotation from '../PolygonAnnotation';
 
 export function createAnnotationStore(anno: PolygonAnnotation) {
     let annotation: PolygonAnnotation = $state(anno);
-    let _vertices: Array<[number, number]> = $state(annotation.points);
+    let _vertices: Array<[number, number]> = $state(annotation.positiveRegions[0] || []);
 
     return {
         get annotation() { return annotation; },
@@ -16,11 +16,11 @@ export function createAnnotationStore(anno: PolygonAnnotation) {
         },
         addVertex: (pt: [number, number]) => {
             annotation.addVertex(pt);
-            _vertices = annotation.points;
+            _vertices = annotation.positiveRegions[0] || [];
         },
         removeLatestVertex: () => {
             annotation.removeLatestVertex();
-            _vertices = annotation.points;
+            _vertices = annotation.positiveRegions[0] || [];
         },
         get vertices() { return _vertices; }
 

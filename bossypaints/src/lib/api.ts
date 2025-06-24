@@ -1,7 +1,7 @@
-import type PolygonAnnotation from "webpaint/src/lib/PolygonAnnotation";
+import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 
-// const baseUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000';
-const baseUrl = process.env.BOSSYPAINTS_API_URL || "https://api.paint.labs.bossdb.org" || 'http://localhost:8000';
+const baseUrl = 'http://localhost:8000';
+// const baseUrl = "https://api.paint.labs.bossdb.org";
 
 export type TaskID = string;
 
@@ -29,7 +29,7 @@ export type TaskInDB = Task & {
 class API {
     async get(url: string) {
         url = url.startsWith('/') ? url : `/${url}`;
-        const headers = {
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
         if (localStorage.getItem('apiToken')) {
@@ -43,7 +43,7 @@ class API {
 
     async post(url: string, data: any) {
         url = url.startsWith('/') ? url : `/${url}`;
-        const headers = {
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
         if (localStorage.getItem('apiToken')) {
@@ -103,7 +103,7 @@ class API {
         collection: string;
         experiment: string | null;
         channel: string | null;
-    }): Promise<{ resources: Array<[string | string | null, string | null]> }> {
+    }): Promise<{ resources: string[] }> {
         let res = await this.get(`/api/bossdb/autocomplete?collection=${collection}&experiment=${experiment || ''}&channel=${channel || ''}`);
         return res;
     }

@@ -146,9 +146,8 @@ export const keybindings: Keybinding[] = [
         matcher: (s) => s.keyCode === s.ESCAPE,
         handler: (s, annotationStore, nav) => {
             nav.reset();
-            // set x and y to center the data in the viewport
-            nav.setX((s.width - nav.imageWidth) / 2);
-            nav.setY((s.height - nav.imageHeight) / 2);
+            // Pan to the original task center (ROI), or fallback to centering the data in viewport
+            nav.panToOriginalTaskCenter(s.width, s.height);
         },
         eventType: 'key',
     },
@@ -159,6 +158,25 @@ export const keybindings: Keybinding[] = [
         handler: (s, annotationStore, nav) => {
             annotationStore.currentAnnotation.annotation.editing = false;
             annotationStore.saveCurrentAndCreateNewAnnotation(nav.layer);
+        },
+        eventType: 'key',
+    },
+    {
+        key: 'a',
+        action: 'Toggle axes and task region visibility',
+        matcher: (s) => s.key === 'a' || s.key === 'A',
+        handler: () => {
+            // Note: This handler is not actually used - functionality is implemented directly in PaintApp.svelte
+            // This entry is here only for display in the keybindings table
+        },
+        eventType: 'key',
+    },
+    {
+        key: 'v',
+        action: 'Toggle annotation visibility',
+        matcher: (s) => s.key === 'v' || s.key === 'V',
+        handler: (s, annotationStore, nav) => {
+            nav.toggleAnnotationsVisible();
         },
         eventType: 'key',
     },
@@ -263,12 +281,19 @@ export const keybindings: Keybinding[] = [
         matcher: (s) => !!s,
         // @ts-expect-error This particular Wheel Event is a janky p5 type
         handler: (s, annotationStore, nav, event: WheelEvent & { delta: number }) => {
-            if (s.keyIsDown(s.CONTROL)) {
+            // Check both p5's keyIsDown and the event's ctrlKey for Mac compatibility
+            if (s.keyIsDown(s.CONTROL) || event.ctrlKey) {
+                // Use a faster speed for pinch gestures (when ctrlKey is set by trackpad)
+                const zoomSpeed = event.ctrlKey ? APP_CONFIG.pinchZoomSpeed : APP_CONFIG.scrollingZoomSpeed;
                 centerfullyZoom(
-                    nav.zoom + -event.delta * APP_CONFIG.scrollingZoomSpeed, s, nav, true
+                    nav.zoom + -event.delta * zoomSpeed, s, nav, true
                 );
+                event.preventDefault();
+                return false;
             } else {
                 nav.incrementLayer(event.delta > 0 ? 1 : -1);
+                event.preventDefault();
+                return false;
             }
         },
         eventType: 'mouse',

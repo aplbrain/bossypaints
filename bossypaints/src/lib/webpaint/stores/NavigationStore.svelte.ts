@@ -23,8 +23,13 @@ export function createNavigationStore({
     const _minLayer = $state(minLayer);
     const _maxLayer = $state(maxLayer);
     let _drawing = $state(false);
+    let _annotationsVisible = $state(true);
     const _imageWidth = $state(imageWidth);
     const _imageHeight = $state(imageHeight);
+
+    // Store original task center coordinates in native resolution
+    let _originalTaskCenterX = $state<number | null>(null);
+    let _originalTaskCenterY = $state<number | null>(null);
 
     return {
 
@@ -44,10 +49,45 @@ export function createNavigationStore({
             _drawing = newDrawing;
         },
 
+        /** Get the annotation visibility status.
+         * If true, annotations are visible.
+         * If false, annotations are hidden.
+         */
+        get annotationsVisible() { return _annotationsVisible; },
+
+        /** Set the annotation visibility status.
+         * @param newVisible - The new visibility state for annotations.
+         * @returns {void}
+         */
+        setAnnotationsVisible: (newVisible: boolean) => {
+            _annotationsVisible = newVisible;
+        },
+
+        /** Toggle annotation visibility.
+         * @returns {void}
+         */
+        toggleAnnotationsVisible: () => {
+            _annotationsVisible = !_annotationsVisible;
+        },
+
         /** Get the image width of the underlying data. */
         get imageWidth() { return _imageWidth; },
         /** Get the image height of the underlying data. */
         get imageHeight() { return _imageHeight; },
+
+        /** Set the original task center coordinates in native resolution */
+        setOriginalTaskCenter: (centerX: number, centerY: number) => {
+            _originalTaskCenterX = centerX;
+            _originalTaskCenterY = centerY;
+        },
+
+        /** Pan to the original task center (used by escape key and initial load) */
+        panToOriginalTaskCenter: (canvasWidth: number, canvasHeight: number) => {
+            if (_originalTaskCenterX !== null && _originalTaskCenterY !== null) {
+                _x = canvasWidth / 2 - _originalTaskCenterX;
+                _y = canvasHeight / 2 - _originalTaskCenterY;
+            }
+        },
 
         get x() { return _x; },
         setX: (newX: number) => {
@@ -75,14 +115,20 @@ export function createNavigationStore({
         get layer() { return _layer; },
         setLayer: (newLayer: number) => {
             _layer = newLayer;
+            if (_layer < _minLayer) {
+                _layer = _minLayer;
+            }
+            if (_layer >= _maxLayer) {
+                _layer = _maxLayer - 1;
+            }
         },
         incrementLayer: (delta: number = 1) => {
             _layer += delta;
             if (_layer < _minLayer) {
                 _layer = _minLayer;
             }
-            if (_layer > _maxLayer) {
-                _layer = _maxLayer;
+            if (_layer >= _maxLayer) {
+                _layer = _maxLayer - 1;
             }
         },
         decrementLayer: (delta: number = 1) => {
@@ -91,7 +137,7 @@ export function createNavigationStore({
                 _layer = _minLayer;
             }
             if (_layer > _maxLayer) {
-                _layer = _maxLayer;
+                _layer = _maxLayer - 1;
             }
         },
         get zoom() { return _zoom; },

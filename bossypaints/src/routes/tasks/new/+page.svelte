@@ -1,6 +1,13 @@
+<svelte:head>
+	<title>Create New Task - BossyPaints</title>
+</svelte:head>
+
 <script lang="ts">
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
+	import Header from '$lib/Header.svelte';
+	import { parseNewNeuroglancerUrl, extractBossDBInfoFromUrl } from '$lib/neuroglancer';
+
 	let collection = '';
 	let experiment = '';
 	let channel = '';
@@ -15,6 +22,12 @@
 	let destination_experiment = '';
 	let destination_channel = '';
 	let message = '';
+
+	// Neuroglancer URL parsing variables
+	let neuroglancerUrl = '';
+	let showUrlInput = false;
+	let urlParseMessage = '';
+
 	let collectionSuggestions: string[] = [];
 	let experimentSuggestions: string[] = [];
 	let channelSuggestions: string[] = [];
@@ -52,7 +65,7 @@
 
 	function debounceFetchCollectionSuggestions() {
 		clearTimeout(debounceTimeout);
-		debounceTimeout = setTimeout(fetchCollectionSuggestions, 300);
+		deounceTimeout = setTimeout(fetchCollectionSuggestions, 300);
 	}
 
 	async function fetchExperimentSuggestions() {
@@ -134,6 +147,94 @@
 		setZExtent();
 	}
 
+	/**
+	 * Parse a neuroglancer URL and populate form fields
+	 */
+	function parseNeuroglancerUrl() {
+		if (!neuroglancerUrl.trim()) {
+			urlParseMessage = 'Please enter a neuroglancer URL';
+			return;
+		}
+
+		try {
+			// Extract BossDB information from the URL
+			const bossInfo = extractBossDBInfoFromUrl(neuroglancerUrl);
+			if (!bossInfo) {
+				urlParseMessage = 'Could not extract BossDB information from URL';
+				return;
+			}
+
+			// Parse the neuroglancer state for position and dimensions
+			const state = parseNewNeuroglancerUrl(neuroglancerUrl);
+			if (!state) {
+				urlParseMessage = 'Could not parse neuroglancer URL';
+				return;
+			}
+
+			// Populate form fields with extracted data
+			collection = bossInfo.collection;
+			experiment = bossInfo.experiment;
+			channel = bossInfo.channel;
+
+			// Set position if available
+			if (state.position && state.position.length >= 3) {
+				x_center = Math.round(state.position[0]);
+				y_center = Math.round(state.position[1]);
+				z_center = Math.round(state.position[2]);
+			}
+
+			// Set some reasonable default radius values (you might want to adjust these)
+			x_radius = 512;
+			y_radius = 512;
+			z_radius = 32;
+
+			// Try to determine resolution from crossSectionScale if available
+			if (state.crossSectionScale) {
+				// This is a rough approximation - you might need to adjust based on your data
+				const scale = state.crossSectionScale;
+				if (scale <= 1) {
+					resolution = 0;
+				} else if (scale <= 2) {
+					resolution = 1;
+				} else if (scale <= 4) {
+					resolution = 2;
+				} else if (scale <= 8) {
+					resolution = 3;
+				} else {
+					resolution = 4;
+				}
+			}
+
+			urlParseMessage = `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`;
+
+			// Clear the URL input and hide the section
+			neuroglancerUrl = '';
+			showUrlInput = false;
+
+			// Trigger coordinate frame fetch
+			if (collection && experiment) {
+				fetchCoordFrame();
+			}
+		} catch (error) {
+			console.error('Error parsing neuroglancer URL:', error);
+			urlParseMessage = 'Error parsing URL: ' + (error as Error).message;
+		}
+	}
+
+	/**
+	 * Clear URL parse message after a delay
+	 */
+	function clearUrlParseMessage() {
+		setTimeout(() => {
+			urlParseMessage = '';
+		}, 5000);
+	}
+
+	// Watch for URL parse message changes to auto-clear them
+	$: if (urlParseMessage) {
+		clearUrlParseMessage();
+	}
+
 	async function createTask() {
 		const task = {
 			collection,
@@ -155,7 +256,7 @@
 		message = response?.message;
 		// if the task was created successfully, clear the form, wait 1 sec,
 		// and then go to the tracing app page with the new task
-		if (response.task_id) {
+		if ((response as any).task_id) {
 			collection = '';
 			experiment = '';
 			channel = '';
@@ -174,239 +275,709 @@
 			destination_channel = '';
 			setTimeout(() => {
 				// task_id
-				goto(`/app/${response.task_id}`);
+				goto(`/app/${(response as any).task_id}`);
 			}, 1000);
 		}
 	}
 </script>
 
-<main class="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
-	<h1 class="text-2xl font-bold mb-6">Create Task</h1>
-	<form on:submit|preventDefault={createTask} class="space-y-4">
-		<label class="block">
-			<span class="text-gray-700">Collection:</span>
-			<input
-				type="text"
-				bind:value={collection}
-				on:input={debounceFetchCollectionSuggestions}
-				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-			/>
-			<ul class="autocomplete-list absolute bg-white border border-gray-300 rounded-md shadow-md">
-				{#each collectionSuggestions as suggestion}
-					<li
-						on:click={() => {
-							collection = suggestion;
-							collectionSuggestions = [];
-						}}
-					>
-						{suggestion}
-					</li>
-				{/each}
-			</ul>
-		</label>
-		<label class="block">
-			<span class="text-gray-700">Experiment:</span>
-			<input
-				type="text"
-				bind:value={experiment}
-				on:input={debounceFetchExperimentSuggestions}
-				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-			/>
-			<ul class="autocomplete-list absolute bg-white border border-gray-300 rounded-md shadow-md">
-				{#each experimentSuggestions as suggestion}
-					<li
-						on:click={() => {
-							experiment = suggestion;
-							experimentSuggestions = [];
-						}}
-					>
-						{suggestion}
-					</li>
-				{/each}
-			</ul>
-		</label>
-		<label class="block">
-			<span class="text-gray-700">Channel:</span>
-			<input
-				type="text"
-				bind:value={channel}
-				on:input={debounceFetchChannelSuggestions}
-				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-			/>
-			<ul class="autocomplete-list absolute bg-white border border-gray-300 rounded-md shadow-md">
-				{#each channelSuggestions as suggestion}
-					<li
-						on:click={() => {
-							channel = suggestion;
-							channelSuggestions = [];
-						}}
-					>
-						{suggestion}
-					</li>
-				{/each}
-			</ul>
-		</label>
-		<label class="block">
-			<span class="text-gray-700">Resolution:</span>
-			<input
-				type="number"
-				bind:value={resolution}
-				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-			/>
-		</label>
-		<div class="flex space-x-4">
-			<label class="block flex-1">
-				<span class="text-gray-700">X Center:</span>
-				<input
-					type="number"
-					bind:value={x_center}
-					min={coordFrame?.x_start}
-					max={coordFrame?.x_stop}
-					disabled={useEntireXExtent}
-					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-				/>
-				{#if coordFrame}
-					<span class="text-gray-500 text-sm">
-						({coordFrame?.x_start} - {coordFrame?.x_stop})
-					</span>
-				{/if}
-			</label>
-			<label class="block flex-1">
-				<span class="text-gray-700">X Radius:</span>
-				<input
-					type="number"
-					bind:value={x_radius}
-					disabled={useEntireXExtent}
-					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-				/>
-			</label>
-			<label for="useEntireXExtent" class="block flex-1" >
-				<span class="text-gray-700"> Use entire X extent</span>
-				<input
-					id="useEntireXExtent"
-					type="checkbox"
-					bind:checked={useEntireXExtent}
-					class="rounded text-indigo-600 focus:ring-indigo-500"
-				/>
-			</label>
-		</div>
-		<div class="flex space-x-4">
-			<label class="block flex-1">
-				<span class="text-gray-700">Y Center:</span>
-				<input
-					type="number"
-					bind:value={y_center}
-					min={coordFrame?.y_start}
-					max={coordFrame?.y_stop}
-					disabled={useEntireYExtent}
-					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-				/>
-				{#if coordFrame}
-					<span class="text-gray-500 text-sm">
-						({coordFrame?.y_start} - {coordFrame?.y_stop})
-					</span>
-				{/if}
-			</label>
-			<label class="block flex-1">
-				<span class="text-gray-700">Y Radius:</span>
-				<input
-					type="number"
-					bind:value={y_radius}
-					disabled={useEntireYExtent}
-					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-				/>
-			</label>
-			<label for="useEntireYExtent" class="block flex-1" >
-				<span class="text-gray-700"> Use entire Y extent</span>
-				<input
-					id="useEntireYExtent"
-					type="checkbox"
-					bind:checked={useEntireYExtent}
-					class="rounded text-indigo-600 focus:ring-indigo-500"
-				/>
-			</label>
-		</div>
-		<div class="flex space-x-4">
-			<label class="block flex-1">
-				<span class="text-gray-700">Z Center:</span>
-				<input
-					type="number"
-					bind:value={z_center}
-					min={coordFrame?.z_start}
-					max={coordFrame?.z_stop}
-					disabled={useEntireZExtent}
-					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-				/>
-				{#if coordFrame}
-					<span class="text-gray-500 text-sm">
-						({coordFrame?.z_start} - {coordFrame?.z_stop})
-					</span>
-				{/if}
-			</label>
-			<label class="block flex-1">
-				<span class="text-gray-700">Z Radius:</span>
-				<input
-					type="number"
-					bind:value={z_radius}
-					disabled={useEntireZExtent}
-					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-				/>
-			</label>
-			<label for="useEntireZExtent" class="block flex-1" >
-				<span class="text-gray-700"> Use entire Z extent</span>
-				<input
-					id="useEntireZExtent"
-					type="checkbox"
-					bind:checked={useEntireZExtent}
-					class="rounded text-indigo-600 focus:ring-indigo-500"
-				/>
-			</label>
-		</div>
-		<label class="block">
-			<span class="text-gray-700">Destination Collection:</span>
-			<input
-				type="text"
-				bind:value={destination_collection}
-				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-			/>
-		</label>
-		<label class="block">
-			<span class="text-gray-700">Destination Experiment:</span>
-			<input
-				type="text"
-				bind:value={destination_experiment}
-				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-			/>
-		</label>
-		<label class="block">
-			<span class="text-gray-700">Destination Channel:</span>
-			<input
-				type="text"
-				bind:value={destination_channel}
-				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-			/>
-		</label>
-		<button
-			type="submit"
-			class="w-full bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-		>
-			Create Task
-		</button>
-	</form>
-	{#if message}
-		<p class="mt-4">{message}</p>
-	{/if}
-</main>
+<!-- Main Container -->
+<div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+	<Header
+		title="Create New Task"
+		subtitle="Configure volumetric annotation parameters"
+		showNewTaskButton={false}
+		showSettingsButton={false}
+		customActions={[
+			{
+				href: '/',
+				text: 'Back to Tasks',
+				icon: 'back',
+				variant: 'ghost'
+			}
+		]}
+	/>
 
+	<!-- Main Content -->
+	<main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+		<form on:submit|preventDefault={createTask} class="space-y-8">
+			<!-- Neuroglancer URL Input Section -->
+			<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+				<div class="px-6 py-4 border-b border-gray-200 bg-blue-50">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center">
+							<div
+								class="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center"
+							>
+								<svg
+									class="w-4 h-4 text-blue-600"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+									></path>
+								</svg>
+							</div>
+							<div class="ml-3">
+								<h3 class="text-lg font-semibold text-gray-900">Parse Neuroglancer URL</h3>
+								<p class="text-sm text-gray-600">
+									Optional: Paste a neuroglancer URL to auto-populate form fields
+								</p>
+							</div>
+						</div>
+						<button
+							type="button"
+							on:click={() => (showUrlInput = !showUrlInput)}
+							class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+						>
+							{showUrlInput ? 'Hide' : 'Show'} URL Input
+						</button>
+					</div>
+				</div>
+
+				{#if showUrlInput}
+					<div class="p-6">
+						<div class="space-y-4">
+							<div>
+								<label for="neuroglancer_url" class="block text-sm font-medium text-gray-700 mb-2">
+									Neuroglancer URL
+								</label>
+								<div class="flex gap-3">
+									<input
+										id="neuroglancer_url"
+										type="url"
+										bind:value={neuroglancerUrl}
+										placeholder="Paste neuroglancer URL here (e.g., https://neuroglancer.bossdb.io/#!...)"
+										class="flex-1 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+									/>
+									<button
+										type="button"
+										on:click={parseNeuroglancerUrl}
+										class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+									>
+										Parse URL
+									</button>
+								</div>
+								<p class="mt-1 text-xs text-gray-500">
+									This will extract the collection, experiment, channel, and position from the URL
+								</p>
+							</div>
+
+							{#if urlParseMessage}
+								<div
+									class="p-3 rounded-lg {urlParseMessage.includes('Successfully')
+										? 'bg-green-50 border border-green-200'
+										: 'bg-red-50 border border-red-200'}"
+								>
+									<div class="flex items-center">
+										{#if urlParseMessage.includes('Successfully')}
+											<svg
+												class="w-4 h-4 text-green-600 mr-2"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M5 13l4 4L19 7"
+												></path>
+											</svg>
+											<p class="text-green-800 text-sm font-medium">{urlParseMessage}</p>
+										{:else}
+											<svg
+												class="w-4 h-4 text-red-600 mr-2"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M6 18L18 6M6 6l12 12"
+												></path>
+											</svg>
+											<p class="text-red-800 text-sm font-medium">{urlParseMessage}</p>
+										{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Data Source Section -->
+			<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+				<div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+					<div class="flex items-center">
+						<div
+							class="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center"
+						>
+							<svg
+								class="w-4 h-4 text-blue-600"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"
+								></path>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z"
+								></path>
+							</svg>
+						</div>
+						<div class="ml-3">
+							<h3 class="text-lg font-semibold text-gray-900">Data Source</h3>
+							<p class="text-sm text-gray-600">Specify the BossDB dataset to annotate</p>
+						</div>
+					</div>
+				</div>
+
+				<div class="p-6 space-y-6">
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+						<!-- Collection -->
+						<div class="relative">
+							<label for="collection" class="block text-sm font-medium text-gray-700 mb-2">
+								Collection
+								<span class="text-red-500">*</span>
+							</label>
+							<input
+								id="collection"
+								type="text"
+								bind:value={collection}
+								on:input={debounceFetchCollectionSuggestions}
+								placeholder="Enter collection name"
+								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+								required
+							/>
+							{#if collectionSuggestions.length > 0}
+								<ul
+									class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+								>
+									{#each collectionSuggestions as suggestion}
+										<li
+											on:click={() => {
+												collection = suggestion;
+												collectionSuggestions = [];
+											}}
+											class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+											role="button"
+											tabindex="0"
+											on:keydown={(e) => {
+												if (e.key === 'Enter' || e.key === ' ') {
+													collection = suggestion;
+													collectionSuggestions = [];
+												}
+											}}
+										>
+											{suggestion}
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+
+						<!-- Experiment -->
+						<div class="relative">
+							<label for="experiment" class="block text-sm font-medium text-gray-700 mb-2">
+								Experiment
+								<span class="text-red-500">*</span>
+							</label>
+							<input
+								id="experiment"
+								type="text"
+								bind:value={experiment}
+								on:input={debounceFetchExperimentSuggestions}
+								placeholder="Enter experiment name"
+								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+								required
+							/>
+							{#if experimentSuggestions.length > 0}
+								<ul
+									class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+								>
+									{#each experimentSuggestions as suggestion}
+										<li
+											on:click={() => {
+												experiment = suggestion;
+												experimentSuggestions = [];
+											}}
+											class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+											role="button"
+											tabindex="0"
+											on:keydown={(e) => {
+												if (e.key === 'Enter' || e.key === ' ') {
+													experiment = suggestion;
+													experimentSuggestions = [];
+												}
+											}}
+										>
+											{suggestion}
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					</div>
+
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+						<!-- Channel -->
+						<div class="relative">
+							<label for="channel" class="block text-sm font-medium text-gray-700 mb-2">
+								Channel
+								<span class="text-red-500">*</span>
+							</label>
+							<input
+								id="channel"
+								type="text"
+								bind:value={channel}
+								on:input={debounceFetchChannelSuggestions}
+								placeholder="Enter channel name"
+								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+								required
+							/>
+							{#if channelSuggestions.length > 0}
+								<ul
+									class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+								>
+									{#each channelSuggestions as suggestion}
+										<li
+											on:click={() => {
+												channel = suggestion;
+												channelSuggestions = [];
+											}}
+											class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+											role="button"
+											tabindex="0"
+											on:keydown={(e) => {
+												if (e.key === 'Enter' || e.key === ' ') {
+													channel = suggestion;
+													channelSuggestions = [];
+												}
+											}}
+										>
+											{suggestion}
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+
+						<!-- Resolution -->
+						<div>
+							<label for="resolution" class="block text-sm font-medium text-gray-700 mb-2">
+								Resolution Level
+								<span class="text-red-500">*</span>
+							</label>
+							<input
+								id="resolution"
+								type="number"
+								bind:value={resolution}
+								placeholder="e.g., 0"
+								min="0"
+								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+								required
+							/>
+							<p class="mt-1 text-xs text-gray-500">Higher values = coarser resolution</p>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Volume Bounds Section -->
+			<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+				<div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+					<div class="flex items-center">
+						<div
+							class="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center"
+						>
+							<svg
+								class="w-4 h-4 text-purple-600"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zM21 5a2 2 0 00-2-2h-4a2 2 0 00-2 2v6a2 2 0 002 2h4a2 2 0 002-2V5z"
+								></path>
+							</svg>
+						</div>
+						<div class="ml-3">
+							<h3 class="text-lg font-semibold text-gray-900">Volume Bounds</h3>
+							<p class="text-sm text-gray-600">Define the 3D region for annotation</p>
+						</div>
+					</div>
+				</div>
+
+				<div class="p-6 space-y-6">
+					<!-- X Dimension -->
+					<div class="bg-gray-50 rounded-lg p-4">
+						<h4 class="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+							<span
+								class="w-6 h-6 bg-red-100 text-red-600 rounded flex items-center justify-center text-xs font-bold mr-2"
+								>X</span
+							>
+							X-Axis Configuration
+						</h4>
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+							<div>
+								<label for="x_center" class="block text-sm font-medium text-gray-700 mb-2"
+									>Center</label
+								>
+								<input
+									id="x_center"
+									type="number"
+									bind:value={x_center}
+									min={coordFrame?.x_start}
+									max={coordFrame?.x_stop}
+									disabled={useEntireXExtent}
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
+								/>
+								{#if coordFrame}
+									<p class="mt-1 text-xs text-gray-500 font-mono">
+										Range: {coordFrame.x_start} - {coordFrame.x_stop}
+									</p>
+								{/if}
+							</div>
+							<div>
+								<label for="x_radius" class="block text-sm font-medium text-gray-700 mb-2"
+									>Radius</label
+								>
+								<input
+									id="x_radius"
+									type="number"
+									bind:value={x_radius}
+									disabled={useEntireXExtent}
+									min="0"
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
+								/>
+							</div>
+							<div class="flex items-center justify-center">
+								<label class="flex items-center cursor-pointer">
+									<input
+										id="useEntireXExtent"
+										type="checkbox"
+										bind:checked={useEntireXExtent}
+										class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+									/>
+									<span class="ml-2 text-sm text-gray-700">Use full extent</span>
+								</label>
+							</div>
+						</div>
+					</div>
+
+					<!-- Y Dimension -->
+					<div class="bg-gray-50 rounded-lg p-4">
+						<h4 class="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+							<span
+								class="w-6 h-6 bg-green-100 text-green-600 rounded flex items-center justify-center text-xs font-bold mr-2"
+								>Y</span
+							>
+							Y-Axis Configuration
+						</h4>
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+							<div>
+								<label for="y_center" class="block text-sm font-medium text-gray-700 mb-2"
+									>Center</label
+								>
+								<input
+									id="y_center"
+									type="number"
+									bind:value={y_center}
+									min={coordFrame?.y_start}
+									max={coordFrame?.y_stop}
+									disabled={useEntireYExtent}
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
+								/>
+								{#if coordFrame}
+									<p class="mt-1 text-xs text-gray-500 font-mono">
+										Range: {coordFrame.y_start} - {coordFrame.y_stop}
+									</p>
+								{/if}
+							</div>
+							<div>
+								<label for="y_radius" class="block text-sm font-medium text-gray-700 mb-2"
+									>Radius</label
+								>
+								<input
+									id="y_radius"
+									type="number"
+									bind:value={y_radius}
+									disabled={useEntireYExtent}
+									min="0"
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
+								/>
+							</div>
+							<div class="flex items-center justify-center">
+								<label class="flex items-center cursor-pointer">
+									<input
+										id="useEntireYExtent"
+										type="checkbox"
+										bind:checked={useEntireYExtent}
+										class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+									/>
+									<span class="ml-2 text-sm text-gray-700">Use full extent</span>
+								</label>
+							</div>
+						</div>
+					</div>
+
+					<!-- Z Dimension -->
+					<div class="bg-gray-50 rounded-lg p-4">
+						<h4 class="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+							<span
+								class="w-6 h-6 bg-blue-100 text-blue-600 rounded flex items-center justify-center text-xs font-bold mr-2"
+								>Z</span
+							>
+							Z-Axis Configuration
+						</h4>
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+							<div>
+								<label for="z_center" class="block text-sm font-medium text-gray-700 mb-2"
+									>Center</label
+								>
+								<input
+									id="z_center"
+									type="number"
+									bind:value={z_center}
+									min={coordFrame?.z_start}
+									max={coordFrame?.z_stop}
+									disabled={useEntireZExtent}
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
+								/>
+								{#if coordFrame}
+									<p class="mt-1 text-xs text-gray-500 font-mono">
+										Range: {coordFrame.z_start} - {coordFrame.z_stop}
+									</p>
+								{/if}
+							</div>
+							<div>
+								<label for="z_radius" class="block text-sm font-medium text-gray-700 mb-2"
+									>Radius</label
+								>
+								<input
+									id="z_radius"
+									type="number"
+									bind:value={z_radius}
+									disabled={useEntireZExtent}
+									min="0"
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
+								/>
+							</div>
+							<div class="flex items-center justify-center">
+								<label class="flex items-center cursor-pointer">
+									<input
+										id="useEntireZExtent"
+										type="checkbox"
+										bind:checked={useEntireZExtent}
+										class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+									/>
+									<span class="ml-2 text-sm text-gray-700">Use full extent</span>
+								</label>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Output Destination Section -->
+			<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+				<div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+					<div class="flex items-center">
+						<div
+							class="flex-shrink-0 w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center"
+						>
+							<svg
+								class="w-4 h-4 text-green-600"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+								></path>
+							</svg>
+						</div>
+						<div class="ml-3">
+							<h3 class="text-lg font-semibold text-gray-900">Output Destination</h3>
+							<p class="text-sm text-gray-600">Where to save annotation results</p>
+						</div>
+					</div>
+				</div>
+
+				<div class="p-6 space-y-6">
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+						<div>
+							<label
+								for="destination_collection"
+								class="block text-sm font-medium text-gray-700 mb-2"
+							>
+								Destination Collection
+								<span class="text-red-500">*</span>
+							</label>
+							<input
+								id="destination_collection"
+								type="text"
+								bind:value={destination_collection}
+								placeholder="Output collection name"
+								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+								required
+							/>
+						</div>
+						<div>
+							<label
+								for="destination_experiment"
+								class="block text-sm font-medium text-gray-700 mb-2"
+							>
+								Destination Experiment
+								<span class="text-red-500">*</span>
+							</label>
+							<input
+								id="destination_experiment"
+								type="text"
+								bind:value={destination_experiment}
+								placeholder="Output experiment name"
+								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+								required
+							/>
+						</div>
+						<div>
+							<label for="destination_channel" class="block text-sm font-medium text-gray-700 mb-2">
+								Destination Channel
+								<span class="text-red-500">*</span>
+							</label>
+							<input
+								id="destination_channel"
+								type="text"
+								bind:value={destination_channel}
+								placeholder="Output channel name"
+								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+								required
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Submit Section -->
+			<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+				<div
+					class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0"
+				>
+					<div>
+						<h3 class="text-lg font-semibold text-gray-900">Ready to Create Task?</h3>
+						<p class="text-sm text-gray-600">
+							Review your configuration and create the annotation task.
+						</p>
+					</div>
+					<button
+						type="submit"
+						class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+					>
+						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M12 4v16m8-8H4"
+							></path>
+						</svg>
+						Create Task
+					</button>
+				</div>
+			</div>
+		</form>
+
+		<!-- Success/Error Message -->
+		{#if message}
+			<div
+				class="mt-6 p-4 rounded-lg {message.includes('successfully') || message.includes('created')
+					? 'bg-green-50 border border-green-200'
+					: 'bg-red-50 border border-red-200'}"
+			>
+				<div class="flex items-center">
+					{#if message.includes('successfully') || message.includes('created')}
+						<svg
+							class="w-5 h-5 text-green-600 mr-2"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M5 13l4 4L19 7"
+							></path>
+						</svg>
+						<p class="text-green-800 font-medium">{message}</p>
+					{:else}
+						<svg
+							class="w-5 h-5 text-red-600 mr-2"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							></path>
+						</svg>
+						<p class="text-red-800 font-medium">{message}</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
+	</main>
+</div>
 
 <style>
+	/* Enhanced autocomplete dropdown styling */
 	.autocomplete-list {
+		z-index: 50;
 	}
-	.autocomplete-list li {
-		padding: 0.5rem;
-		cursor: pointer;
+
+	.autocomplete-list li:last-child {
+		border-bottom: none;
 	}
-	.autocomplete-list li:hover {
-		background-color: #f5f5f5;
+
+	/* Smooth transitions for form elements */
+	input:focus {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+	}
+
+	/* Custom checkbox styling to match design */
+	input[type='checkbox']:checked {
+		background-color: #3b82f6;
+		border-color: #3b82f6;
+	}
+
+	/* Loading state for buttons */
+	button:active {
+		transform: translateY(1px);
 	}
 </style>
