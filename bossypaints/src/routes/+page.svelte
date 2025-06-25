@@ -1,7 +1,3 @@
-<svelte:head>
-	<title>BossyPaints - Task Dashboard</title>
-</svelte:head>
-
 <script lang="ts">
 	import API from '$lib/api';
 	import type { TaskInDB } from '$lib/api';
@@ -64,6 +60,10 @@
 		return `${task.x_min}–${task.x_max} × ${task.y_min}–${task.y_max} × ${task.z_min}–${task.z_max}`;
 	}
 </script>
+
+<svelte:head>
+	<title>BossyPaints - Task Dashboard</title>
+</svelte:head>
 
 <!-- Main Container -->
 <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">

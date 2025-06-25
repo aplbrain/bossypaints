@@ -39,7 +39,7 @@ async def get_username_from_request(request: Request) -> str:
     token = request.headers.get("Authorization", "").split(" ")[1] if request.headers.get("Authorization") else None
     if not token:
         raise HTTPException(status_code=401, detail="Authorization token required")
-    
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
@@ -81,11 +81,11 @@ async def get_next_task(request: Request):
 async def save_task(request: Request, task_id: TaskID, checkpoint: dict, background_tasks: BackgroundTasks):
     username = await get_username_from_request(request)
     task = task_store.get(task_id)
-    
+
     # Verify user owns this task
     if not task or task.assigned_to != username:
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
-    
+
     checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
     checkpoint_store.save_checkpoint(checkpoint_obj)
 
@@ -99,11 +99,11 @@ async def save_task(request: Request, task_id: TaskID, checkpoint: dict, backgro
 async def checkpoint_task(request: Request, task_id: TaskID, checkpoint: dict):
     username = await get_username_from_request(request)
     task = task_store.get(task_id)
-    
+
     # Verify user owns this task
     if not task or task.assigned_to != username:
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
-    
+
     checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
     checkpoint_store.save_checkpoint(checkpoint_obj)
     return {"message": "Checkpoint received"}
@@ -113,11 +113,11 @@ async def checkpoint_task(request: Request, task_id: TaskID, checkpoint: dict):
 async def get_task_checkpoints(request: Request, task_id: TaskID):
     username = await get_username_from_request(request)
     task = task_store.get(task_id)
-    
+
     # Verify user owns this task
     if not task or task.assigned_to != username:
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
-    
+
     checkpoints = checkpoint_store.get_checkpoints_for_task(task_id)
     return {"checkpoints": checkpoints}
 
@@ -126,11 +126,11 @@ async def get_task_checkpoints(request: Request, task_id: TaskID):
 async def get_task_by_id(request: Request, task_id: TaskID):
     username = await get_username_from_request(request)
     task = task_store.get(task_id)
-    
+
     # Verify user owns this task
     if not task or task.assigned_to != username:
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
-    
+
     return {"task": task}
 
 
@@ -230,7 +230,7 @@ async def create_task(
 ):
     # Get the username from the request to assign the task to this user
     username = await get_username_from_request(request)
-    
+
     # Check if the collection exists and the user has access to it
     async with httpx.AsyncClient() as client:
         chan_exists_resp = await client.get(
@@ -431,19 +431,19 @@ class AssignTaskRequest(BaseModel):
 async def assign_task(request: Request, task_id: TaskID, assign_request: AssignTaskRequest):
     """Assign a task to a specific user. Currently allows any authenticated user to reassign tasks."""
     username = await get_username_from_request(request)  # Verify the requester is authenticated
-    
+
     task = task_store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Update the task assignment
     task.assigned_to = assign_request.assigned_to
-    
+
     # Save the updated task back to the store
     tasks = task_store._load_latest_from_file()
     tasks[task_id] = task
     task_store._write_to_file(tasks)
-    
+
     return {"message": f"Task {task_id} assigned to {assign_request.assigned_to}"}
 
 
@@ -451,7 +451,7 @@ async def assign_task(request: Request, task_id: TaskID, assign_request: AssignT
 async def get_unassigned_tasks(request: Request):
     """Get all tasks that are not assigned to any user."""
     username = await get_username_from_request(request)  # Verify the requester is authenticated
-    
+
     tasks = task_store.list()
     unassigned_tasks = [task for task in tasks if task.assigned_to is None]
     return {"tasks": unassigned_tasks}

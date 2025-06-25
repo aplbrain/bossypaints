@@ -1,7 +1,3 @@
-<svelte:head>
-	<title>Create New Task - BossyPaints</title>
-</svelte:head>
-
 <script lang="ts">
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
@@ -280,6 +276,10 @@
 		}
 	}
 </script>
+
+<svelte:head>
+	<title>Create New Task - BossyPaints</title>
+</svelte:head>
 
 <!-- Main Container -->
 <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
