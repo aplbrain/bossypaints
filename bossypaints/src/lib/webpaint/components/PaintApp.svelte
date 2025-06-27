@@ -1134,14 +1134,14 @@ from BossDB and displays it on the canvas.
 			on:click={hardenAnnotation}
 			title="Harden annotation (Enter)"
 		>
-			✓ Harden Annotation
+			+
 		</button>
 		<button
 			class="annotation-btn cutout-btn"
 			on:click={hardenAsCutout}
 			title="Harden as cutout (Backspace)"
 		>
-			✂ Harden as Cutout
+			-
 		</button>
 	</div>
 {/if}
