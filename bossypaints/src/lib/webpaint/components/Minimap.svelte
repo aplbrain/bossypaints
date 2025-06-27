@@ -26,7 +26,12 @@
 	const minimapSketch = (s: p5) => {
 		s.setup = () => {
 			// runs once
-			s.createCanvas(64, height, document.getElementById('minimap'));
+			const minimapElement = document.getElementById('minimap');
+			if (minimapElement) {
+				s.createCanvas(64, height, minimapElement);
+			} else {
+				s.createCanvas(64, height);
+			}
 			s.background(0, 0, 0);
 		};
 
@@ -64,9 +69,9 @@
 			});
 		};
 
-		s.mousePressed = (event) => {
+		s.mousePressed = (event: any) => {
 			// Allow clicks to change layers
-			if (event.target !== s.canvas) return;
+			if (event && event.target !== (s as any).canvas) return;
 			const mouseX = s.mouseX;
 			const mouseY = s.mouseY;
 
@@ -79,9 +84,26 @@
 			const newLayer = Math.max(nav.minLayer, Math.min(nav.maxLayer - 1, clickedLayer));
 			nav.setLayer(newLayer);
 
-			event.preventDefault();
-			event.stopPropagation();
+			if (event && event.preventDefault) event.preventDefault();
+			if (event && event.stopPropagation) event.stopPropagation();
 			return false;
+		};
+
+		// Add touch support for layer selection
+		s.touchStarted = (event: any) => {
+			if (event && event.target !== (s as any).canvas) return;
+
+			if (s.touches.length === 1) {
+				// Handle single touch as mouse press for layer selection
+				const touch = s.touches[0] as { x: number; y: number };
+				s.mouseX = touch.x;
+				s.mouseY = touch.y;
+
+				// Reuse the mouse press logic
+				return s.mousePressed(event);
+			}
+
+			return true;
 		};
 	};
 

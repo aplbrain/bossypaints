@@ -12,6 +12,7 @@ from BossDB and displays it on the canvas.
 -->
 <script lang="ts">
 	import p5 from 'p5';
+	import { onMount } from 'svelte';
 	import { keybindings, type MouseEventType } from '../keybindings';
 	import type { NavigationStore } from '../stores/NavigationStore.svelte';
 	import BossRemote from '../intern';
@@ -232,6 +233,21 @@ from BossDB and displays it on the canvas.
 	let isPinching: boolean = false;
 	let pinchCenter: { x: number; y: number } = { x: 0, y: 0 };
 
+	// Touch device detection
+	let isTouchDevice = false;
+
+	// Detect if we're on a touch device
+	function detectTouchDevice() {
+		// Multiple checks to ensure reliable touch detection
+		return (
+			'ontouchstart' in window ||
+			navigator.maxTouchPoints > 0 ||
+			// @ts-ignore - for older browsers
+			navigator.msMaxTouchPoints > 0 ||
+			window.matchMedia('(pointer: coarse)').matches
+		);
+	}
+
 	// Function to calculate native task center coordinates
 	function calculateNativeTaskCenter() {
 		// Calculate the center of the task region
@@ -358,6 +374,17 @@ from BossDB and displays it on the canvas.
 					console.error('Failed to copy debug info:', err);
 				});
 		}
+	}
+
+	// Functions for annotation actions
+	function hardenAnnotation() {
+		annotationStore.currentAnnotation.annotation.editing = false;
+		annotationStore.saveCurrentAndCreateNewAnnotation(nav.layer);
+	}
+
+	function hardenAsCutout() {
+		annotationStore.currentAnnotation.annotation.editing = false;
+		annotationStore.subtractCurrentAnnotation(nav.layer);
 	}
 
 	// Function to load and cache visible chunks based on current view
@@ -538,6 +565,8 @@ from BossDB and displays it on the canvas.
 			}
 		}
 	}
+
+	isTouchDevice = detectTouchDevice();
 
 	const sketch = (s: p5) => {
 		s.setup = () => {
@@ -840,24 +869,24 @@ from BossDB and displays it on the canvas.
 		};
 
 		s.mousePressed = (evt: any) => {
-			if (evt.target !== s.canvas) return;
+			if (evt.target !== (s as any).canvas) return;
 			return handleMouseEvent('mousePressed', evt);
 		};
 
 		s.mouseDragged = (evt: any) => {
-			if (evt.target !== s.canvas) return;
+			if (evt.target !== (s as any).canvas) return;
 			return handleMouseEvent('mouseDragged', evt);
 		};
 
 		s.mouseWheel = (evt: WheelEvent) => {
-			if (evt.target !== s.canvas) return;
+			if (evt.target !== (s as any).canvas) return;
 			return handleMouseEvent('mouseWheel', evt);
 		};
 
-		// Touch event handlers for pinch zoom
+		// Touch event handlers for pinch zoom and single touch interactions
 		s.touchStarted = (evt: any) => {
 			// console.log('touchStarted called, touches:', s.touches.length);
-			if (evt && evt.target !== s.canvas) return;
+			if (evt && evt.target !== (s as any).canvas) return;
 
 			if (s.touches.length === 2) {
 				// console.log('Starting pinch gesture');
@@ -870,13 +899,24 @@ from BossDB and displays it on the canvas.
 				return false;
 			}
 
-			// Handle single touch as mouse events for drawing/panning
+			if (s.touches.length === 1) {
+				// Handle single touch as left mouse press
+				// Update p5 mouse coordinates to match touch position
+				const touch = s.touches[0] as { x: number; y: number };
+				s.mouseX = touch.x;
+				s.mouseY = touch.y;
+				s.mouseButton = s.LEFT;
+
+				// Call mouse event handler for regular behavior
+				return handleMouseEvent('mousePressed', evt);
+			}
+
 			return true;
 		};
 
 		s.touchMoved = (evt: any) => {
 			// console.log('touchMoved called, touches:', s.touches.length, 'isPinching:', isPinching);
-			if (evt && evt.target !== s.canvas) return;
+			if (evt && evt.target !== (s as any).canvas) return;
 
 			if (isPinching && s.touches.length === 2) {
 				const currentDistance = getTouchDistance(s);
@@ -886,7 +926,7 @@ from BossDB and displays it on the canvas.
 				if (lastTouchDistance > 0) {
 					// Calculate zoom factor based on distance change
 					const distanceRatio = currentDistance / lastTouchDistance;
-					const zoomChange = (distanceRatio - 1) * APP_CONFIG.pinchZoomSpeed * nav.zoom;
+					const zoomChange = (distanceRatio - 1) * nav.zoom;
 					const newZoom = Math.max(0.1, Math.min(10, nav.zoom + zoomChange));
 					// console.log('Applying zoom change:', zoomChange, 'newZoom:', newZoom);
 
@@ -900,12 +940,32 @@ from BossDB and displays it on the canvas.
 				return false;
 			}
 
+			if (s.touches.length === 1 && !isPinching) {
+				// Handle single touch as mouse drag
+				const touch = s.touches[0] as { x: number; y: number };
+				const prevMouseX = s.mouseX;
+				const prevMouseY = s.mouseY;
+
+				s.mouseX = touch.x;
+				s.mouseY = touch.y;
+				s.mouseButton = s.LEFT;
+
+				// Calculate movement for panning
+				s.movedX = 100 * (s.mouseX - prevMouseX);
+				s.movedY = 100 * (s.mouseY - prevMouseY);
+				s.deltaX = s.movedX;
+				s.deltaY = s.movedY;
+
+				// Call mouse event handler
+				return handleMouseEvent('mouseDragged', evt);
+			}
+
 			return true;
 		};
 
 		s.touchEnded = (evt: any) => {
 			// console.log('touchEnded called, touches:', s.touches.length);
-			if (evt && evt.target !== s.canvas) return;
+			if (evt && evt.target !== (s as any).canvas) return;
 
 			if (s.touches.length < 2) {
 				// console.log('Ending pinch gesture');
@@ -913,6 +973,15 @@ from BossDB and displays it on the canvas.
 				isPinching = false;
 				lastTouchDistance = 0;
 			}
+
+			// if (s.touches.length === 0) {
+			// 	// Handle single touch end as mouse release
+			// 	s.mouseButton = s.LEFT;
+
+			// 	// Call mouse event handler for mouseReleased if needed
+			// 	// Note: Most drawing actions happen on press/drag, but this is here for completeness
+			// 	return handleMouseEvent('mouseReleased', evt);
+			// }
 
 			return true;
 		};
@@ -1057,6 +1126,26 @@ from BossDB and displays it on the canvas.
 
 <Minimap {annotationStore} {nav} />
 
+<!-- Annotation action buttons - only visible when there's a pending annotation -->
+{#if isTouchDevice}
+	<div class="annotation-buttons">
+		<button
+			class="annotation-btn harden-btn"
+			on:click={hardenAnnotation}
+			title="Harden annotation (Enter)"
+		>
+			✓ Harden Annotation
+		</button>
+		<button
+			class="annotation-btn cutout-btn"
+			on:click={hardenAsCutout}
+			title="Harden as cutout (Backspace)"
+		>
+			✂ Harden as Cutout
+		</button>
+	</div>
+{/if}
+
 <style>
 	.debug-overlay {
 		position: fixed;
@@ -1089,5 +1178,62 @@ from BossDB and displays it on the canvas.
 
 	.storage-stats {
 		color: #ccccff; /* Light blue color matching the original P5.js implementation */
+	}
+
+	.annotation-buttons {
+		position: fixed;
+		bottom: 20px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 20px;
+		z-index: 1000;
+		pointer-events: auto;
+	}
+
+	.annotation-btn {
+		background: rgba(0, 0, 0, 0.8);
+		color: white;
+		border: 2px solid #333;
+		border-radius: 8px;
+		padding: 12px 24px;
+		font-size: 16px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		min-width: 160px;
+		touch-action: manipulation;
+		user-select: none;
+	}
+
+	.annotation-btn:hover {
+		background: rgba(255, 255, 255, 0.1);
+		border-color: #555;
+		transform: translateY(-2px);
+	}
+
+	.annotation-btn:active {
+		transform: translateY(0);
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.harden-btn {
+		border-color: #4caf50;
+		background: rgba(76, 175, 80, 0.2);
+	}
+
+	.harden-btn:hover {
+		background: rgba(76, 175, 80, 0.3);
+		border-color: #66bb6a;
+	}
+
+	.cutout-btn {
+		border-color: #ff9800;
+		background: rgba(255, 152, 0, 0.2);
+	}
+
+	.cutout-btn:hover {
+		background: rgba(255, 152, 0, 0.3);
+		border-color: #ffb74d;
 	}
 </style>
