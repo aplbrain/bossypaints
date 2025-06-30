@@ -6,6 +6,14 @@
 
 BossyPaints is a web-based 3D volumetric annotation tool designed for dense painting and proofreading of neuroscience datasets. It enables efficient annotation workflows using a task-based approach with small, manageable volumes, implementing the "small-and-many" proofreading strategy described in [Bishop et al. (2020)](https://ieeexplore.ieee.org/document/9630109/).
 
+![image](https://github.com/user-attachments/assets/9750ac0a-b76a-4333-a6f7-bf7544b93369)
+
+![image](https://github.com/user-attachments/assets/1105642e-99ea-4933-a129-d94fbf9fb820)
+
+![image](https://github.com/user-attachments/assets/7ba452fc-4d70-401b-9cd5-1efa48fe66d1)
+
+
+
 ## Features
 
 -   **🎨 Interactive 3D Painting**: Intuitive lasso-based annotation tools for volumetric data
