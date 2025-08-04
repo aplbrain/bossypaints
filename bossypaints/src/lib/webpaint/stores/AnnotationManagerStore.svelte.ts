@@ -7,6 +7,7 @@ import type p5 from 'p5';
 import { createAnnotationStore } from './PolygonAnnotationStore.svelte';
 import polybool, { type Polygon } from '@velipso/polybool';
 import type { NavigationStore } from './NavigationStore.svelte';
+import { segmentIdToRGB } from '../colorutils';
 
 /**
  * Create a store for managing annotations in a multi-layered volume.
@@ -76,11 +77,9 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         setCurrentSegmentID: (id: number): void => {
             currentSegmentID = id;
-            // If the current annotation has no vertices, also update its segment ID:
-            if (currentAnnotation.annotation.points.length === 0 &&
-                currentAnnotation.annotation.positiveRegions.every(region => region.length === 0)) {
-                currentAnnotation.annotation.segmentID = currentSegmentID;
-            }
+            // Always update the current annotation's segment ID and color to match the new ID
+            currentAnnotation.annotation.segmentID = currentSegmentID;
+            currentAnnotation.annotation.color = segmentIdToRGB(currentSegmentID);
         },
 
         /**
@@ -89,11 +88,9 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         incrementSegmentID: (): void => {
             currentSegmentID += 1;
-            // If the current annotation has no vertices, also update its segment ID:
-            if (currentAnnotation.annotation.points.length === 0 &&
-                currentAnnotation.annotation.positiveRegions.every(region => region.length === 0)) {
-                currentAnnotation.annotation.segmentID = currentSegmentID;
-            }
+            // Always update the current annotation's segment ID and color
+            currentAnnotation.annotation.segmentID = currentSegmentID;
+            currentAnnotation.annotation.color = segmentIdToRGB(currentSegmentID);
         },
 
         /**
@@ -102,11 +99,9 @@ export function createAnnotationManagerStore(numberOfLayers: number) {
          */
         decrementSegmentID: (): void => {
             currentSegmentID = Math.max(1, currentSegmentID - 1);
-            // If the current annotation has no vertices, also update its segment ID:
-            if (currentAnnotation.annotation.points.length === 0 &&
-                currentAnnotation.annotation.positiveRegions.every(region => region.length === 0)) {
-                currentAnnotation.annotation.segmentID = currentSegmentID;
-            }
+            // Always update the current annotation's segment ID and color
+            currentAnnotation.annotation.segmentID = currentSegmentID;
+            currentAnnotation.annotation.color = segmentIdToRGB(currentSegmentID);
         },
 
         /**
