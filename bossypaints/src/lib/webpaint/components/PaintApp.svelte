@@ -32,6 +32,15 @@ from BossDB and displays it on the canvas.
 	export let zs: [number, number];
 	export let resolution: number | undefined = undefined;
 
+	// Histogram window to adjust imagery contrast
+	export let histMin: number = 0;
+	export let histMax: number = 255;
+
+	// Keep ImageCache aware of current window for future network fetches
+	$: if (imageCache) {
+		imageCache.setHistogramWindow(histMin, histMax);
+	}
+
 	// Expose the on:submit event to the parent component:
 	export let onSubmitData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
 	export let onCheckpointData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
@@ -302,6 +311,11 @@ from BossDB and displays it on the canvas.
 	const canvas = document.createElement('canvas');
 	canvas.id = 'app';
 	document.body.appendChild(canvas);
+	// Keep a reference for event target checks
+	let appCanvasEl: HTMLCanvasElement | null = canvas;
+
+	// Keep a reference to the actual p5 canvas element
+	let p5CanvasEl: HTMLCanvasElement | null = null;
 
 	// Use the debug prop, fallback to config, then debugMode for compatibility
 	const debugEnabled = APP_CONFIG.debug;
@@ -478,6 +492,11 @@ from BossDB and displays it on the canvas.
 			let image = imageCache.getCachedImage(chunkId);
 
 			if (image) {
+				// Optionally window the image via LUT when non-default
+				if (!(histMin === 0 && histMax === 255)) {
+					image = imageCache.getAdjustedImageForWindow(chunkId, image, histMin, histMax);
+				}
+
 				// Calculate rendering position and size based on resolution level
 				const renderX = chunkId.x_min * displayScale;
 				const renderY = chunkId.y_min * displayScale;
@@ -509,9 +528,18 @@ from BossDB and displays it on the canvas.
 			const renderWidth = APP_CONFIG.fixedChunkSize.width * displayScale;
 			const renderHeight = APP_CONFIG.fixedChunkSize.height * displayScale;
 			if (filmstripInfo) {
+				let film = filmstripInfo.filmstrip;
+				if (!(histMin === 0 && histMax === 255)) {
+					film = imageCache.getAdjustedImageForWindow(
+						chunkId,
+						filmstripInfo.filmstrip,
+						histMin,
+						histMax
+					);
+				}
 				// Render directly from filmstrip
 				s.image(
-					filmstripInfo.filmstrip,
+					film,
 					renderX,
 					renderY,
 					renderWidth,
@@ -548,6 +576,8 @@ from BossDB and displays it on the canvas.
 			} else {
 				s.createCanvas(window.innerWidth, window.innerHeight);
 			}
+			// Acquire canvas element from drawing context
+			p5CanvasEl = (s.drawingContext as CanvasRenderingContext2D).canvas as HTMLCanvasElement;
 			s.background(0, 0, 0);
 
 			// Initialize browser storage
@@ -840,24 +870,24 @@ from BossDB and displays it on the canvas.
 		};
 
 		s.mousePressed = (evt: any) => {
-			if (evt.target !== s.canvas) return;
+			if (p5CanvasEl && evt.target !== appCanvasEl) return;
 			return handleMouseEvent('mousePressed', evt);
 		};
 
 		s.mouseDragged = (evt: any) => {
-			if (evt.target !== s.canvas) return;
+			if (p5CanvasEl && evt.target !== appCanvasEl) return;
 			return handleMouseEvent('mouseDragged', evt);
 		};
 
 		s.mouseWheel = (evt: WheelEvent) => {
-			if (evt.target !== s.canvas) return;
+			if (p5CanvasEl && (evt.target as any) !== appCanvasEl) return;
 			return handleMouseEvent('mouseWheel', evt);
 		};
 
 		// Touch event handlers for pinch zoom
 		s.touchStarted = (evt: any) => {
 			// console.log('touchStarted called, touches:', s.touches.length);
-			if (evt && evt.target !== s.canvas) return;
+			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
 
 			if (s.touches.length === 2) {
 				// console.log('Starting pinch gesture');
@@ -870,13 +900,13 @@ from BossDB and displays it on the canvas.
 				return false;
 			}
 
-			// Handle single touch as mouse events for drawing/panning
+			if (evt && p5CanvasEl && evt.target !== appCanvasEl) return;
 			return true;
 		};
 
 		s.touchMoved = (evt: any) => {
 			// console.log('touchMoved called, touches:', s.touches.length, 'isPinching:', isPinching);
-			if (evt && evt.target !== s.canvas) return;
+			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
 
 			if (isPinching && s.touches.length === 2) {
 				const currentDistance = getTouchDistance(s);
@@ -894,18 +924,18 @@ from BossDB and displays it on the canvas.
 					pinchZoom(newZoom, currentCenter.x, currentCenter.y);
 				}
 
-				lastTouchDistance = currentDistance;
+				if (evt && p5CanvasEl && evt.target !== appCanvasEl) return;
 				pinchCenter = currentCenter;
 				if (evt && evt.preventDefault) evt.preventDefault();
 				return false;
 			}
 
-			return true;
+			if (evt && p5CanvasEl && evt.target !== appCanvasEl) return;
 		};
 
 		s.touchEnded = (evt: any) => {
 			// console.log('touchEnded called, touches:', s.touches.length);
-			if (evt && evt.target !== s.canvas) return;
+			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
 
 			if (s.touches.length < 2) {
 				// console.log('Ending pinch gesture');
@@ -992,7 +1022,20 @@ from BossDB and displays it on the canvas.
 
 <!-- Debug information overlay -->
 <!-- {#if debugEnabled} -->
-<div class="debug-overlay" on:click={copyDebugInfo} bind:this={debugOverlayElement}>
+<div
+	class="debug-overlay"
+	role="button"
+	tabindex="0"
+	aria-label="Copy debug info"
+	on:click={copyDebugInfo}
+	on:keydown={(e) => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			copyDebugInfo();
+		}
+	}}
+	bind:this={debugOverlayElement}
+>
 	<div class="debug-line">Scene Mouse: {debugInfo.sceneMouseX}, {debugInfo.sceneMouseY}</div>
 	<div class="debug-line">
 		Data Mouse: {debugInfo.dataMouseX.toFixed(3)}, {debugInfo.dataMouseY.toFixed(3)}

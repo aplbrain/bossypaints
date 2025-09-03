@@ -57,7 +57,14 @@ class BossRemote {
 		if (isCloudVolume) {
 			// Backend serves at http://localhost:8000/api/filmstrip/cloudvolume
 			const backend = baseUrl;
-			url = `${backend}/api/filmstrip/cloudvolume?uri=${encodeURIComponent(uri)}&res=${res}&x=${xs.join(':')}&y=${ys.join(':')}&z=${zs.join(':')}`;
+			const params = new URLSearchParams({
+				uri,
+				res: String(res),
+				x: xs.join(':'),
+				y: ys.join(':'),
+				z: zs.join(':'),
+			});
+			url = `${backend}/api/filmstrip/cloudvolume?${params.toString()}`;
 		} else {
 			url = `${this.protocol}://${this.host}/v1/cutout/${uri}/${res}/${xs.join(':')}/${ys.join(':')}/${zs.join(':')}/`;
 		}

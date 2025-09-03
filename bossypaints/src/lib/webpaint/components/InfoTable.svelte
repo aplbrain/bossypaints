@@ -17,6 +17,27 @@ manager and navigation store.
 	export let layerAnnotationCount: number;
 	export let onSegmentIDChange: (id: number) => void;
 
+	// Histogram window controls (assume uint8 range)
+	export let histMin: number = 0;
+	export let histMax: number = 255;
+	export let onHistogramChange: (min: number, max: number) => void = () => {};
+
+	let histDebounce: any = null;
+	function emitHistogram(min: number, max: number) {
+		if (histDebounce) clearTimeout(histDebounce);
+		histDebounce = setTimeout(() => onHistogramChange(min, max), 75);
+	}
+	function setHistMin(v: number) {
+		const clamped = Math.max(0, Math.min(255, Math.floor(v)));
+		if (clamped > histMax) emitHistogram(clamped, clamped);
+		else emitHistogram(clamped, histMax);
+	}
+	function setHistMax(v: number) {
+		const clamped = Math.max(0, Math.min(255, Math.floor(v)));
+		if (clamped < histMin) emitHistogram(clamped, clamped);
+		else emitHistogram(histMin, clamped);
+	}
+
 	let editingSegmentId = false;
 	let tempSegmentId = currentSegmentID.toString();
 	let inputElement: HTMLInputElement;
@@ -108,6 +129,7 @@ manager and navigation store.
 					on:click={saveSegmentId}
 					class="text-green-600 hover:text-green-800 p-1"
 					title="Save"
+					aria-label="Save segment ID"
 				>
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"
@@ -118,6 +140,7 @@ manager and navigation store.
 					on:click={cancelEditingSegmentId}
 					class="text-red-600 hover:text-red-800 p-1"
 					title="Cancel"
+					aria-label="Cancel editing segment ID"
 				>
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
@@ -147,6 +170,63 @@ manager and navigation store.
 			<span class="font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
 				{layerAnnotationCount}
 			</span>
+		</div>
+
+		<!-- Histogram Window Controls -->
+		<div class="pt-3 mt-3 border-t border-gray-100">
+			<div class="flex items-center justify-between mb-2">
+				<span class="text-gray-600">Contrast Window</span>
+				<button
+					class="text-xs text-blue-600 hover:text-blue-800"
+					on:click={() => onHistogramChange(0, 255)}
+					title="Reset"
+					aria-label="Reset contrast window"
+				>
+					Reset
+				</button>
+			</div>
+			<div class="flex items-center gap-2">
+				<label class="text-xs text-gray-500 w-10" for="hist-min-number">Min</label>
+				<input
+					type="number"
+					min="0"
+					max="255"
+					value={histMin}
+					id="hist-min-number"
+					on:input={(e) => setHistMin(parseInt((e.target as HTMLInputElement).value))}
+					class="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+				/>
+				<input
+					type="range"
+					min="0"
+					max="255"
+					value={histMin}
+					id="hist-min-range"
+					on:input={(e) => setHistMin(parseInt((e.target as HTMLInputElement).value))}
+					class="flex-1"
+				/>
+			</div>
+			<div class="flex items-center gap-2 mt-2">
+				<label class="text-xs text-gray-500 w-10" for="hist-max-number">Max</label>
+				<input
+					type="number"
+					min="0"
+					max="255"
+					value={histMax}
+					id="hist-max-number"
+					on:input={(e) => setHistMax(parseInt((e.target as HTMLInputElement).value))}
+					class="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+				/>
+				<input
+					type="range"
+					min="0"
+					max="255"
+					value={histMax}
+					id="hist-max-range"
+					on:input={(e) => setHistMax(parseInt((e.target as HTMLInputElement).value))}
+					class="flex-1"
+				/>
+			</div>
 		</div>
 
 		<!-- <div class="flex items-center justify-between">

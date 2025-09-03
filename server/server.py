@@ -591,13 +591,7 @@ async def filmstrip_cloudvolume(
             block = block[..., 0]  # take first channel
         # Convert to uint8 if necessary
         if block.dtype != np.uint8:
-            # Scale globally within the block
-            bmin = float(block.min())
-            bmax = float(block.max())
-            if bmax > bmin:
-                block = ((block - bmin) / (bmax - bmin) * 255.0).astype(np.uint8)
-            else:
-                block = np.zeros_like(block, dtype=np.uint8)
+            block = block.astype(np.uint8)
 
         xlen, ylen, zlen = block.shape
         # Compose filmstrip: width=x, height=y*z, by stacking slices along vertical axis.

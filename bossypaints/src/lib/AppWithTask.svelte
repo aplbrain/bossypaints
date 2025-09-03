@@ -22,6 +22,18 @@
 	let nav: NavigationStore;
 	let showKeybindings = false;
 
+	// Histogram window state (default 8-bit window)
+	let histMin = 0;
+	let histMax = 255;
+
+	function handleHistogramChange(min: number, max: number) {
+		// Ensure ordered and within reasonable bounds
+		const newMin = Math.max(0, Math.min(min, max));
+		const newMax = Math.max(newMin, Math.min(max, 65535));
+		histMin = newMin;
+		histMax = newMax;
+	}
+
 	async function loadTask() {
 		annotationStore = createAnnotationManagerStore(Math.max(1, task.z_max - task.z_min - 1));
 		nav = createNavigationStore({
@@ -99,11 +111,15 @@
 		<PaintApp
 			{annotationStore}
 			{nav}
-			datasetURI={task.data_source_type === 'cloudvolume' ? (task.cloudvolume_uri || '') : `${task.collection}/${task.experiment}/${task.channel}`}
+			datasetURI={task.data_source_type === 'cloudvolume'
+				? task.cloudvolume_uri || ''
+				: `${task.collection}/${task.experiment}/${task.channel}`}
 			xs={[task.x_min, task.x_max]}
 			ys={[task.y_min, task.y_max]}
 			zs={[task.z_min, task.z_max]}
 			resolution={task.resolution}
+			histMin={histMin}
+			histMax={histMax}
 			onCheckpointData={(data) => {
 				API.checkpointTask({ taskId: task.id, checkpoint: data }).then(() => {
 					notyf.success('Checkpoint saved');
@@ -121,6 +137,9 @@
 			currentSegmentID={annotationStore.currentSegmentID}
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
 			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
+			histMin={histMin}
+			histMax={histMax}
+			onHistogramChange={handleHistogramChange}
 		/>
 		<KeybindingsTable bind:show={showKeybindings} />
 

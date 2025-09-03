@@ -2,7 +2,11 @@
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
 	import Header from '$lib/Header.svelte';
-	import { parseNewNeuroglancerUrl, extractBossDBInfoFromUrl, extractCloudVolumeInfoFromUrl } from '$lib/neuroglancer';
+	import {
+		parseNewNeuroglancerUrl,
+		extractBossDBInfoFromUrl,
+		extractCloudVolumeInfoFromUrl
+	} from '$lib/neuroglancer';
 
 	// Data source type
 	let dataSourceType: 'bossdb' | 'cloudvolume' = 'bossdb';
@@ -224,9 +228,10 @@
 				}
 			}
 
-			urlParseMessage = dataSourceType === 'bossdb'
-				? `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`
-				: `Successfully parsed URL! Populated CloudVolume URI: ${cloudvolumeUri}`;
+			urlParseMessage =
+				dataSourceType === 'bossdb'
+					? `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`
+					: `Successfully parsed URL! Populated CloudVolume URI: ${cloudvolumeUri}`;
 
 			// Clear the URL input and hide the section
 			neuroglancerUrl = '';
@@ -397,7 +402,8 @@
 									</button>
 								</div>
 								<p class="mt-1 text-xs text-gray-500">
-									This will extract the source (BossDB or CloudVolume), plus position and an approximate resolution.
+									This will extract the source (BossDB or CloudVolume), plus position and an
+									approximate resolution.
 								</p>
 							</div>
 
