@@ -2,7 +2,12 @@ from typing import Optional, Literal
 
 import fastapi
 import httpx
+import imageio.v2 as imageio
 from fastapi import FastAPI, Request, Response, APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import StreamingResponse
+import io
+import numpy as np
+from cloudvolume import CloudVolume
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
 from dotenv import load_dotenv
@@ -534,3 +539,83 @@ async def get_unassigned_tasks(request: Request):
 
 
 app.include_router(api_router, prefix="/api")
+
+
+# ----------------------------
+# CloudVolume filmstrip endpoint
+# ----------------------------
+
+@app.get("/api/filmstrip/cloudvolume")
+async def filmstrip_cloudvolume(
+    uri: str,
+    res: int,
+    x: str,
+    y: str,
+    z: str,
+):
+    """
+    Generate a PNG filmstrip for a CloudVolume cutout.
+
+    Query params:
+      - uri: CloudVolume URI (supports gs://, s3://, file://, https://, precomputed://)
+      - res: mip level (resolution)
+      - x: "xmin:xmax"
+      - y: "ymin:yamx"
+      - z: "zmin:zmax" (exclusive stop preferred; if inclusive, effective slices will be adjusted)
+    """
+    try:
+        xmin, xmax = [int(v) for v in x.split(":", 1)]
+        ymin, ymax = [int(v) for v in y.split(":", 1)]
+        zmin, zmax = [int(v) for v in z.split(":", 1)]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid range parameters; expected 'start:stop'.")
+
+    # Normalize ranges (ensure exclusive z-stop)
+    if zmax <= zmin:
+        zmax = zmin + 1
+    if xmax <= xmin:
+        xmax = xmin + 1
+    if ymax <= ymin:
+        ymax = ymin + 1
+
+    # Strip precomputed:// wrapper if present for CloudVolume constructor;
+    # CloudVolume accepts precomputed:// but also works with gs/s3/https. Preserve as-is.
+    cv_uri = uri
+
+    try:
+        vol = CloudVolume(cv_uri, mip=res, progress=False, cache=False)
+        # Fetch block: index order is [x, y, z]
+        block = vol[xmin:xmax, ymin:ymax, zmin:zmax]
+        # block shape: (x, y, z[, c])
+        if block.ndim == 4:
+            block = block[..., 0]  # take first channel
+        # Convert to uint8 if necessary
+        if block.dtype != np.uint8:
+            # Scale globally within the block
+            bmin = float(block.min())
+            bmax = float(block.max())
+            if bmax > bmin:
+                block = ((block - bmin) / (bmax - bmin) * 255.0).astype(np.uint8)
+            else:
+                block = np.zeros_like(block, dtype=np.uint8)
+
+        xlen, ylen, zlen = block.shape
+        # Compose filmstrip: width=x, height=y*z, by stacking slices along vertical axis.
+        film_h = ylen * zlen
+        film_w = xlen
+        film = np.zeros((film_h, film_w), dtype=np.uint8)
+
+        for zi in range(zlen):
+            slice_xy = block[:, :, zi].T  # (y, x)
+            y0 = zi * ylen
+            film[y0 : y0 + ylen, :] = slice_xy
+
+        # Encode as PNG to bytes
+        buf = io.BytesIO()
+        imageio.imwrite(buf, film, format="png")
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="image/png")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"CloudVolume filmstrip error: {e}")

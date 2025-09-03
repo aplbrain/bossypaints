@@ -118,12 +118,12 @@ export function createImageLayer(task: TaskInDB): NeuroglancerLayer {
             name: 'CloudVolume Data'
         };
     } else {
-    return {
-        source: `boss://https://api.bossdb.io/${task.collection}/${task.experiment}/${task.channel}`,
-        type: 'image',
+        return {
+            source: `boss://https://api.bossdb.io/${task.collection}/${task.experiment}/${task.channel}`,
+            type: 'image',
             name: task.experiment || 'BossDB Data'
-    };
-}
+        };
+    }
 }
 
 /**
@@ -196,29 +196,30 @@ export function createNavigationConfig(task: TaskInDB) {
 }
 
 /**
- * Generate a neuroglancer URL for a specific coordinate
- * @param collection - BossDB collection name
- * @param experiment - BossDB experiment name
- * @param channel - BossDB channel name
- * @param coordinates - [x, y, z] coordinates to center on
- * @param resolution - Resolution level (default: 0)
- * @param zoomFactor - Zoom level (default: 8)
- * @returns The complete neuroglancer URL
+ * Unified builder for single-layer neuroglancer links (BossDB or CloudVolume).
  */
-export function generateNeuroglancerLinkForCoordinate(
-    collection: string,
-    experiment: string,
-    channel: string,
+type SourceSpec =
+    | { kind: 'bossdb'; collection: string; experiment: string; channel: string }
+    | { kind: 'cloudvolume'; uri: string };
+
+export function generateNeuroglancerLinkForSource(
+    source: SourceSpec,
     coordinates: [number, number, number],
     resolution: number = 0,
     zoomFactor: number = 8
 ): string {
+    const layerSource =
+        source.kind === 'bossdb'
+            ? `boss://https://api.bossdb.io/${source.collection}/${source.experiment}/${source.channel}`
+            : `precomputed://${source.uri}`;
+    const layerName = source.kind === 'bossdb' ? source.experiment : 'CloudVolume Data';
+
     const state: NeuroglancerState = {
         layers: [
             {
-                source: `boss://https://api.bossdb.io/${collection}/${experiment}/${channel}`,
+                source: layerSource,
                 type: 'image',
-                name: experiment
+                name: layerName
             }
         ],
         navigation: {
@@ -238,6 +239,27 @@ export function generateNeuroglancerLinkForCoordinate(
     };
 
     return `https://neuroglancer.bossdb.io/#!` + JSON.stringify(state);
+}
+
+
+/**
+ * Generate a neuroglancer link for any task type (BossDB or CloudVolume)
+ */
+export function generateNeuroglancerLinkForTask(
+    task: any,
+    coordinates: [number, number, number],
+    resolution?: number,
+    zoomFactor: number = 8
+): string {
+    const actualResolution = resolution ?? task.resolution;
+    return generateNeuroglancerLinkForSource(
+        task.data_source_type === 'cloudvolume'
+            ? { kind: 'cloudvolume', uri: task.cloudvolume_uri }
+            : { kind: 'bossdb', collection: task.collection, experiment: task.experiment, channel: task.channel },
+        coordinates,
+        actualResolution,
+        zoomFactor
+    );
 }
 
 /**

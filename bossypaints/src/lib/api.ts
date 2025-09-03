@@ -3,6 +3,8 @@ import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 // const baseUrl = 'http://localhost:8000';
 const baseUrl = "https://api.paint.labs.bossdb.org";
 
+export { baseUrl };
+
 export type TaskID = string;
 
 export type Task = {

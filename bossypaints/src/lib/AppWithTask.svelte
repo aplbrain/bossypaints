@@ -99,7 +99,7 @@
 		<PaintApp
 			{annotationStore}
 			{nav}
-			datasetURI={`${task.collection}/${task.experiment}/${task.channel}`}
+			datasetURI={task.data_source_type === 'cloudvolume' ? (task.cloudvolume_uri || '') : `${task.collection}/${task.experiment}/${task.channel}`}
 			xs={[task.x_min, task.x_max]}
 			ys={[task.y_min, task.y_max]}
 			zs={[task.z_min, task.z_max]}
