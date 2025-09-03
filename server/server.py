@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import Optional, Literal
 
 import fastapi
 import httpx
 from fastapi import FastAPI, Request, Response, APIRouter, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from dotenv import load_dotenv
 
 from bossypaints.background import render_and_mesh
@@ -208,9 +208,20 @@ async def get_coord_frame(request: Request, collection: str, experiment: str):
 
 
 class CreateTaskRequest(BaseModel):
-    collection: str
-    experiment: str
-    channel: str
+    # Data source type
+    data_source_type: Literal["bossdb", "cloudvolume"] = "bossdb"
+    # Output destination type
+    output_type: Literal["bossdb", "download"] = "download"
+
+    # BossDB fields
+    collection: Optional[str] = None
+    experiment: Optional[str] = None
+    channel: Optional[str] = None
+
+    # CloudVolume fields
+    cloudvolume_uri: Optional[str] = None
+
+    # Common fields
     resolution: int
     x_min: int
     x_max: int
@@ -223,6 +234,27 @@ class CreateTaskRequest(BaseModel):
     destination_experiment: Optional[str] = None
     destination_channel: Optional[str] = None
 
+    @validator('collection', 'experiment', 'channel')
+    def validate_bossdb_fields(cls, v, values):
+        """Ensure BossDB fields are present when data_source_type is 'bossdb'"""
+        if values.get('data_source_type') == 'bossdb' and v is None:
+            raise ValueError('BossDB fields (collection, experiment, channel) are required when data_source_type is "bossdb"')
+        return v
+
+    @validator('cloudvolume_uri')
+    def validate_cloudvolume_fields(cls, v, values):
+        """Ensure CloudVolume URI is present when data_source_type is 'cloudvolume'"""
+        if values.get('data_source_type') == 'cloudvolume' and v is None:
+            raise ValueError('CloudVolume URI is required when data_source_type is "cloudvolume"')
+        return v
+
+    @validator('destination_collection', 'destination_experiment', 'destination_channel')
+    def validate_destination_fields(cls, v, values):
+        """Ensure destination fields are present when output_type is 'bossdb'"""
+        if values.get('output_type') == 'bossdb' and v is None:
+            raise ValueError('Destination fields (collection, experiment, channel) are required when output_type is "bossdb"')
+        return v
+
 
 @api_router.post("/tasks/create")
 async def create_task(
@@ -231,70 +263,94 @@ async def create_task(
     # Get the username from the request to assign the task to this user
     username = await get_username_from_request(request)
 
-    # Check if the collection exists and the user has access to it
-    async with httpx.AsyncClient() as client:
-        chan_exists_resp = await client.get(
-            f"https://api.bossdb.io/v1/collection/{new_task.collection}",
-            headers={
-                "Authorization": request.headers["Authorization"],
-                "Accept": "application/json",
-            },
-        )
-        if chan_exists_resp.status_code != 200:
-            response.status_code = 404
-            return {
-                "message": "Collection does not exist or you do not have access to it"
-            }
+    # Handle validation and data source access checking based on data source type
+    if new_task.data_source_type == "bossdb":
+        # Validate BossDB access
+        async with httpx.AsyncClient() as client:
+            chan_exists_resp = await client.get(
+                f"https://api.bossdb.io/v1/collection/{new_task.collection}",
+                headers={
+                    "Authorization": request.headers["Authorization"],
+                    "Accept": "application/json",
+                },
+            )
+            if chan_exists_resp.status_code != 200:
+                response.status_code = 404
+                return {
+                    "message": "Collection does not exist or you do not have access to it"
+                }
 
-        exp_exists_resp = await client.get(
-            f"https://api.bossdb.io/v1/collection/{new_task.collection}/experiment/{new_task.experiment}",
-            headers={
-                "Authorization": request.headers["Authorization"],
-                "Accept": "application/json",
-            },
-        )
-        if exp_exists_resp.status_code != 200:
-            response.status_code = 404
-            return {
-                "message": "Experiment does not exist or you do not have access to it"
-            }
+            exp_exists_resp = await client.get(
+                f"https://api.bossdb.io/v1/collection/{new_task.collection}/experiment/{new_task.experiment}",
+                headers={
+                    "Authorization": request.headers["Authorization"],
+                    "Accept": "application/json",
+                },
+            )
+            if exp_exists_resp.status_code != 200:
+                response.status_code = 404
+                return {
+                    "message": "Experiment does not exist or you do not have access to it"
+                }
 
-        chan_exists_resp = await client.get(
-            f"https://api.bossdb.io/v1/collection/{new_task.collection}/experiment/{new_task.experiment}/channel/{new_task.channel}",
-            headers={
-                "Authorization": request.headers["Authorization"],
-                "Accept": "application/json",
-            },
-        )
-        if chan_exists_resp.status_code != 200:
-            response.status_code = 404
-            return {"message": "Channel does not exist or you do not have access to it"}
+            chan_exists_resp = await client.get(
+                f"https://api.bossdb.io/v1/collection/{new_task.collection}/experiment/{new_task.experiment}/channel/{new_task.channel}",
+                headers={
+                    "Authorization": request.headers["Authorization"],
+                    "Accept": "application/json",
+                },
+            )
+            if chan_exists_resp.status_code != 200:
+                response.status_code = 404
+                return {"message": "Channel does not exist or you do not have access to it"}
 
-        # Create the task
-        task = Task(
-            collection=new_task.collection,
-            experiment=new_task.experiment,
-            channel=new_task.channel,
-            resolution=new_task.resolution,
-            x_min=new_task.x_min,
-            x_max=new_task.x_max,
-            y_min=new_task.y_min,
-            y_max=new_task.y_max,
-            z_min=new_task.z_min,
-            z_max=new_task.z_max,
-            priority=new_task.priority,
-            destination_collection=new_task.destination_collection,
-            destination_experiment=new_task.destination_experiment,
-            destination_channel=new_task.destination_channel,
-            assigned_to=username,  # Assign the task to the user creating it
-        )
+    elif new_task.data_source_type == "cloudvolume":
+        # For CloudVolume, we'll do basic URI validation
+        # Note: More sophisticated validation could be added here to test CloudVolume access
+        if not new_task.cloudvolume_uri:
+            response.status_code = 400
+            return {"message": "CloudVolume URI is required"}
 
-        # Create or confirm access to the destination collection, experiment, and channel
-        if (
-            task.destination_collection
-            and task.destination_experiment
-            and task.destination_channel
-        ):
+        # Basic URI format validation
+        if not (new_task.cloudvolume_uri.startswith('gs://') or
+                new_task.cloudvolume_uri.startswith('s3://') or
+                new_task.cloudvolume_uri.startswith('file://') or
+                new_task.cloudvolume_uri.startswith('https://') or
+                new_task.cloudvolume_uri.startswith('precomputed://')):
+            response.status_code = 400
+            return {"message": "Invalid CloudVolume URI format"}
+
+    # Create the task
+    task = Task(
+        data_source_type=new_task.data_source_type,
+    output_type=new_task.output_type,
+        collection=new_task.collection,
+        experiment=new_task.experiment,
+        channel=new_task.channel,
+        cloudvolume_uri=new_task.cloudvolume_uri,
+        resolution=new_task.resolution,
+        x_min=new_task.x_min,
+        x_max=new_task.x_max,
+        y_min=new_task.y_min,
+        y_max=new_task.y_max,
+        z_min=new_task.z_min,
+        z_max=new_task.z_max,
+        priority=new_task.priority,
+        destination_collection=new_task.destination_collection,
+        destination_experiment=new_task.destination_experiment,
+        destination_channel=new_task.destination_channel,
+        assigned_to=username,  # Assign the task to the user creating it
+    )
+
+    # Create or confirm access to the destination collection, experiment, and channel
+    # (This only applies to BossDB destinations for now)
+    if (
+        task.output_type == "bossdb"
+        and task.destination_collection
+        and task.destination_experiment
+        and task.destination_channel
+    ):
+        async with httpx.AsyncClient() as client:
             print("Checking destination collection")
             dest_col_exists_resp = await client.get(
                 f"https://api.bossdb.io/v1/collection/{task.destination_collection}",
@@ -340,29 +396,43 @@ async def create_task(
             )
             if exp_exists_resp.status_code == 404:
                 # Create the experiment.
-                # First, need to get the coordframe from the source experiment
-                exp_data = await client.get(
-                    f"https://api.bossdb.io/v1/collection/{task.collection}/experiment/{task.experiment}",
-                    headers={
-                        "Authorization": request.headers["Authorization"],
-                        "Accept": "application/json",
-                    },
-                )
-                exp_data = exp_data.json()
-                print(exp_data)
+                # For BossDB sources, get the coordframe from the source experiment
+                if task.data_source_type == "bossdb":
+                    exp_data = await client.get(
+                        f"https://api.bossdb.io/v1/collection/{task.collection}/experiment/{task.experiment}",
+                        headers={
+                            "Authorization": request.headers["Authorization"],
+                            "Accept": "application/json",
+                        },
+                    )
+                    exp_data = exp_data.json()
+                    print(exp_data)
+                    source_description = f"{task.collection}/{task.experiment}/{task.channel}"
+                    experiment_json = {
+                        "description": f"Created by user with BossyPaints. Imagery source is {source_description}",
+                        "coord_frame": exp_data["coord_frame"],
+                        "num_hierarchy_levels": exp_data["num_hierarchy_levels"],
+                        "hierarchy_method": exp_data["hierarchy_method"],
+                        "num_time_samples": exp_data["num_time_samples"],
+                    }
+                else:
+                    # For CloudVolume sources, use default values
+                    source_description = task.cloudvolume_uri
+                    experiment_json = {
+                        "description": f"Created by user with BossyPaints. Imagery source is CloudVolume: {source_description}",
+                        "coord_frame": "cf_default",  # You may need to adjust this
+                        "num_hierarchy_levels": 7,
+                        "hierarchy_method": "anisotropic",
+                        "num_time_samples": 1,
+                    }
+
                 create_exp_resp = await client.post(
                     f"https://api.bossdb.io/v1/collection/{task.destination_collection}/experiment/{task.destination_experiment}",
                     headers={
                         "Authorization": request.headers["Authorization"],
                         "Accept": "application/json",
                     },
-                    json={
-                        "description": f"Created by user with BossyPaints. Imagery source is {task.collection}/{task.experiment}/{task.channel}",
-                        "coord_frame": exp_data["coord_frame"],
-                        "num_hierarchy_levels": exp_data["num_hierarchy_levels"],
-                        "hierarchy_method": exp_data["hierarchy_method"],
-                        "num_time_samples": exp_data["num_time_samples"],
-                    },
+                    json=experiment_json,
                 )
                 # check if the experiment was created successfully
                 if create_exp_resp.status_code != 201:
@@ -388,6 +458,11 @@ async def create_task(
             )
             if chan_exists_resp.status_code == 404:
                 # Create the channel
+                if task.data_source_type == "bossdb":
+                    source_description = f"{task.collection}/{task.experiment}/{task.channel}"
+                else:
+                    source_description = f"CloudVolume: {task.cloudvolume_uri}"
+
                 chan_creation_resp = await client.post(
                     f"https://api.bossdb.io/v1/collection/{task.destination_collection}/experiment/{task.destination_experiment}/channel/{task.destination_channel}",
                     headers={
@@ -395,7 +470,7 @@ async def create_task(
                         "Accept": "application/json",
                     },
                     json={
-                        "description": f"Created by user with BossyPaints. Imagery source is {task.collection}/{task.experiment}/{task.channel}",
+                        "description": f"Created by user with BossyPaints. Imagery source is {source_description}",
                         "type": "annotation",
                         "datatype": "uint64",
                         "base_resolution": task.resolution,
@@ -417,8 +492,9 @@ async def create_task(
                     "message": "Destination channel does not exist or you do not have access to it"
                 }
 
-        task_id = task_store.put(task)
-        return {"task": task, "task_id": task_id}
+    # Persist and return the task for all cases (download or bossdb output)
+    task_id = task_store.put(task)
+    return {"task": task, "task_id": task_id}
 
 
 

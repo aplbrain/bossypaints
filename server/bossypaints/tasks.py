@@ -2,15 +2,26 @@ import abc
 import json
 import uuid
 import pydantic
-from typing import List
+from typing import List, Optional, Literal
 
 TaskID = str
 
 
 class Task(pydantic.BaseModel):
-    collection: str
-    experiment: str
-    channel: str
+    # Data source type: either 'bossdb' or 'cloudvolume'
+    data_source_type: Literal["bossdb", "cloudvolume"] = "bossdb"
+    # Output destination type: either 'bossdb' (write to BossDB) or 'download' (user will download)
+    output_type: Literal["bossdb", "download"] = "download"
+
+    # BossDB fields (used when data_source_type is 'bossdb')
+    collection: Optional[str] = None
+    experiment: Optional[str] = None
+    channel: Optional[str] = None
+
+    # CloudVolume fields (used when data_source_type is 'cloudvolume')
+    cloudvolume_uri: Optional[str] = None
+
+    # Common fields
     resolution: int
     x_min: int
     x_max: int
@@ -23,6 +34,20 @@ class Task(pydantic.BaseModel):
     destination_experiment: str | None = None
     destination_channel: str | None = None
     assigned_to: str | None = None  # BossDB username of the assigned user
+
+    @pydantic.validator('collection', 'experiment', 'channel')
+    def validate_bossdb_fields(cls, v, values):
+        """Ensure BossDB fields are present when data_source_type is 'bossdb'"""
+        if values.get('data_source_type') == 'bossdb' and v is None:
+            raise ValueError('BossDB fields (collection, experiment, channel) are required when data_source_type is "bossdb"')
+        return v
+
+    @pydantic.validator('cloudvolume_uri')
+    def validate_cloudvolume_fields(cls, v, values):
+        """Ensure CloudVolume URI is present when data_source_type is 'cloudvolume'"""
+        if values.get('data_source_type') == 'cloudvolume' and v is None:
+            raise ValueError('CloudVolume URI is required when data_source_type is "cloudvolume"')
+        return v
 
 
 class TaskInDB(Task):

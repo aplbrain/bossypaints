@@ -6,9 +6,11 @@ const baseUrl = "https://api.paint.labs.bossdb.org";
 export type TaskID = string;
 
 export type Task = {
-    collection: string;
-    experiment: string;
-    channel: string;
+    data_source_type: "bossdb" | "cloudvolume";
+    collection?: string;
+    experiment?: string;
+    channel?: string;
+    cloudvolume_uri?: string;
     resolution: number;
     x_min: number;
     x_max: number;
@@ -17,6 +19,7 @@ export type Task = {
     z_min: number;
     z_max: number;
     priority?: number;
+    output_type?: "bossdb" | "download";
     destination_collection?: string;
     destination_experiment?: string;
     destination_channel?: string;

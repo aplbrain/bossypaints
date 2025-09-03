@@ -340,8 +340,20 @@
 												</div>
 											</td>
 											<td class="px-6 py-4 whitespace-nowrap">
-												<div class="text-sm text-gray-900">{task.collection}</div>
-												<div class="text-xs text-gray-500">{task.experiment} / {task.channel}</div>
+												{#if task.data_source_type === 'cloudvolume'}
+													<div class="text-sm text-gray-900">CloudVolume</div>
+													<div
+														class="text-xs text-gray-500 truncate max-w-xs"
+														title={task.cloudvolume_uri}
+													>
+														{task.cloudvolume_uri}
+													</div>
+												{:else}
+													<div class="text-sm text-gray-900">{task.collection}</div>
+													<div class="text-xs text-gray-500">
+														{task.experiment} / {task.channel}
+													</div>
+												{/if}
 											</td>
 											<td class="px-6 py-4 whitespace-nowrap">
 												<span

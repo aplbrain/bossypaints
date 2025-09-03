@@ -111,11 +111,19 @@ export function createNeuroglancerState(task: TaskInDB): NeuroglancerState {
  * @returns Image layer configuration
  */
 export function createImageLayer(task: TaskInDB): NeuroglancerLayer {
+    if (task.data_source_type === 'cloudvolume') {
+        return {
+            source: `precomputed://${task.cloudvolume_uri}`,
+            type: 'image',
+            name: 'CloudVolume Data'
+        };
+    } else {
     return {
         source: `boss://https://api.bossdb.io/${task.collection}/${task.experiment}/${task.channel}`,
         type: 'image',
-        name: task.experiment
+            name: task.experiment || 'BossDB Data'
     };
+}
 }
 
 /**
