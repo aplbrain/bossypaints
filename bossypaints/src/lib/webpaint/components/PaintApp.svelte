@@ -44,6 +44,7 @@ from BossDB and displays it on the canvas.
 	// Expose the on:submit event to the parent component:
 	export let onSubmitData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
 	export let onCheckpointData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
+	export let onToggleInfo: () => void = () => {};
 
 	// Toggle visibility of task region (yellow rectangle) and axes
 	let showAxesAndTaskRegion = true;
@@ -851,6 +852,12 @@ from BossDB and displays it on the canvas.
 					onCheckpointData(annotationStore.getAllAnnotations());
 					return false;
 				}
+			}
+
+			// 't' key = toggle info panel visibility
+			if (s.key === 't' || s.key === 'T') {
+				onToggleInfo();
+				return false;
 			}
 
 			// 'a' key = toggle axes and task region visibility

@@ -172,6 +172,15 @@ export const keybindings: Keybinding[] = [
         eventType: 'key',
     },
     {
+        key: 't',
+        action: 'Toggle info panel visibility',
+        matcher: (s) => s.key === 't' || s.key === 'T',
+        handler: () => {
+            // Note: Implemented directly in PaintApp.svelte via onToggleInfo callback from AppWithTask
+        },
+        eventType: 'key',
+    },
+    {
         key: 'v',
         action: 'Toggle annotation visibility',
         matcher: (s) => s.key === 'v' || s.key === 'V',

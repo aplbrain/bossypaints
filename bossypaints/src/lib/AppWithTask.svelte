@@ -21,6 +21,7 @@
 	let annotationStore: AnnotationManagerStore;
 	let nav: NavigationStore;
 	let showKeybindings = false;
+	let showInfo = true;
 
 	// Histogram window state (default 8-bit window)
 	let histMin = 0;
@@ -108,7 +109,7 @@
 
 <div class="w-full">
 	{#if task && annotationStore && nav}
-		<PaintApp
+	<PaintApp
 			{annotationStore}
 			{nav}
 			datasetURI={task.data_source_type === 'cloudvolume'
@@ -125,6 +126,7 @@
 					notyf.success('Checkpoint saved');
 				});
 			}}
+			onToggleInfo={() => (showInfo = !showInfo)}
 			onSubmitData={(data) => {
 				API.saveTask({ taskId: task.id, checkpoint: data }).then(() => {
 					notyf.success('Volume finalized and saved.');
@@ -140,6 +142,8 @@
 			{histMin}
 			{histMax}
 			onHistogramChange={handleHistogramChange}
+			show={showInfo}
+			onToggle={() => (showInfo = !showInfo)}
 		/>
 		<KeybindingsTable bind:show={showKeybindings} />
 
