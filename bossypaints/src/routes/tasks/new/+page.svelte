@@ -2,7 +2,7 @@
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
 	import Header from '$lib/Header.svelte';
-	import { parseNewNeuroglancerUrl, extractBossDBInfoFromUrl } from '$lib/neuroglancer';
+	import { parseNewNeuroglancerUrl, extractBossDBInfoFromUrl, extractCloudVolumeInfoFromUrl } from '$lib/neuroglancer';
 
 	// Data source type
 	let dataSourceType: 'bossdb' | 'cloudvolume' = 'bossdb';
@@ -159,7 +159,7 @@
 
 	/**
 	 * Parse a neuroglancer URL and populate form fields
-	 * Note: Currently only supports BossDB URLs
+	 * Supports BossDB (boss://) and CloudVolume (precomputed://) sources
 	 */
 	function parseNeuroglancerUrl() {
 		if (!neuroglancerUrl.trim()) {
@@ -168,14 +168,6 @@
 		}
 
 		try {
-			// Extract BossDB information from the URL
-			const bossInfo = extractBossDBInfoFromUrl(neuroglancerUrl);
-			if (!bossInfo) {
-				urlParseMessage =
-					'Could not extract BossDB information from URL. Note: CloudVolume URL parsing is not yet supported.';
-				return;
-			}
-
 			// Parse the neuroglancer state for position and dimensions
 			const state = parseNewNeuroglancerUrl(neuroglancerUrl);
 			if (!state) {
@@ -183,13 +175,26 @@
 				return;
 			}
 
-			// Set data source type to BossDB since we successfully parsed BossDB info
-			dataSourceType = 'bossdb';
-
-			// Populate form fields with extracted data
-			collection = bossInfo.collection;
-			experiment = bossInfo.experiment;
-			channel = bossInfo.channel;
+			// Try CloudVolume first (precomputed://)
+			const cvInfo = extractCloudVolumeInfoFromUrl(neuroglancerUrl);
+			if (cvInfo) {
+				dataSourceType = 'cloudvolume';
+				cloudvolumeUri = cvInfo.uri; // store without precomputed://
+				collection = '';
+				experiment = '';
+				channel = '';
+			} else {
+				// Fallback to BossDB
+				const bossInfo = extractBossDBInfoFromUrl(neuroglancerUrl);
+				if (!bossInfo) {
+					urlParseMessage = 'Could not extract BossDB or CloudVolume source from URL.';
+					return;
+				}
+				dataSourceType = 'bossdb';
+				collection = bossInfo.collection;
+				experiment = bossInfo.experiment;
+				channel = bossInfo.channel;
+			}
 
 			// Set position if available
 			if (state.position && state.position.length >= 3) {
@@ -198,14 +203,13 @@
 				z_center = Math.round(state.position[2]);
 			}
 
-			// Set some reasonable default radius values (you might want to adjust these)
+			// Default radii
 			x_radius = 512;
 			y_radius = 512;
 			z_radius = 32;
 
-			// Try to determine resolution from crossSectionScale if available
+			// Approximate resolution from crossSectionScale if available
 			if (state.crossSectionScale) {
-				// This is a rough approximation - you might need to adjust based on your data
 				const scale = state.crossSectionScale;
 				if (scale <= 1) {
 					resolution = 0;
@@ -220,14 +224,16 @@
 				}
 			}
 
-			urlParseMessage = `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`;
+			urlParseMessage = dataSourceType === 'bossdb'
+				? `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`
+				: `Successfully parsed URL! Populated CloudVolume URI: ${cloudvolumeUri}`;
 
 			// Clear the URL input and hide the section
 			neuroglancerUrl = '';
 			showUrlInput = false;
 
-			// Trigger coordinate frame fetch
-			if (collection && experiment) {
+			// Trigger coordinate frame fetch for BossDB
+			if (dataSourceType === 'bossdb' && collection && experiment) {
 				fetchCoordFrame();
 			}
 		} catch (error) {
@@ -391,8 +397,7 @@
 									</button>
 								</div>
 								<p class="mt-1 text-xs text-gray-500">
-									This will extract the collection, experiment, channel, and position from the URL.
-									Note: Only BossDB URLs are currently supported.
+									This will extract the source (BossDB or CloudVolume), plus position and an approximate resolution.
 								</p>
 							</div>
 

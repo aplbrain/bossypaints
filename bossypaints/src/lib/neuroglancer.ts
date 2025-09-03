@@ -414,3 +414,66 @@ export function extractBossDBInfoFromUrl(url: string): { collection: string; exp
         return null;
     }
 }
+
+/**
+ * Extract CloudVolume (precomputed) information from a neuroglancer URL
+ * @param url - Neuroglancer URL
+ * @returns Object containing cloudvolume uri (without the 'precomputed://' prefix), or null if not found
+ */
+export function extractCloudVolumeInfoFromUrl(url: string): { uri: string } | null {
+    try {
+        const newState = parseNewNeuroglancerUrl(url);
+        if (!newState) return null;
+
+        // Helper to extract precomputed URI from a single layer
+        const getFromLayer = (layer: NeuroglancerLayer): string | null => {
+            if (typeof layer.source === 'string' && layer.source.startsWith('precomputed://')) {
+                return layer.source.replace('precomputed://', '');
+            }
+            if (
+                typeof layer.source === 'object' &&
+                layer.source?.url &&
+                typeof layer.source.url === 'string' &&
+                layer.source.url.startsWith('precomputed://')
+            ) {
+                return layer.source.url.replace('precomputed://', '');
+            }
+            return null;
+        };
+
+        // 1) If a selected layer exists and is an image with precomputed, prefer it
+        if (newState.selectedLayer?.layer) {
+            const selected = newState.layers.find(l => l.name === newState.selectedLayer!.layer);
+            if (selected && selected.type === 'image') {
+                const uri = getFromLayer(selected);
+                if (uri) return { uri };
+            }
+        }
+
+        // 2) Otherwise prefer the first image layer with precomputed
+        for (const layer of newState.layers) {
+            if (layer.type === 'image') {
+                const uri = getFromLayer(layer);
+                if (uri) return { uri };
+            }
+        }
+
+        // 3) If selected layer is not image but has precomputed, use it
+        if (newState.selectedLayer?.layer) {
+            const selected = newState.layers.find(l => l.name === newState.selectedLayer!.layer);
+            const uri = selected ? getFromLayer(selected) : null;
+            if (uri) return { uri };
+        }
+
+        // 4) Finally, return the first precomputed layer of any type
+        for (const layer of newState.layers) {
+            const uri = getFromLayer(layer);
+            if (uri) return { uri };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Failed to extract CloudVolume info from URL:', error);
+        return null;
+    }
+}
