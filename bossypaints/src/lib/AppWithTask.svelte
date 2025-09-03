@@ -118,8 +118,8 @@
 			ys={[task.y_min, task.y_max]}
 			zs={[task.z_min, task.z_max]}
 			resolution={task.resolution}
-			histMin={histMin}
-			histMax={histMax}
+			{histMin}
+			{histMax}
 			onCheckpointData={(data) => {
 				API.checkpointTask({ taskId: task.id, checkpoint: data }).then(() => {
 					notyf.success('Checkpoint saved');
@@ -137,8 +137,8 @@
 			currentSegmentID={annotationStore.currentSegmentID}
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
 			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
-			histMin={histMin}
-			histMax={histMax}
+			{histMin}
+			{histMax}
 			onHistogramChange={handleHistogramChange}
 		/>
 		<KeybindingsTable bind:show={showKeybindings} />

@@ -236,8 +236,8 @@ export class ImageCache {
      * Clear the entire cache
      */
     clear(): void {
-    this.cache.clear();
-    this.adjustedCache.clear();
+        this.cache.clear();
+        this.adjustedCache.clear();
         this.currentSize = 0;
         this.stats.hits = 0;
         this.stats.misses = 0;
