@@ -2,11 +2,20 @@
 	import API from '$lib/api';
 	import { goto } from '$app/navigation';
 	import Header from '$lib/Header.svelte';
-	import { parseNewNeuroglancerUrl, extractBossDBInfoFromUrl } from '$lib/neuroglancer';
+	import { parseNewNeuroglancerUrl, extractBossDBInfoFromUrl, extractCloudVolumeInfoFromUrl } from '$lib/neuroglancer';
 
+	// Data source type
+	let dataSourceType: 'bossdb' | 'cloudvolume' = 'bossdb';
+
+	// BossDB fields
 	let collection = '';
 	let experiment = '';
 	let channel = '';
+
+	// CloudVolume fields
+	let cloudvolumeUri = '';
+
+	// Common fields
 	let resolution = 0;
 	let x_center = 0;
 	let x_radius = 0;
@@ -14,6 +23,9 @@
 	let y_radius = 0;
 	let z_center = 0;
 	let z_radius = 0;
+
+	// Output destination type
+	let outputType: 'bossdb' | 'download' = 'download';
 	let destination_collection = '';
 	let destination_experiment = '';
 	let destination_channel = '';
@@ -47,7 +59,7 @@
 	let debounceTimeout: number | NodeJS.Timeout | undefined;
 
 	async function fetchCollectionSuggestions() {
-		if (collection.length > minAutoCompleteLength) {
+		if (dataSourceType === 'bossdb' && collection.length > minAutoCompleteLength) {
 			const response = await API.autocompleteBossDBResource({
 				collection,
 				experiment: null,
@@ -61,11 +73,11 @@
 
 	function debounceFetchCollectionSuggestions() {
 		clearTimeout(debounceTimeout);
-		deounceTimeout = setTimeout(fetchCollectionSuggestions, 300);
+		debounceTimeout = setTimeout(fetchCollectionSuggestions, 300);
 	}
 
 	async function fetchExperimentSuggestions() {
-		if (experiment.length > minAutoCompleteLength) {
+		if (dataSourceType === 'bossdb' && experiment.length > minAutoCompleteLength) {
 			const response = await API.autocompleteBossDBResource({
 				collection,
 				experiment,
@@ -83,7 +95,7 @@
 	}
 
 	async function fetchChannelSuggestions() {
-		if (channel.length > minAutoCompleteLength) {
+		if (dataSourceType === 'bossdb' && channel.length > minAutoCompleteLength) {
 			const response = await API.autocompleteBossDBResource({ collection, experiment, channel });
 			channelSuggestions = response.resources;
 		} else {
@@ -97,12 +109,14 @@
 	}
 
 	async function fetchCoordFrame() {
-		const response = await API.getCoordFrame(collection, experiment);
-		coordFrame = response;
+		if (dataSourceType === 'bossdb') {
+			const response = await API.getCoordFrame(collection, experiment);
+			coordFrame = response;
+		}
 	}
 
 	$: {
-		if (collection && experiment) {
+		if (dataSourceType === 'bossdb' && collection && experiment) {
 			fetchCoordFrame();
 		}
 	}
@@ -145,6 +159,7 @@
 
 	/**
 	 * Parse a neuroglancer URL and populate form fields
+	 * Supports BossDB (boss://) and CloudVolume (precomputed://) sources
 	 */
 	function parseNeuroglancerUrl() {
 		if (!neuroglancerUrl.trim()) {
@@ -153,13 +168,6 @@
 		}
 
 		try {
-			// Extract BossDB information from the URL
-			const bossInfo = extractBossDBInfoFromUrl(neuroglancerUrl);
-			if (!bossInfo) {
-				urlParseMessage = 'Could not extract BossDB information from URL';
-				return;
-			}
-
 			// Parse the neuroglancer state for position and dimensions
 			const state = parseNewNeuroglancerUrl(neuroglancerUrl);
 			if (!state) {
@@ -167,10 +175,26 @@
 				return;
 			}
 
-			// Populate form fields with extracted data
-			collection = bossInfo.collection;
-			experiment = bossInfo.experiment;
-			channel = bossInfo.channel;
+			// Try CloudVolume first (precomputed://)
+			const cvInfo = extractCloudVolumeInfoFromUrl(neuroglancerUrl);
+			if (cvInfo) {
+				dataSourceType = 'cloudvolume';
+				cloudvolumeUri = cvInfo.uri; // store without precomputed://
+				collection = '';
+				experiment = '';
+				channel = '';
+			} else {
+				// Fallback to BossDB
+				const bossInfo = extractBossDBInfoFromUrl(neuroglancerUrl);
+				if (!bossInfo) {
+					urlParseMessage = 'Could not extract BossDB or CloudVolume source from URL.';
+					return;
+				}
+				dataSourceType = 'bossdb';
+				collection = bossInfo.collection;
+				experiment = bossInfo.experiment;
+				channel = bossInfo.channel;
+			}
 
 			// Set position if available
 			if (state.position && state.position.length >= 3) {
@@ -179,14 +203,13 @@
 				z_center = Math.round(state.position[2]);
 			}
 
-			// Set some reasonable default radius values (you might want to adjust these)
+			// Default radii
 			x_radius = 512;
 			y_radius = 512;
 			z_radius = 32;
 
-			// Try to determine resolution from crossSectionScale if available
+			// Approximate resolution from crossSectionScale if available
 			if (state.crossSectionScale) {
-				// This is a rough approximation - you might need to adjust based on your data
 				const scale = state.crossSectionScale;
 				if (scale <= 1) {
 					resolution = 0;
@@ -201,14 +224,16 @@
 				}
 			}
 
-			urlParseMessage = `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`;
+			urlParseMessage = dataSourceType === 'bossdb'
+				? `Successfully parsed URL! Populated fields with data from ${collection}/${experiment}/${channel}`
+				: `Successfully parsed URL! Populated CloudVolume URI: ${cloudvolumeUri}`;
 
 			// Clear the URL input and hide the section
 			neuroglancerUrl = '';
 			showUrlInput = false;
 
-			// Trigger coordinate frame fetch
-			if (collection && experiment) {
+			// Trigger coordinate frame fetch for BossDB
+			if (dataSourceType === 'bossdb' && collection && experiment) {
 				fetchCoordFrame();
 			}
 		} catch (error) {
@@ -233,9 +258,12 @@
 
 	async function createTask() {
 		const task = {
-			collection,
-			experiment,
-			channel,
+			data_source_type: dataSourceType,
+			output_type: outputType,
+			collection: dataSourceType === 'bossdb' ? collection : undefined,
+			experiment: dataSourceType === 'bossdb' ? experiment : undefined,
+			channel: dataSourceType === 'bossdb' ? channel : undefined,
+			cloudvolume_uri: dataSourceType === 'cloudvolume' ? cloudvolumeUri : undefined,
 			resolution,
 			x_min: Math.max(0, x_center - x_radius),
 			x_max: x_center + x_radius,
@@ -243,9 +271,10 @@
 			y_max: y_center + y_radius,
 			z_min: Math.max(0, z_center - z_radius),
 			z_max: z_center + z_radius,
-			destination_collection,
-			destination_experiment,
-			destination_channel,
+			// Only send destination fields when outputType is bossdb
+			destination_collection: outputType === 'bossdb' ? destination_collection : undefined,
+			destination_experiment: outputType === 'bossdb' ? destination_experiment : undefined,
+			destination_channel: outputType === 'bossdb' ? destination_channel : undefined,
 			priority: 0
 		};
 		const response = await API.createTask(task);
@@ -253,9 +282,12 @@
 		// if the task was created successfully, clear the form, wait 1 sec,
 		// and then go to the tracing app page with the new task
 		if ((response as any).task_id) {
+			// Clear all form fields
+			dataSourceType = 'bossdb';
 			collection = '';
 			experiment = '';
 			channel = '';
+			cloudvolumeUri = '';
 			resolution = 0;
 			x_center = 0;
 			x_radius = 0;
@@ -266,6 +298,7 @@
 			useEntireXExtent = false;
 			useEntireYExtent = false;
 			useEntireZExtent = false;
+			outputType = 'download';
 			destination_collection = '';
 			destination_experiment = '';
 			destination_channel = '';
@@ -364,7 +397,7 @@
 									</button>
 								</div>
 								<p class="mt-1 text-xs text-gray-500">
-									This will extract the collection, experiment, channel, and position from the URL
+									This will extract the source (BossDB or CloudVolume), plus position and an approximate resolution.
 								</p>
 							</div>
 
@@ -443,142 +476,61 @@
 						</div>
 						<div class="ml-3">
 							<h3 class="text-lg font-semibold text-gray-900">Data Source</h3>
-							<p class="text-sm text-gray-600">Specify the BossDB dataset to annotate</p>
+							<p class="text-sm text-gray-600">Specify the dataset to annotate</p>
 						</div>
 					</div>
 				</div>
 
 				<div class="p-6 space-y-6">
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-						<!-- Collection -->
-						<div class="relative">
-							<label for="collection" class="block text-sm font-medium text-gray-700 mb-2">
-								Collection
+					<!-- Data Source Type Selector -->
+					<fieldset>
+						<legend class="block text-sm font-medium text-gray-700 mb-3">
+							Data Source Type
+							<span class="text-red-500">*</span>
+						</legend>
+						<div class="flex space-x-4">
+							<label class="flex items-center">
+								<input
+									type="radio"
+									bind:group={dataSourceType}
+									value="bossdb"
+									class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+								/>
+								<span class="text-sm font-medium text-gray-700">BossDB</span>
+							</label>
+							<label class="flex items-center">
+								<input
+									type="radio"
+									bind:group={dataSourceType}
+									value="cloudvolume"
+									class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+								/>
+								<span class="text-sm font-medium text-gray-700">CloudVolume</span>
+							</label>
+						</div>
+					</fieldset>
+
+					{#if dataSourceType === 'cloudvolume'}
+						<!-- CloudVolume URI -->
+						<div>
+							<label for="cloudvolume_uri" class="block text-sm font-medium text-gray-700 mb-2">
+								CloudVolume URI
 								<span class="text-red-500">*</span>
 							</label>
 							<input
-								id="collection"
+								id="cloudvolume_uri"
 								type="text"
-								bind:value={collection}
-								on:input={debounceFetchCollectionSuggestions}
-								placeholder="Enter collection name"
+								bind:value={cloudvolumeUri}
+								placeholder="e.g., gs://bucket/path, s3://bucket/path, precomputed://..."
 								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
-								required
+								required={dataSourceType === 'cloudvolume'}
 							/>
-							{#if collectionSuggestions.length > 0}
-								<ul
-									class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
-								>
-									{#each collectionSuggestions as suggestion}
-										<li
-											on:click={() => {
-												collection = suggestion;
-												collectionSuggestions = [];
-											}}
-											class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-											role="button"
-											tabindex="0"
-											on:keydown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') {
-													collection = suggestion;
-													collectionSuggestions = [];
-												}
-											}}
-										>
-											{suggestion}
-										</li>
-									{/each}
-								</ul>
-							{/if}
+							<p class="mt-1 text-xs text-gray-500">
+								Enter the full CloudVolume URI for your dataset
+							</p>
 						</div>
 
-						<!-- Experiment -->
-						<div class="relative">
-							<label for="experiment" class="block text-sm font-medium text-gray-700 mb-2">
-								Experiment
-								<span class="text-red-500">*</span>
-							</label>
-							<input
-								id="experiment"
-								type="text"
-								bind:value={experiment}
-								on:input={debounceFetchExperimentSuggestions}
-								placeholder="Enter experiment name"
-								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
-								required
-							/>
-							{#if experimentSuggestions.length > 0}
-								<ul
-									class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
-								>
-									{#each experimentSuggestions as suggestion}
-										<li
-											on:click={() => {
-												experiment = suggestion;
-												experimentSuggestions = [];
-											}}
-											class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-											role="button"
-											tabindex="0"
-											on:keydown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') {
-													experiment = suggestion;
-													experimentSuggestions = [];
-												}
-											}}
-										>
-											{suggestion}
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-					</div>
-
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-						<!-- Channel -->
-						<div class="relative">
-							<label for="channel" class="block text-sm font-medium text-gray-700 mb-2">
-								Channel
-								<span class="text-red-500">*</span>
-							</label>
-							<input
-								id="channel"
-								type="text"
-								bind:value={channel}
-								on:input={debounceFetchChannelSuggestions}
-								placeholder="Enter channel name"
-								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
-								required
-							/>
-							{#if channelSuggestions.length > 0}
-								<ul
-									class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
-								>
-									{#each channelSuggestions as suggestion}
-										<li
-											on:click={() => {
-												channel = suggestion;
-												channelSuggestions = [];
-											}}
-											class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-											role="button"
-											tabindex="0"
-											on:keydown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') {
-													channel = suggestion;
-													channelSuggestions = [];
-												}
-											}}
-										>
-											{suggestion}
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-
-						<!-- Resolution -->
+						<!-- Resolution for CloudVolume -->
 						<div>
 							<label for="resolution" class="block text-sm font-medium text-gray-700 mb-2">
 								Resolution Level
@@ -595,7 +547,141 @@
 							/>
 							<p class="mt-1 text-xs text-gray-500">Higher values = coarser resolution</p>
 						</div>
-					</div>
+					{:else}
+						<!-- BossDB Fields -->
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+							<!-- Collection -->
+							<div class="relative">
+								<label for="collection" class="block text-sm font-medium text-gray-700 mb-2">
+									Collection
+									<span class="text-red-500">*</span>
+								</label>
+								<input
+									id="collection"
+									type="text"
+									bind:value={collection}
+									on:input={debounceFetchCollectionSuggestions}
+									placeholder="Enter collection name"
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+									required={dataSourceType === 'bossdb'}
+								/>
+								{#if collectionSuggestions.length > 0}
+									<ul
+										class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+									>
+										{#each collectionSuggestions as suggestion}
+											<li class="border-b border-gray-100 last:border-b-0">
+												<button
+													type="button"
+													class="w-full text-left px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm transition-colors duration-150"
+													on:click={() => {
+														collection = suggestion;
+														collectionSuggestions = [];
+													}}
+												>
+													{suggestion}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+
+							<!-- Experiment -->
+							<div class="relative">
+								<label for="experiment" class="block text-sm font-medium text-gray-700 mb-2">
+									Experiment
+									<span class="text-red-500">*</span>
+								</label>
+								<input
+									id="experiment"
+									type="text"
+									bind:value={experiment}
+									on:input={debounceFetchExperimentSuggestions}
+									placeholder="Enter experiment name"
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+									required={dataSourceType === 'bossdb'}
+								/>
+								{#if experimentSuggestions.length > 0}
+									<ul
+										class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+									>
+										{#each experimentSuggestions as suggestion}
+											<li class="border-b border-gray-100 last:border-b-0">
+												<button
+													type="button"
+													class="w-full text-left px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm transition-colors duration-150"
+													on:click={() => {
+														experiment = suggestion;
+														experimentSuggestions = [];
+													}}
+												>
+													{suggestion}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+						</div>
+
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+							<!-- Channel -->
+							<div class="relative">
+								<label for="channel" class="block text-sm font-medium text-gray-700 mb-2">
+									Channel
+									<span class="text-red-500">*</span>
+								</label>
+								<input
+									id="channel"
+									type="text"
+									bind:value={channel}
+									on:input={debounceFetchChannelSuggestions}
+									placeholder="Enter channel name"
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+									required={dataSourceType === 'bossdb'}
+								/>
+								{#if channelSuggestions.length > 0}
+									<ul
+										class="autocomplete-list absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+									>
+										{#each channelSuggestions as suggestion}
+											<li class="border-b border-gray-100 last:border-b-0">
+												<button
+													type="button"
+													class="w-full text-left px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm transition-colors duration-150"
+													on:click={() => {
+														channel = suggestion;
+														channelSuggestions = [];
+													}}
+												>
+													{suggestion}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+
+							<!-- Resolution -->
+							<div>
+								<label for="resolution" class="block text-sm font-medium text-gray-700 mb-2">
+									Resolution Level
+									<span class="text-red-500">*</span>
+								</label>
+								<input
+									id="resolution"
+									type="number"
+									bind:value={resolution}
+									placeholder="e.g., 0"
+									min="0"
+									class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+									required
+								/>
+								<p class="mt-1 text-xs text-gray-500">Higher values = coarser resolution</p>
+							</div>
+						</div>
+					{/if}
 				</div>
 			</div>
 
@@ -827,14 +913,42 @@
 				</div>
 
 				<div class="p-6 space-y-6">
-					<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+					<!-- Output Type Selector -->
+					<fieldset>
+						<legend class="block text-sm font-medium text-gray-700 mb-3">
+							Output Type
+							<span class="text-red-500">*</span>
+						</legend>
+						<div class="flex space-x-4">
+							<label class="flex items-center">
+								<input
+									type="radio"
+									bind:group={outputType}
+									value="download"
+									class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+								/>
+								<span class="text-sm font-medium text-gray-700">User will download outputs</span>
+							</label>
+							<label class="flex items-center">
+								<input
+									type="radio"
+									bind:group={outputType}
+									value="bossdb"
+									class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+								/>
+								<span class="text-sm font-medium text-gray-700">Output to BossDB destination</span>
+							</label>
+						</div>
+					</fieldset>
+
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-6" class:hidden={outputType !== 'bossdb'}>
 						<div>
 							<label
 								for="destination_collection"
 								class="block text-sm font-medium text-gray-700 mb-2"
 							>
 								Destination Collection
-								<span class="text-red-500">*</span>
+								{#if outputType === 'bossdb'}<span class="text-red-500">*</span>{/if}
 							</label>
 							<input
 								id="destination_collection"
@@ -842,7 +956,7 @@
 								bind:value={destination_collection}
 								placeholder="Output collection name"
 								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
-								required
+								required={outputType === 'bossdb'}
 							/>
 						</div>
 						<div>
@@ -851,7 +965,7 @@
 								class="block text-sm font-medium text-gray-700 mb-2"
 							>
 								Destination Experiment
-								<span class="text-red-500">*</span>
+								{#if outputType === 'bossdb'}<span class="text-red-500">*</span>{/if}
 							</label>
 							<input
 								id="destination_experiment"
@@ -859,13 +973,13 @@
 								bind:value={destination_experiment}
 								placeholder="Output experiment name"
 								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
-								required
+								required={outputType === 'bossdb'}
 							/>
 						</div>
 						<div>
 							<label for="destination_channel" class="block text-sm font-medium text-gray-700 mb-2">
 								Destination Channel
-								<span class="text-red-500">*</span>
+								{#if outputType === 'bossdb'}<span class="text-red-500">*</span>{/if}
 							</label>
 							<input
 								id="destination_channel"
@@ -873,7 +987,7 @@
 								bind:value={destination_channel}
 								placeholder="Output channel name"
 								class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
-								required
+								required={outputType === 'bossdb'}
 							/>
 						</div>
 					</div>

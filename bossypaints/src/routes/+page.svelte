@@ -59,6 +59,35 @@
 	function formatBounds(task: TaskInDB) {
 		return `${task.x_min}–${task.x_max} × ${task.y_min}–${task.y_max} × ${task.z_min}–${task.z_max}`;
 	}
+
+	// For CloudVolume URIs, show path without protocol and bucket/domain
+	function cvDisplayPath(uri?: string): string {
+		if (!uri) return '';
+		let u = uri.trim();
+		// Strip precomputed:// wrapper if present
+		if (u.startsWith('precomputed://')) {
+			u = u.slice('precomputed://'.length);
+		}
+		// Detect and strip scheme (e.g., gs://, s3://, file://, https://)
+		const schemeMatch = u.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//);
+		let scheme = '';
+		if (schemeMatch) {
+			scheme = (schemeMatch[1] || '').toLowerCase();
+			u = u.slice(schemeMatch[0].length);
+		}
+		// Normalize leading slashes
+		u = u.replace(/^\/+/, '');
+		// For gs/s3/https, drop the first segment (bucket or host). For file, keep full path.
+		const parts = u.split('/');
+		if (scheme === 'gs' || scheme === 's3' || scheme.startsWith('http')) {
+			return parts.length > 1 ? parts.slice(1).join('/') : '';
+		} else if (scheme === 'file') {
+			// Preserve absolute path semantics
+			return '/' + parts.join('/');
+		}
+		// Fallback: if no scheme was detected, attempt to drop first segment as bucket-like
+		return parts.length > 1 ? parts.slice(1).join('/') : u;
+	}
 </script>
 
 <svelte:head>
@@ -340,8 +369,28 @@
 												</div>
 											</td>
 											<td class="px-6 py-4 whitespace-nowrap">
-												<div class="text-sm text-gray-900">{task.collection}</div>
-												<div class="text-xs text-gray-500">{task.experiment} / {task.channel}</div>
+												{#if task.data_source_type === 'cloudvolume'}
+													<div class="flex items-center space-x-2">
+														<span
+															class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200"
+															>CV</span
+														>
+														<div class="text-sm text-gray-900">
+															{cvDisplayPath(task.cloudvolume_uri) || task.cloudvolume_uri}
+														</div>
+													</div>
+													<div
+														class="text-xs text-gray-500 truncate max-w-xs"
+														title={task.cloudvolume_uri}
+													>
+														{task.cloudvolume_uri}
+													</div>
+												{:else}
+													<div class="text-sm text-gray-900">{task.collection}</div>
+													<div class="text-xs text-gray-500">
+														{task.experiment} / {task.channel}
+													</div>
+												{/if}
 											</td>
 											<td class="px-6 py-4 whitespace-nowrap">
 												<span
@@ -350,8 +399,30 @@
 													{task.resolution}
 												</span>
 											</td>
-											<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
-												{formatBounds(task)}
+											<td class="px-6 py-4 text-sm text-gray-700">
+												<div class="space-y-1 font-mono">
+													<div class="flex items-center">
+														<span
+															class="inline-flex items-center px-1.5 py-0.5 mr-2 rounded-full text-[10px] font-semibold bg-black text-white"
+															>X</span
+														>
+														<span>{task.x_min}–{task.x_max}</span>
+													</div>
+													<div class="flex items-center">
+														<span
+															class="inline-flex items-center px-1.5 py-0.5 mr-2 rounded-full text-[10px] font-semibold bg-black text-white"
+															>Y</span
+														>
+														<span>{task.y_min}–{task.y_max}</span>
+													</div>
+													<div class="flex items-center">
+														<span
+															class="inline-flex items-center px-1.5 py-0.5 mr-2 rounded-full text-[10px] font-semibold bg-black text-white"
+															>Z</span
+														>
+														<span>{task.z_min}–{task.z_max}</span>
+													</div>
+												</div>
 											</td>
 											<td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
 												<a
@@ -426,6 +497,7 @@
 								<button
 									on:click={() => (showSettings = false)}
 									class="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+									aria-label="Close settings"
 								>
 									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path

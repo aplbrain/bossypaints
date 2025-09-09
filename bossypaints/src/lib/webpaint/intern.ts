@@ -4,6 +4,7 @@ type BossRemoteOptions = {
 	token?: string;
 };
 
+import { baseUrl } from '$lib/api';
 import { debug } from './debug';
 
 class BossRemote {
@@ -50,7 +51,16 @@ class BossRemote {
 
 		/:resolution/:x_range/:y_range/:z_range/:time_range/?iso=:iso
 		*/
-		const url = `${this.protocol}://${this.host}/v1/cutout/${uri}/${res}/${xs.join(':')}/${ys.join(':')}/${zs.join(':')}/`;
+		// For CloudVolume URIs, use our backend filmstrip endpoint. Heuristic: if uri contains 'precomputed://' or starts with gs://, s3://, file://, https:// (non-Boss host)
+		let url: string;
+		const isCloudVolume = uri.startsWith('precomputed://') || uri.startsWith('gs://') || uri.startsWith('s3://') || uri.startsWith('file://') || uri.startsWith('https://');
+		if (isCloudVolume) {
+			// Backend serves at http://localhost:8000/api/filmstrip/cloudvolume
+			const backend = baseUrl;
+			url = `${backend}/api/filmstrip/cloudvolume?uri=${encodeURIComponent(uri)}&res=${res}&x=${xs.join(':')}&y=${ys.join(':')}&z=${zs.join(':')}`;
+		} else {
+			url = `${this.protocol}://${this.host}/v1/cutout/${uri}/${res}/${xs.join(':')}/${ys.join(':')}/${zs.join(':')}/`;
+		}
 		const requestTime = Date.now();
 		const requestId = Math.random().toString(36).substring(2, 8);
 

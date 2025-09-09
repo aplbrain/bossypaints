@@ -111,11 +111,19 @@ export function createNeuroglancerState(task: TaskInDB): NeuroglancerState {
  * @returns Image layer configuration
  */
 export function createImageLayer(task: TaskInDB): NeuroglancerLayer {
-    return {
-        source: `boss://https://api.bossdb.io/${task.collection}/${task.experiment}/${task.channel}`,
-        type: 'image',
-        name: task.experiment
-    };
+    if (task.data_source_type === 'cloudvolume') {
+        return {
+            source: `precomputed://${task.cloudvolume_uri}`,
+            type: 'image',
+            name: 'CloudVolume Data'
+        };
+    } else {
+        return {
+            source: `boss://https://api.bossdb.io/${task.collection}/${task.experiment}/${task.channel}`,
+            type: 'image',
+            name: task.experiment || 'BossDB Data'
+        };
+    }
 }
 
 /**
@@ -188,29 +196,30 @@ export function createNavigationConfig(task: TaskInDB) {
 }
 
 /**
- * Generate a neuroglancer URL for a specific coordinate
- * @param collection - BossDB collection name
- * @param experiment - BossDB experiment name
- * @param channel - BossDB channel name
- * @param coordinates - [x, y, z] coordinates to center on
- * @param resolution - Resolution level (default: 0)
- * @param zoomFactor - Zoom level (default: 8)
- * @returns The complete neuroglancer URL
+ * Unified builder for single-layer neuroglancer links (BossDB or CloudVolume).
  */
-export function generateNeuroglancerLinkForCoordinate(
-    collection: string,
-    experiment: string,
-    channel: string,
+type SourceSpec =
+    | { kind: 'bossdb'; collection: string; experiment: string; channel: string }
+    | { kind: 'cloudvolume'; uri: string };
+
+export function generateNeuroglancerLinkForSource(
+    source: SourceSpec,
     coordinates: [number, number, number],
     resolution: number = 0,
     zoomFactor: number = 8
 ): string {
+    const layerSource =
+        source.kind === 'bossdb'
+            ? `boss://https://api.bossdb.io/${source.collection}/${source.experiment}/${source.channel}`
+            : `precomputed://${source.uri}`;
+    const layerName = source.kind === 'bossdb' ? source.experiment : 'CloudVolume Data';
+
     const state: NeuroglancerState = {
         layers: [
             {
-                source: `boss://https://api.bossdb.io/${collection}/${experiment}/${channel}`,
+                source: layerSource,
                 type: 'image',
-                name: experiment
+                name: layerName
             }
         ],
         navigation: {
@@ -230,6 +239,27 @@ export function generateNeuroglancerLinkForCoordinate(
     };
 
     return `https://neuroglancer.bossdb.io/#!` + JSON.stringify(state);
+}
+
+
+/**
+ * Generate a neuroglancer link for any task type (BossDB or CloudVolume)
+ */
+export function generateNeuroglancerLinkForTask(
+    task: any,
+    coordinates: [number, number, number],
+    resolution?: number,
+    zoomFactor: number = 8
+): string {
+    const actualResolution = resolution ?? task.resolution;
+    return generateNeuroglancerLinkForSource(
+        task.data_source_type === 'cloudvolume'
+            ? { kind: 'cloudvolume', uri: task.cloudvolume_uri }
+            : { kind: 'bossdb', collection: task.collection, experiment: task.experiment, channel: task.channel },
+        coordinates,
+        actualResolution,
+        zoomFactor
+    );
 }
 
 /**
@@ -381,6 +411,69 @@ export function extractBossDBInfoFromUrl(url: string): { collection: string; exp
         return null;
     } catch (error) {
         console.error('Failed to extract BossDB info from URL:', error);
+        return null;
+    }
+}
+
+/**
+ * Extract CloudVolume (precomputed) information from a neuroglancer URL
+ * @param url - Neuroglancer URL
+ * @returns Object containing cloudvolume uri (without the 'precomputed://' prefix), or null if not found
+ */
+export function extractCloudVolumeInfoFromUrl(url: string): { uri: string } | null {
+    try {
+        const newState = parseNewNeuroglancerUrl(url);
+        if (!newState) return null;
+
+        // Helper to extract precomputed URI from a single layer
+        const getFromLayer = (layer: NeuroglancerLayer): string | null => {
+            if (typeof layer.source === 'string' && layer.source.startsWith('precomputed://')) {
+                return layer.source.replace('precomputed://', '');
+            }
+            if (
+                typeof layer.source === 'object' &&
+                layer.source?.url &&
+                typeof layer.source.url === 'string' &&
+                layer.source.url.startsWith('precomputed://')
+            ) {
+                return layer.source.url.replace('precomputed://', '');
+            }
+            return null;
+        };
+
+        // 1) If a selected layer exists and is an image with precomputed, prefer it
+        if (newState.selectedLayer?.layer) {
+            const selected = newState.layers.find(l => l.name === newState.selectedLayer!.layer);
+            if (selected && selected.type === 'image') {
+                const uri = getFromLayer(selected);
+                if (uri) return { uri };
+            }
+        }
+
+        // 2) Otherwise prefer the first image layer with precomputed
+        for (const layer of newState.layers) {
+            if (layer.type === 'image') {
+                const uri = getFromLayer(layer);
+                if (uri) return { uri };
+            }
+        }
+
+        // 3) If selected layer is not image but has precomputed, use it
+        if (newState.selectedLayer?.layer) {
+            const selected = newState.layers.find(l => l.name === newState.selectedLayer!.layer);
+            const uri = selected ? getFromLayer(selected) : null;
+            if (uri) return { uri };
+        }
+
+        // 4) Finally, return the first precomputed layer of any type
+        for (const layer of newState.layers) {
+            const uri = getFromLayer(layer);
+            if (uri) return { uri };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Failed to extract CloudVolume info from URL:', error);
         return null;
     }
 }
