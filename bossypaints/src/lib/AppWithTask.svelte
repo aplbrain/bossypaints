@@ -109,7 +109,7 @@
 
 <div class="w-full">
 	{#if task && annotationStore && nav}
-	<PaintApp
+		<PaintApp
 			{annotationStore}
 			{nav}
 			datasetURI={task.data_source_type === 'cloudvolume'
