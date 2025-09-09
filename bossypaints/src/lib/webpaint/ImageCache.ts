@@ -63,6 +63,10 @@ export class ImageCache {
     private bossRemote?: BossRemote;
     private datasetURI?: string;
     private p5Instance?: any;
+    private currentWindow: { min: number; max: number } = { min: 0, max: 255 };
+
+    // Cache of adjusted (windowed) filmstrip images per chunk identifier and hist window
+    private adjustedCache: Map<string, Map<string, { image: any; timestamp: number }>> = new Map();
 
     // Statistics
     private stats = {
@@ -101,6 +105,15 @@ export class ImageCache {
 
         this.storage = new BrowserStorage();
         this.loadFromPersistentStorage();
+    }
+
+    /**
+     * Update the desired histogram window for future fetches (CloudVolume only).
+     */
+    setHistogramWindow(min: number, max: number) {
+        const m = Math.max(0, Math.min(65535, Math.floor(min)));
+        const M = Math.max(m, Math.min(65535, Math.floor(max)));
+        this.currentWindow = { min: m, max: M };
     }
 
     /**
@@ -206,6 +219,8 @@ export class ImageCache {
         if (cached) {
             this.cache.delete(key);
             this.currentSize -= cached.size;
+            // Also clear any adjusted windowed variants
+            this.adjustedCache.delete(key);
 
             if (this.enablePersistence) {
                 this.saveToPersistentStorage();
@@ -222,6 +237,7 @@ export class ImageCache {
      */
     clear(): void {
         this.cache.clear();
+        this.adjustedCache.clear();
         this.currentSize = 0;
         this.stats.hits = 0;
         this.stats.misses = 0;
@@ -257,6 +273,8 @@ export class ImageCache {
             this.cache.delete(firstKey);
             this.currentSize -= chunk.size;
             this.stats.evictions++;
+            // Also clear adjusted variants for this chunk
+            this.adjustedCache.delete(firstKey);
         }
     }
 
@@ -517,6 +535,107 @@ export class ImageCache {
      */
     getCachedImage(identifier: ChunkIdentifier): any | null {
         return this.get(identifier);
+    }
+
+    /**
+     * Get a histogram-windowed version of a cached filmstrip image for a chunk.
+     * Uses a 256-entry LUT and caches results per (chunk, min, max) for fast reuse.
+     */
+    getAdjustedImageForWindow(
+        identifier: ChunkIdentifier,
+        baseImage: any,
+        histMin: number,
+        histMax: number
+    ): any {
+        try {
+            if (!baseImage || !this.p5Instance) return baseImage;
+
+            // Clamp to 8-bit domain since filmstrips are uint8
+            const min8 = Math.max(0, Math.min(255, Math.floor(histMin)));
+            const max8 = Math.max(min8, Math.min(255, Math.floor(histMax)));
+
+            const key = this.generateKey(identifier);
+            const windowKey = `${min8}-${max8}`;
+
+            let perChunk = this.adjustedCache.get(key);
+            if (!perChunk) {
+                perChunk = new Map();
+                this.adjustedCache.set(key, perChunk);
+            }
+
+            const cached = perChunk.get(windowKey);
+            if (cached) {
+                cached.timestamp = Date.now();
+                return cached.image;
+            }
+
+            // Build LUT
+            const lut = new Uint8ClampedArray(256);
+            const range = Math.max(1, max8 - min8);
+            for (let i = 0; i < 256; i++) {
+                let v = ((i - min8) * 255) / range;
+                if (v < 0) v = 0;
+                if (v > 255) v = 255;
+                lut[i] = v | 0;
+            }
+
+            // Draw to an offscreen canvas to access pixels quickly
+            const off = document.createElement('canvas');
+            off.width = baseImage.width;
+            off.height = baseImage.height;
+            const ctx = off.getContext('2d');
+            if (!ctx) return baseImage;
+            // p5.Image stores an HTMLCanvas on .canvas
+            ctx.drawImage(baseImage.canvas ?? baseImage, 0, 0);
+            const imgData = ctx.getImageData(0, 0, off.width, off.height);
+            const data = imgData.data;
+
+            // Apply LUT to grayscale image (assume R=G=B; leave A unchanged)
+            for (let i = 0; i < data.length; i += 4) {
+                const v = data[i];
+                const m = lut[v];
+                data[i] = m;
+                data[i + 1] = m;
+                data[i + 2] = m;
+                // alpha remains
+            }
+
+            // Create a p5.Image from the adjusted pixels
+            const out = this.p5Instance.createImage(off.width, off.height);
+            out.loadPixels();
+            // Ensure buffer sizes match
+            if (out.pixels && out.pixels.length === data.length) {
+                out.pixels.set(data);
+            } else {
+                // Fallback: put back to canvas and use as source for p5 loadImage (async)
+                ctx.putImageData(imgData, 0, 0);
+                const url = off.toDataURL('image/png');
+                const img = this.p5Instance.loadImage(url, () => URL.revokeObjectURL(url));
+                perChunk.set(windowKey, { image: img, timestamp: Date.now() });
+                // Evict older windows beyond a small limit per chunk
+                this.evictOldWindows(perChunk);
+                return img;
+            }
+            out.updatePixels();
+
+            perChunk.set(windowKey, { image: out, timestamp: Date.now() });
+            this.evictOldWindows(perChunk);
+            return out;
+        } catch (e) {
+            debugUtil.warn('ImageCache: windowing failed, using base image', e);
+            return baseImage;
+        }
+    }
+
+    private evictOldWindows(perChunk: Map<string, { image: any; timestamp: number }>, maxPerChunk: number = 4) {
+        if (perChunk.size <= maxPerChunk) return;
+        // Delete the oldest entries to keep memory in check
+        const entries = Array.from(perChunk.entries());
+        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        const toDelete = entries.length - maxPerChunk;
+        for (let i = 0; i < toDelete; i++) {
+            perChunk.delete(entries[i][0]);
+        }
     }
 
     /**
