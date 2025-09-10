@@ -15,6 +15,8 @@
 	import { Notyf } from 'notyf';
 	import 'notyf/notyf.min.css';
 	import PolygonAnnotation from '$lib/webpaint/PolygonAnnotation';
+	import { onMount, onDestroy } from 'svelte';
+
 	const notyf = new Notyf();
 
 	export let task: TaskInDB;
@@ -105,6 +107,21 @@
 	}
 
 	loadTask();
+
+	// Set up paint app body styles on mount and clean up on destroy
+	onMount(() => {
+		// Apply paint app specific styles
+		document.body.style.margin = '0';
+		document.body.style.padding = '0';
+		document.body.style.overflow = 'hidden';
+	});
+
+	onDestroy(() => {
+		// Restore normal body styles when leaving paint app
+		document.body.style.margin = '';
+		document.body.style.padding = '';
+		document.body.style.overflow = '';
+	});
 </script>
 
 <div class="w-full">
@@ -278,11 +295,3 @@
 		</div>
 	{/if}
 </div>
-
-<style>
-	:global(body) {
-		margin: 0;
-		padding: 0;
-		overflow: hidden;
-	}
-</style>

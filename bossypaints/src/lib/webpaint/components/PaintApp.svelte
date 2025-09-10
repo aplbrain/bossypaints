@@ -12,6 +12,7 @@ from BossDB and displays it on the canvas.
 -->
 <script lang="ts">
 	import p5 from 'p5';
+	import { onMount, onDestroy } from 'svelte';
 	import { keybindings, type MouseEventType } from '../keybindings';
 	import type { NavigationStore } from '../stores/NavigationStore.svelte';
 	import BossRemote from '../intern';
@@ -308,12 +309,11 @@ from BossDB and displays it on the canvas.
 		}, 500); // Save after 500ms of no navigation changes
 	}
 
-	// Create the canvas element and attach it to the DOM:
-	const canvas = document.createElement('canvas');
-	canvas.id = 'app';
-	document.body.appendChild(canvas);
+	// Container for the canvas - we'll mount it properly in Svelte
+	let canvasContainer: HTMLElement;
+
 	// Keep a reference for event target checks
-	let appCanvasEl: HTMLCanvasElement | null = canvas;
+	let appCanvasEl: HTMLCanvasElement | null = null;
 
 	// Keep a reference to the actual p5 canvas element
 	let p5CanvasEl: HTMLCanvasElement | null = null;
@@ -571,14 +571,14 @@ from BossDB and displays it on the canvas.
 	const sketch = (s: p5) => {
 		s.setup = () => {
 			// runs once
-			const appElement = document.getElementById('app');
-			if (appElement) {
-				s.createCanvas(window.innerWidth, window.innerHeight, appElement);
+			if (canvasContainer) {
+				s.createCanvas(window.innerWidth, window.innerHeight, canvasContainer);
 			} else {
 				s.createCanvas(window.innerWidth, window.innerHeight);
 			}
 			// Acquire canvas element from drawing context
 			p5CanvasEl = (s.drawingContext as CanvasRenderingContext2D).canvas as HTMLCanvasElement;
+			appCanvasEl = p5CanvasEl; // Set the reference for event handling
 			s.background(0, 0, 0);
 
 			// Initialize browser storage
@@ -877,17 +877,17 @@ from BossDB and displays it on the canvas.
 		};
 
 		s.mousePressed = (evt: any) => {
-			if (p5CanvasEl && evt.target !== appCanvasEl) return;
+			if (p5CanvasEl && evt.target !== p5CanvasEl) return;
 			return handleMouseEvent('mousePressed', evt);
 		};
 
 		s.mouseDragged = (evt: any) => {
-			if (p5CanvasEl && evt.target !== appCanvasEl) return;
+			if (p5CanvasEl && evt.target !== p5CanvasEl) return;
 			return handleMouseEvent('mouseDragged', evt);
 		};
 
 		s.mouseWheel = (evt: WheelEvent) => {
-			if (p5CanvasEl && (evt.target as any) !== appCanvasEl) return;
+			if (p5CanvasEl && (evt.target as any) !== p5CanvasEl) return;
 			return handleMouseEvent('mouseWheel', evt);
 		};
 
@@ -907,7 +907,7 @@ from BossDB and displays it on the canvas.
 				return false;
 			}
 
-			if (evt && p5CanvasEl && evt.target !== appCanvasEl) return;
+			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
 			return true;
 		};
 
@@ -977,55 +977,112 @@ from BossDB and displays it on the canvas.
 	export const app = new p5(sketch);
 	document.addEventListener('contextmenu', (event) => event.preventDefault());
 
-	// Prevent browser's default pinch zoom behavior
-	document.addEventListener('gesturestart', (e) => e.preventDefault());
-	document.addEventListener('gesturechange', (e) => e.preventDefault());
-	document.addEventListener('gestureend', (e) => e.preventDefault());
+	// Store references to event listeners for cleanup
+	let gestureStartListener: (e: Event) => void;
+	let gestureChangeListener: (e: Event) => void;
+	let gestureEndListener: (e: Event) => void;
+	let touchStartListener: (e: TouchEvent) => void;
+	let touchMoveListener: (e: TouchEvent) => void;
+	let touchEndListener: (e: TouchEvent) => void;
+	let wheelListener: (e: WheelEvent) => void;
+	let contextMenuListener: (e: Event) => void;
 
-	// Prevent default touch behaviors that might interfere with pinch zoom
-	document.addEventListener(
-		'touchstart',
-		(e) => {
+	// Initialize event listeners on mount
+	onMount(() => {
+		// Prevent browser's default pinch zoom behavior
+		gestureStartListener = (e) => e.preventDefault();
+		gestureChangeListener = (e) => e.preventDefault();
+		gestureEndListener = (e) => e.preventDefault();
+
+		// Prevent default touch behaviors that might interfere with pinch zoom
+		touchStartListener = (e) => {
 			if (e.touches.length > 1) {
 				e.preventDefault();
 			}
-		},
-		{ passive: false }
-	);
+		};
 
-	document.addEventListener(
-		'touchmove',
-		(e) => {
+		touchMoveListener = (e) => {
 			if (e.touches.length > 1) {
 				e.preventDefault();
 			}
-		},
-		{ passive: false }
-	);
+		};
 
-	document.addEventListener(
-		'touchend',
-		(e) => {
+		touchEndListener = (e) => {
 			// Allow single touch events but prevent multi-touch defaults
 			if (e.touches.length > 0) {
 				e.preventDefault();
 			}
-		},
-		{ passive: false }
-	);
+		};
 
-	// Prevent browser's default pinch zoom behavior on all wheel events with ctrlKey
-	// This ensures Mac trackpad pinch gestures are handled by our p5 mouseWheel handler
-	document.addEventListener(
-		'wheel',
-		(e) => {
+		// Prevent browser's default pinch zoom behavior on all wheel events with ctrlKey
+		wheelListener = (e) => {
 			if (e.ctrlKey) {
 				e.preventDefault();
 			}
-		},
-		{ passive: false }
-	);
+		};
+
+		contextMenuListener = (e) => e.preventDefault();
+
+		// Add all event listeners
+		document.addEventListener('gesturestart', gestureStartListener);
+		document.addEventListener('gesturechange', gestureChangeListener);
+		document.addEventListener('gestureend', gestureEndListener);
+		document.addEventListener('touchstart', touchStartListener, { passive: false });
+		document.addEventListener('touchmove', touchMoveListener, { passive: false });
+		document.addEventListener('touchend', touchEndListener, { passive: false });
+		document.addEventListener('wheel', wheelListener, { passive: false });
+		document.addEventListener('contextmenu', contextMenuListener);
+	});
+
+	// Clean up everything on destroy
+	onDestroy(() => {
+		// Clear any pending timers
+		if (navigationStateSaveTimer) {
+			clearTimeout(navigationStateSaveTimer);
+			navigationStateSaveTimer = null;
+		}
+
+		// Remove all event listeners
+		if (gestureStartListener) document.removeEventListener('gesturestart', gestureStartListener);
+		if (gestureChangeListener) document.removeEventListener('gesturechange', gestureChangeListener);
+		if (gestureEndListener) document.removeEventListener('gestureend', gestureEndListener);
+		if (touchStartListener) document.removeEventListener('touchstart', touchStartListener);
+		if (touchMoveListener) document.removeEventListener('touchmove', touchMoveListener);
+		if (touchEndListener) document.removeEventListener('touchend', touchEndListener);
+		if (wheelListener) document.removeEventListener('wheel', wheelListener);
+		if (contextMenuListener) document.removeEventListener('contextmenu', contextMenuListener);
+
+		// Clean up p5 instance
+		if (app) {
+			app.remove(); // This removes the canvas and cleans up p5 properly
+		}
+
+		// Clean up image cache if it exists
+		if (imageCache) {
+			// If ImageCache has a cleanup method, call it here
+			// imageCache.cleanup?.();
+		}
+
+		// Clean up browser storage timer
+		if (browserStorage) {
+			// Save final state before cleanup
+			try {
+				const navState: NavigationState = {
+					x: nav.x,
+					y: nav.y,
+					zoom: nav.zoom,
+					layer: nav.layer
+				};
+				browserStorage.saveNavigationState(navState, datasetURI);
+			} catch (e) {
+				// Ignore errors during cleanup
+			}
+		}
+	});
 </script>
+
+<!-- Canvas container -->
+<div bind:this={canvasContainer} class="paint-app-canvas"></div>
 
 <!-- Debug information overlay -->
 <!-- {#if debugEnabled} -->
@@ -1108,6 +1165,15 @@ from BossDB and displays it on the canvas.
 <Minimap {annotationStore} {nav} />
 
 <style>
+	.paint-app-canvas {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		z-index: 0;
+	}
+
 	.debug-overlay {
 		position: fixed;
 		top: 10px;

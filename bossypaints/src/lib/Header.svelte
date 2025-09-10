@@ -27,11 +27,11 @@
 <header class="bg-white shadow-sm border-b">
 	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 		<div class="flex justify-between items-center py-6">
-			<div class="flex items-center space-x-4">
+			<a href="/" class="flex items-center space-x-4 group">
 				<!-- Logo/Icon -->
 				{#if showLogo}
 					<div
-						class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center"
+						class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:from-blue-600 group-hover:to-purple-700 transition-all duration-200"
 					>
 						<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
@@ -44,12 +44,20 @@
 					</div>
 				{/if}
 				<div>
-					<h1 class="text-2xl font-bold text-gray-900">{title}</h1>
+					<h1
+						class="text-2xl font-bold text-gray-900 group-hover:text-gray-700 transition-colors duration-200"
+					>
+						{title}
+					</h1>
 					{#if computedSubtitle}
-						<p class="text-sm text-gray-600">{computedSubtitle}</p>
+						<p
+							class="text-sm text-gray-600 group-hover:text-gray-500 transition-colors duration-200"
+						>
+							{computedSubtitle}
+						</p>
 					{/if}
 				</div>
-			</div>
+			</a>
 
 			<!-- Header Actions -->
 			<div class="flex items-center space-x-4">
