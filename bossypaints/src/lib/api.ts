@@ -31,6 +31,17 @@ export type TaskInDB = Task & {
     id: TaskID;
 }
 
+export type ExportFile = {
+    filename: string;
+    size: number;
+    modified: number;
+}
+
+export type TaskExports = {
+    meshes: ExportFile[];
+    segments: ExportFile[];
+}
+
 class API {
     async get(url: string) {
         url = url.startsWith('/') ? url : `/${url}`;
@@ -115,6 +126,30 @@ class API {
 
     async getCoordFrame(collection: string, experiment: string): Promise<{ x_start: number, x_stop: number, y_start: number, y_stop: number, z_start: number, z_stop: number }> {
         return this.get(`/api/bossdb/coord_frame/${collection}/${experiment}`);
+    }
+
+    async getTaskExports(taskId: TaskID): Promise<{ exports: TaskExports }> {
+        return this.get(`/api/tasks/${taskId}/exports`);
+    }
+
+    getTaskExportDownloadUrl(taskId: TaskID, filename: string): string {
+        const headers: Record<string, string> = {};
+        if (localStorage.getItem('apiToken')) {
+            headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
+        }
+        const params = new URLSearchParams();
+        if (localStorage.getItem('apiToken')) {
+            params.append('token', localStorage.getItem('apiToken') || '');
+        }
+        return `${baseUrl}/api/tasks/${taskId}/exports/download/${filename}?${params.toString()}`;
+    }
+
+    getTaskExportDownloadAllUrl(taskId: TaskID): string {
+        const params = new URLSearchParams();
+        if (localStorage.getItem('apiToken')) {
+            params.append('token', localStorage.getItem('apiToken') || '');
+        }
+        return `${baseUrl}/api/tasks/${taskId}/exports/download-all?${params.toString()}`;
     }
 };
 

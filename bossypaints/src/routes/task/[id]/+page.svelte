@@ -1,11 +1,13 @@
 <script lang="ts">
 	import Header from '$lib/Header.svelte';
 	import { generateNeuroglancerLink } from '$lib/neuroglancer';
-	import type { TaskInDB } from '$lib/api';
+	import API from '$lib/api';
+	import type { TaskInDB, TaskExports } from '$lib/api';
 
 	let { data } = $props();
 
 	const task: TaskInDB = data.task;
+	const exports: TaskExports = data.exports || { meshes: [], segments: [] };
 
 	interface User {
 		username: string;
@@ -67,6 +69,29 @@
 	}
 
 	const volume = $derived(calculateVolume());
+
+	function formatFileSize(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+	}
+
+	function formatDate(timestamp: number): string {
+		return new Date(timestamp * 1000).toLocaleDateString();
+	}
+
+	function getDownloadUrl(filename: string): string {
+		return API.getTaskExportDownloadUrl(task.id, filename);
+	}
+
+	function getDownloadAllUrl(): string {
+		return API.getTaskExportDownloadAllUrl(task.id);
+	}
+
+	const totalExports = $derived((exports?.meshes?.length || 0) + (exports?.segments?.length || 0));
+	const hasExports = $derived(totalExports > 0);
 </script>
 
 <svelte:head>
@@ -170,6 +195,302 @@
 					</a>
 				</div>
 			</div>
+		</div>
+
+		<!-- Exports Section -->
+		<div class="bg-white rounded-2xl shadow-sm p-8 border border-gray-200 mb-8">
+			<div class="flex items-center justify-between mb-6">
+				<div class="flex items-center">
+					<div class="w-8 h-8 bg-cyan-100 rounded-lg flex items-center justify-center mr-3">
+						<svg
+							class="w-4 h-4 text-cyan-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+							></path>
+						</svg>
+					</div>
+					<div>
+						<h2 class="text-xl font-semibold text-gray-900">Available Exports</h2>
+						<p class="text-sm text-gray-600">
+							{#if hasExports}
+								{totalExports} file{totalExports === 1 ? '' : 's'} available for download
+							{:else}
+								No exports available yet
+							{/if}
+						</p>
+					</div>
+				</div>
+				{#if hasExports}
+					<a
+						href={getDownloadAllUrl()}
+						download
+						class="inline-flex items-center px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
+					>
+						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+							></path>
+						</svg>
+						Download All
+					</a>
+				{/if}
+			</div>
+
+			{#if hasExports}
+				<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+					<!-- Meshes -->
+					{#if exports?.meshes && exports.meshes.length > 0}
+						<div class="bg-gray-50 rounded-xl p-6">
+							<div class="flex items-center mb-4">
+								<div class="w-6 h-6 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+									<svg
+										class="w-3 h-3 text-purple-600"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+										></path>
+									</svg>
+								</div>
+								<h3 class="text-lg font-medium text-gray-900">
+									3D Meshes ({exports?.meshes?.length || 0})
+								</h3>
+							</div>
+							<div class="space-y-2 max-h-60 overflow-y-auto">
+								{#each exports.meshes as mesh}
+									<div
+										class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-purple-200 transition-colors duration-200"
+									>
+										<div class="flex items-center min-w-0 flex-1">
+											<svg
+												class="w-4 h-4 text-purple-600 mr-2 flex-shrink-0"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zM21 5a2 2 0 00-2-2h-4a2 2 0 00-2 2v6a2 2 0 002 2h4a2 2 0 002-2V5z"
+												></path>
+											</svg>
+											<div class="min-w-0 flex-1">
+												<p class="text-sm font-medium text-gray-900 truncate">
+													{mesh.filename}
+												</p>
+												<p class="text-xs text-gray-500">
+													{formatFileSize(mesh.size)} • {formatDate(mesh.modified)}
+												</p>
+											</div>
+										</div>
+										<a
+											href={getDownloadUrl(mesh.filename)}
+											download
+											class="ml-3 inline-flex items-center px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-medium rounded transition-colors duration-200"
+										>
+											<svg
+												class="w-3 h-3 mr-1"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+												></path>
+											</svg>
+											Download
+										</a>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Segmentation Channels -->
+					{#if exports?.segments && exports.segments.length > 0}
+						<div class="bg-gray-50 rounded-xl p-6">
+							<div class="flex items-center mb-4">
+								<div class="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+									<svg
+										class="w-3 h-3 text-green-600"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+										></path>
+									</svg>
+								</div>
+								<h3 class="text-lg font-medium text-gray-900">
+									Segmentation Slices ({exports?.segments?.length || 0})
+								</h3>
+							</div>
+							<div class="space-y-2 max-h-60 overflow-y-auto">
+								{#each exports.segments as segment}
+									<div
+										class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-green-200 transition-colors duration-200"
+									>
+										<div class="flex items-center min-w-0 flex-1">
+											<svg
+												class="w-4 h-4 text-green-600 mr-2 flex-shrink-0"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+												></path>
+											</svg>
+											<div class="min-w-0 flex-1">
+												<p class="text-sm font-medium text-gray-900 truncate">
+													{segment.filename}
+												</p>
+												<p class="text-xs text-gray-500">
+													{formatFileSize(segment.size)} • {formatDate(segment.modified)}
+												</p>
+											</div>
+										</div>
+										<a
+											href={getDownloadUrl(segment.filename)}
+											download
+											class="ml-3 inline-flex items-center px-2 py-1 bg-green-100 hover:bg-green-200 text-green-800 text-xs font-medium rounded transition-colors duration-200"
+										>
+											<svg
+												class="w-3 h-3 mr-1"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+												></path>
+											</svg>
+											Download
+										</a>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Show placeholder if only one type exists -->
+					{#if (!exports?.meshes || exports.meshes.length === 0) && exports?.segments && exports.segments.length > 0}
+						<div class="bg-gray-50 rounded-xl p-6 flex items-center justify-center">
+							<div class="text-center">
+								<div
+									class="w-12 h-12 bg-gray-200 rounded-full mx-auto mb-3 flex items-center justify-center"
+								>
+									<svg
+										class="w-6 h-6 text-gray-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zM21 5a2 2 0 00-2-2h-4a2 2 0 00-2 2v6a2 2 0 002 2h4a2 2 0 002-2V5z"
+										></path>
+									</svg>
+								</div>
+								<p class="text-sm text-gray-500">No 3D meshes available</p>
+							</div>
+						</div>
+					{:else if (!exports?.segments || exports.segments.length === 0) && exports?.meshes && exports.meshes.length > 0}
+						<div class="bg-gray-50 rounded-xl p-6 flex items-center justify-center">
+							<div class="text-center">
+								<div
+									class="w-12 h-12 bg-gray-200 rounded-full mx-auto mb-3 flex items-center justify-center"
+								>
+									<svg
+										class="w-6 h-6 text-gray-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+										></path>
+									</svg>
+								</div>
+								<p class="text-sm text-gray-500">No segmentation channels available</p>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<div class="text-center py-12">
+					<div
+						class="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center"
+					>
+						<svg
+							class="w-8 h-8 text-gray-400"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+							></path>
+						</svg>
+					</div>
+					<h3 class="text-lg font-medium text-gray-900 mb-2">No Exports Available</h3>
+					<p class="text-gray-600 mb-6 max-w-md mx-auto">
+						Complete an annotation and save it to generate downloadable exports including 3D meshes
+						and segmentation channels.
+					</p>
+					<a
+						href="/app/{task.id}"
+						class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200"
+					>
+						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 10a9 9 0 11-18 0 9 9 0 0118 0z"
+							></path>
+						</svg>
+						Start Annotating
+					</a>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Task Details Grid -->

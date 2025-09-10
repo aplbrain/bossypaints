@@ -4,8 +4,12 @@ import fastapi
 import httpx
 import imageio.v2 as imageio
 from fastapi import FastAPI, Request, Response, APIRouter, BackgroundTasks, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 import io
+import os
+import zipfile
+import tempfile
+from pathlib import Path
 import numpy as np
 from cloudvolume import CloudVolume
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,8 +44,18 @@ api_router = APIRouter()
 
 
 async def get_username_from_request(request: Request) -> str:
-    """Extract username from BossDB token in request headers."""
-    token = request.headers.get("Authorization", "").split(" ")[1] if request.headers.get("Authorization") else None
+    """Extract username from BossDB token in request headers or query params."""
+    token = None
+
+    # Try to get token from Authorization header first
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Token "):
+        token = auth_header.split(" ")[1]
+
+    # If no token in header, try query parameter (for file downloads)
+    if not token:
+        token = request.query_params.get("token")
+
     if not token:
         raise HTTPException(status_code=401, detail="Authorization token required")
 
@@ -538,14 +552,129 @@ async def get_unassigned_tasks(request: Request):
     return {"tasks": unassigned_tasks}
 
 
-app.include_router(api_router, prefix="/api")
+# ----------------------------
+# Export endpoints
+# ----------------------------
+
+EXPORTS_DIR = Path("exports")
+
+@api_router.get("/tasks/{task_id}/exports")
+async def list_task_exports(request: Request, task_id: TaskID):
+    """List all available exports for a task."""
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail=f"Task not found or not assigned to {username}")
+
+    task_export_dir = EXPORTS_DIR / task_id
+    if not task_export_dir.exists():
+        return {"exports": {"meshes": [], "segments": []}}
+
+    exports = {"meshes": [], "segments": []}
+
+    try:
+        for file_path in task_export_dir.iterdir():
+            if file_path.is_file():
+                file_info = {
+                    "filename": file_path.name,
+                    "size": file_path.stat().st_size,
+                    "modified": file_path.stat().st_mtime
+                }
+
+                if file_path.suffix.lower() == '.obj':
+                    exports["meshes"].append(file_info)
+                elif file_path.suffix.lower() in ['.tif', '.tiff']:
+                    exports["segments"].append(file_info)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing exports: {str(e)}")
+
+    return {"exports": exports}
+
+
+@api_router.get("/tasks/{task_id}/exports/download/{filename}")
+async def download_export_file(request: Request, task_id: TaskID, filename: str):
+    """Download a specific export file."""
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+
+    task_export_dir = EXPORTS_DIR / task_id
+    file_path = task_export_dir / filename
+
+    # Security check: ensure file is within the task export directory
+    try:
+        file_path.resolve().relative_to(task_export_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Export file not found")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type='application/octet-stream'
+    )
+
+
+@api_router.get("/tasks/{task_id}/exports/download-all")
+async def download_all_exports(request: Request, task_id: TaskID):
+    """Download all exports for a task as a ZIP file."""
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+
+    task_export_dir = EXPORTS_DIR / task_id
+    if not task_export_dir.exists():
+        raise HTTPException(status_code=404, detail="No exports found for this task")
+
+    # Create a temporary ZIP file
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
+        zip_path = tmp_file.name
+
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Add all files in the export directory to the ZIP
+            for file_path in task_export_dir.iterdir():
+                if file_path.is_file():
+                    zip_file.write(file_path, file_path.name)
+
+        # Check if ZIP file has any content
+        if os.path.getsize(zip_path) == 0:
+            os.unlink(zip_path)
+            raise HTTPException(status_code=404, detail="No export files found")
+
+        # Return the ZIP file
+        task_id_short = task_id.split('-')[0]  # Use short task ID for filename
+        zip_filename = f"task_{task_id_short}_exports.zip"
+
+        return FileResponse(
+            path=zip_path,
+            filename=zip_filename,
+            media_type='application/zip',
+            background=lambda: os.unlink(zip_path)  # Clean up temp file after response
+        )
+
+    except Exception as e:
+        # Clean up temp file if there was an error
+        if os.path.exists(zip_path):
+            os.unlink(zip_path)
+        raise HTTPException(status_code=500, detail=f"Error creating ZIP file: {str(e)}")
 
 
 # ----------------------------
 # CloudVolume filmstrip endpoint
 # ----------------------------
 
-@app.get("/api/filmstrip/cloudvolume")
+@api_router.get("/filmstrip/cloudvolume")
 async def filmstrip_cloudvolume(
     uri: str,
     res: int,
@@ -613,3 +742,5 @@ async def filmstrip_cloudvolume(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"CloudVolume filmstrip error: {e}")
+
+app.include_router(api_router, prefix="/api")
