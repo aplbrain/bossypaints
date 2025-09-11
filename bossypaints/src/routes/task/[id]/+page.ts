@@ -1,7 +1,7 @@
 // Don't render this route on the server:
 export const ssr = false;
 
-import API, { baseUrl } from '$lib/api';
+import API from '$lib/api';
 import type { TaskExports } from '$lib/api';
 
 import { error } from '@sveltejs/kit';

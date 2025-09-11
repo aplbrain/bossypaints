@@ -1,7 +1,14 @@
 import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 
-// const baseUrl = 'http://localhost:8000';
-const baseUrl = "https://api.paint.labs.bossdb.org";
+// Determine API base URL in this order:
+// 1) Vite-provided env var VITE_BOSSYPAINTS_API_URL (set at build time/runtime by Vite)
+// 2) a runtime override on window.__BOSSYPAINTS_API_URL (useful for static builds served with dynamic env)
+// 3) fallback to localhost for local dev
+const baseUrl: string =
+    // @ts-ignore - import.meta.env typing varies by environment
+    (import.meta.env && (import.meta.env.VITE_BOSSYPAINTS_API_URL as string)) ||
+    (typeof window !== 'undefined' && (window as any).__BOSSYPAINTS_API_URL) ||
+    'http://localhost:8000';
 
 export { baseUrl };
 

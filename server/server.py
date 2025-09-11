@@ -24,6 +24,9 @@ from bossypaints.checkpoints import Checkpoint, SQLiteCheckpointStore
 # Load environment variables from .env file
 load_dotenv()
 
+# Public base URL for generated links (can be set from compose as BOSSYPAINTS_API_URL)
+PUBLIC_BASE_URL = os.getenv('BOSSYPAINTS_API_URL')
+
 app = fastapi.FastAPI()
 
 
@@ -680,8 +683,13 @@ async def list_task_exports(request: Request, task_id: TaskID):
                                 pass
 
                     # Build a served HTTP URI so Neuroglancer can access the precomputed dataset
-                    # Example: http://<host>/exports/<task_id>/<cv_name>
-                    base = str(request.base_url).rstrip('/')
+                    # Prefer an explicit PUBLIC_BASE_URL if set (from compose env). Otherwise
+                    # fall back to request.base_url.
+                    if PUBLIC_BASE_URL:
+                        base = PUBLIC_BASE_URL.rstrip('/')
+                    else:
+                        base = str(request.base_url).rstrip('/')
+
                     exported_path = f"/exports/{task_id}/{file_path.name}"
                     served_uri = f"{base}{exported_path}"
 
