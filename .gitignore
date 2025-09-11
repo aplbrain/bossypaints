@@ -1,5 +1,6 @@
-server/exports/
 .DS_Store
+server/exports/
 server/tasks.json
 server/checkpoints.json
-server/tasks.db
+server/db/checkpoints.db
+server/db/tasks.db

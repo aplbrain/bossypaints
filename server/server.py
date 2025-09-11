@@ -40,9 +40,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-task_store = SQLiteTaskQueueStore("tasks.db")
+# Use a service-local `db/` directory for persistence so the backend and
+# its mounted host directory align. The directory lives inside `server/`.
+DB_DIR = Path(__file__).resolve().parent / "db"
+DB_DIR.mkdir(parents=True, exist_ok=True)
 
-checkpoint_store = SQLiteCheckpointStore("checkpoints.db")
+# Initialize stores against files inside server/db/
+task_store = SQLiteTaskQueueStore(str(DB_DIR / "tasks.db"))
+
+checkpoint_store = SQLiteCheckpointStore(str(DB_DIR / "checkpoints.db"))
 
 api_router = APIRouter()
 
