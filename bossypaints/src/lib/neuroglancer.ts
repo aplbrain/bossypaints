@@ -89,6 +89,35 @@ export function generateNeuroglancerLink(task: TaskInDB): string {
 }
 
 /**
+ * Generate neuroglancer URL for task with an additional CloudVolume segmentation layer.
+ * @param task - task metadata
+ * @param segUri - CloudVolume URI for the segmentation export (e.g., file://... or s3://...)
+ */
+export function generateNeuroglancerLinkWithSegmentation(task: TaskInDB, segUri: string): string {
+    const baseState: any = createNeuroglancerState(task) as any;
+
+    // Create segmentation layer
+    // Normalize segUri: if it already starts with precomputed:// keep it, otherwise
+    // wrap the raw URI with precomputed:// so neuroglancer understands it.
+    let normalized = segUri;
+    if (!/^precomputed:\/\//.test(segUri)) {
+        normalized = `precomputed://${segUri}`;
+    }
+
+    const segLayer: NeuroglancerLayer = {
+        source: normalized,
+        type: 'segmentation',
+        name: 'Export Segmentation',
+        opacity: 0.6,
+        blend: 'add'
+    };
+
+    // Append segmentation as a top layer
+    baseState.layers = baseState.layers.concat([segLayer]);
+    return `https://neuroglancer.bossdb.io/#!` + JSON.stringify(baseState);
+}
+
+/**
  * Create a neuroglancer state object from a task
  * @param task - The task object containing volume information
  * @returns A complete neuroglancer state configuration

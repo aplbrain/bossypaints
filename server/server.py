@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 from cloudvolume import CloudVolume
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, validator
 from dotenv import load_dotenv
 
@@ -624,7 +625,11 @@ async def get_unassigned_tasks(request: Request):
 # Export endpoints
 # ----------------------------
 
-EXPORTS_DIR = Path("exports")
+EXPORTS_DIR = Path(__file__).resolve().parent / "exports"
+
+# Serve the exports directory over HTTP so CloudVolume precomputed folders can be
+# referenced by Neuroglancer as an HTTP URL (e.g. http://host/exports/<task_id>/<cv_name>)
+app.mount("/exports", StaticFiles(directory=str(EXPORTS_DIR)), name="exports")
 
 @api_router.get("/tasks/{task_id}/exports")
 async def list_task_exports(request: Request, task_id: TaskID):
@@ -638,9 +643,9 @@ async def list_task_exports(request: Request, task_id: TaskID):
 
     task_export_dir = EXPORTS_DIR / task_id
     if not task_export_dir.exists():
-        return {"exports": {"meshes": [], "segments": []}}
+        return {"exports": {"meshes": [], "segments": [], "cloudvolumes": []}}
 
-    exports = {"meshes": [], "segments": []}
+    exports = {"meshes": [], "segments": [], "cloudvolumes": []}
 
     try:
         for file_path in task_export_dir.iterdir():
@@ -655,6 +660,34 @@ async def list_task_exports(request: Request, task_id: TaskID):
                     exports["meshes"].append(file_info)
                 elif file_path.suffix.lower() in ['.tif', '.tiff']:
                     exports["segments"].append(file_info)
+            elif file_path.is_dir():
+                # Treat directories in the export folder as potential CloudVolume exports
+                # If the directory contains an 'info' file it's likely a precomputed CloudVolume
+                info_file = file_path / 'info'
+                if info_file.exists():
+                    # Compute directory size (sum of file sizes)
+                    total_size = 0
+                    for root, dirs, files in os.walk(file_path):
+                        for f in files:
+                            try:
+                                fp = os.path.join(root, f)
+                                total_size += os.path.getsize(fp)
+                            except Exception:
+                                pass
+
+                    # Build a served HTTP URI so Neuroglancer can access the precomputed dataset
+                    # Example: http://<host>/exports/<task_id>/<cv_name>
+                    base = str(request.base_url).rstrip('/')
+                    exported_path = f"/exports/{task_id}/{file_path.name}"
+                    served_uri = f"{base}{exported_path}"
+
+                    dir_info = {
+                        "filename": file_path.name,
+                        "size": total_size,
+                        "modified": file_path.stat().st_mtime,
+                        "uri": served_uri
+                    }
+                    exports["cloudvolumes"].append(dir_info)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing exports: {str(e)}")
 
@@ -681,6 +714,32 @@ async def download_export_file(request: Request, task_id: TaskID, filename: str)
         raise HTTPException(status_code=403, detail="Access denied")
 
     if not file_path.exists() or not file_path.is_file():
+        # If not a file, check if it's a directory (CloudVolume export)
+        dir_path = task_export_dir / filename
+        if dir_path.exists() and dir_path.is_dir():
+            # Create a temporary zip of the directory
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
+                zip_path = tmp_file.name
+
+            try:
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for root, dirs, files in os.walk(dir_path):
+                        for f in files:
+                            full = os.path.join(root, f)
+                            arcname = os.path.relpath(full, start=dir_path)
+                            zip_file.write(full, os.path.join(filename, arcname))
+
+                return FileResponse(
+                    path=zip_path,
+                    filename=f"{filename}.zip",
+                    media_type='application/zip',
+                    background=lambda: os.unlink(zip_path)
+                )
+            except Exception as e:
+                if os.path.exists(zip_path):
+                    os.unlink(zip_path)
+                raise HTTPException(status_code=500, detail=f"Error creating zip for directory: {e}")
+
         raise HTTPException(status_code=404, detail="Export file not found")
 
     return FileResponse(
@@ -714,6 +773,13 @@ async def download_all_exports(request: Request, task_id: TaskID):
             for file_path in task_export_dir.iterdir():
                 if file_path.is_file():
                     zip_file.write(file_path, file_path.name)
+                elif file_path.is_dir():
+                    # Add directory contents preserving folder name
+                    for root, dirs, files in os.walk(file_path):
+                        for f in files:
+                            full = os.path.join(root, f)
+                            arcname = os.path.relpath(full, start=task_export_dir)
+                            zip_file.write(full, arcname)
 
         # Check if ZIP file has any content
         if os.path.getsize(zip_path) == 0:

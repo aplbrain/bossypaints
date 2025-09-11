@@ -1,7 +1,7 @@
 import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 
-// const baseUrl = 'http://localhost:8000';
-const baseUrl = "https://api.paint.labs.bossdb.org";
+const baseUrl = 'http://localhost:8000';
+// const baseUrl = "https://api.paint.labs.bossdb.org";
 
 export { baseUrl };
 
@@ -44,6 +44,7 @@ export type ExportFile = {
 export type TaskExports = {
     meshes: ExportFile[];
     segments: ExportFile[];
+    cloudvolumes?: ExportFile[];
 }
 
 class API {
