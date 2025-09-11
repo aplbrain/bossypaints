@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 from bossypaints.background import render_and_mesh
 from bossypaints.tasks import SQLiteTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, SQLiteCheckpointStore
-from bossypaints.staticfiles import GzipFallbackStaticFiles
 
 # Load environment variables from .env file
 load_dotenv()
@@ -635,14 +634,35 @@ async def get_unassigned_tasks(request: Request):
 # ----------------------------
 
 EXPORTS_DIR = Path(__file__).resolve().parent / "exports"
-
-# Ensure the exports directory exists (when running in containers the working
-# directory can differ; creating it avoids RuntimeError: Directory '/app/exports' does not exist)
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Keep the same mount path so other code doesn’t change:
-app.mount("/exports", GzipFallbackStaticFiles(directory=str(EXPORTS_DIR)), name="exports")
-api_router.mount("/exports", GzipFallbackStaticFiles(directory=str(EXPORTS_DIR)), name="exports")
+# 1) Bulletproof explicit route with .gz fallback
+@app.get("/exports/{path:path}")
+async def serve_static(path: str):
+    full = EXPORTS_DIR / path
+    if full.is_file():
+        return FileResponse(
+            full,
+            media_type="application/octet-stream",
+            headers={
+                "Cache-Control": "public, max-age=31536000",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Expose-Headers": "Content-Length, Content-Encoding, Accept-Ranges, ETag",
+            },
+        )
+    gz = Path(str(full) + ".gz")
+    if gz.is_file():
+        return FileResponse(
+            gz,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Encoding": "gzip",
+                "Cache-Control": "public, max-age=31536000",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Expose-Headers": "Content-Length, Content-Encoding, Accept-Ranges, ETag",
+            },
+        )
+    raise HTTPException(status_code=404, detail="Chunk not found")
 
 @api_router.get("/tasks/{task_id}/exports")
 async def list_task_exports(request: Request, task_id: TaskID):
