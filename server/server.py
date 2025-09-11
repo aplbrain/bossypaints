@@ -642,6 +642,7 @@ EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Keep the same mount path so other code doesn’t change:
 app.mount("/exports", GzipFallbackStaticFiles(directory=str(EXPORTS_DIR)), name="exports")
+api_router.mount("/exports", GzipFallbackStaticFiles(directory=str(EXPORTS_DIR)), name="exports")
 
 @api_router.get("/tasks/{task_id}/exports")
 async def list_task_exports(request: Request, task_id: TaskID):
