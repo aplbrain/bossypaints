@@ -3,13 +3,8 @@
 	import type { TaskInDB } from '$lib/api';
 	import Header from '$lib/Header.svelte';
 	import { generateNeuroglancerLink } from '$lib/neuroglancer';
-	import {
-		ArchiveIcon,
-		EyeIcon,
-		ExternalLinkIcon,
-		CheckIcon,
-		SpinnerIcon
-	} from '$lib/icons';
+	import { getTaskDisplayName, formatTaskBounds, formatCloudVolumePath } from '$lib/utils/task';
+	import { ArchiveIcon, EyeIcon, ExternalLinkIcon, CheckIcon, SpinnerIcon } from '$lib/icons';
 
 	interface User {
 		username: string;
@@ -32,14 +27,16 @@
 			: undefined;
 	}
 
-	API.getArchivedTasks().then((response) => {
-		tasks = response.tasks;
-		loading = false;
-	}).catch((error) => {
-		console.error('Failed to load archived tasks:', error);
-		tasks = [];
-		loading = false;
-	});
+	API.getArchivedTasks()
+		.then((response) => {
+			tasks = response.tasks;
+			loading = false;
+		})
+		.catch((error) => {
+			console.error('Failed to load archived tasks:', error);
+			tasks = [];
+			loading = false;
+		});
 
 	function nglLink(task: TaskInDB) {
 		return generateNeuroglancerLink(task);
@@ -62,43 +59,6 @@
 				loading = false;
 			}
 		}
-	}
-
-	function formatTaskId(id: string) {
-		return id.split('-')[0];
-	}
-
-	function formatBounds(task: TaskInDB) {
-		return `${task.x_min}–${task.x_max} × ${task.y_min}–${task.y_max} × ${task.z_min}–${task.z_max}`;
-	}
-
-	// For CloudVolume URIs, show path without protocol and bucket/domain
-	function cvDisplayPath(uri?: string): string {
-		if (!uri) return '';
-		let u = uri.trim();
-		// Strip precomputed:// wrapper if present
-		if (u.startsWith('precomputed://')) {
-			u = u.slice('precomputed://'.length);
-		}
-		// Detect and strip scheme (e.g., gs://, s3://, file://, https://)
-		const schemeMatch = u.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//);
-		let scheme = '';
-		if (schemeMatch) {
-			scheme = (schemeMatch[1] || '').toLowerCase();
-			u = u.slice(schemeMatch[0].length);
-		}
-		// Normalize leading slashes
-		u = u.replace(/^\/+/, '');
-		// For gs/s3/https, drop the first segment (bucket or host). For file, keep full path.
-		const parts = u.split('/');
-		if (scheme === 'gs' || scheme === 's3' || scheme.startsWith('http')) {
-			return parts.length > 1 ? parts.slice(1).join('/') : '';
-		} else if (scheme === 'file') {
-			// Preserve absolute path semantics
-			return '/' + parts.join('/');
-		}
-		// Fallback: if no scheme was detected, attempt to drop first segment as bucket-like
-		return parts.length > 1 ? parts.slice(1).join('/') : u;
 	}
 </script>
 
@@ -163,9 +123,7 @@
 						<ArchiveIcon className="w-8 h-8 text-white" />
 					</div>
 					<h2 class="text-3xl font-bold text-gray-900 mb-4">Archived Tasks</h2>
-					<p class="text-lg text-gray-600 mb-8">
-						View and manage your archived annotation tasks.
-					</p>
+					<p class="text-lg text-gray-600 mb-8">View and manage your archived annotation tasks.</p>
 					<div class="bg-orange-50 rounded-lg p-6 mb-6">
 						<h3 class="text-lg font-semibold text-orange-900 mb-2">Get Started</h3>
 						<p class="text-orange-800 mb-4">
@@ -188,7 +146,8 @@
 						</a>
 					</div>
 					<button
-						on:click={() => (showSettings = true)}
+						onclick={() => (showSettings = true)}
+						aria-label="Open API token settings"
 						class="inline-flex items-center px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
 					>
 						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -345,8 +304,11 @@
 													</div>
 													<div class="ml-3">
 														<div class="text-sm font-medium text-gray-900">
-															<a href="/task/{task.id}" class="text-orange-600 hover:text-orange-800">
-																{formatTaskId(task.id)}
+															<a
+																href="/task/{task.id}"
+																class="text-orange-600 hover:text-orange-800"
+															>
+																{getTaskDisplayName(task)}
 															</a>
 														</div>
 														<div class="text-xs text-gray-500">
@@ -363,7 +325,7 @@
 															>CV</span
 														>
 														<div class="text-sm text-gray-900">
-															{cvDisplayPath(task.cloudvolume_uri) || task.cloudvolume_uri}
+															{formatCloudVolumePath(task.cloudvolume_uri) || task.cloudvolume_uri}
 														</div>
 													</div>
 													<div
@@ -446,7 +408,7 @@
 				<!-- Backdrop -->
 				<button
 					class="absolute inset-0 bg-black bg-opacity-50 transition-opacity w-full h-full cursor-default"
-					on:click={() => (showSettings = false)}
+					onclick={() => (showSettings = false)}
 					aria-label="Close settings"
 				></button>
 
@@ -458,7 +420,7 @@
 							<div class="flex items-center justify-between">
 								<h3 class="text-lg font-semibold text-gray-900">Settings</h3>
 								<button
-									on:click={() => (showSettings = false)}
+									onclick={() => (showSettings = false)}
 									class="text-gray-400 hover:text-gray-600 transition-colors duration-200"
 									aria-label="Close settings"
 								>
@@ -489,7 +451,8 @@
 										class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
 									/>
 									<button
-										on:click={saveApiToken}
+										onclick={saveApiToken}
+										aria-label="Save API token"
 										class="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors duration-200 text-sm"
 									>
 										Save Token

@@ -876,45 +876,69 @@ from BossDB and displays it on the canvas.
 			}
 		};
 
+		// Helper function to check if an event should be ignored by p5
+		function shouldIgnoreEvent(evt: any): boolean {
+			if (!evt || !evt.target) return false;
+
+			const target = evt.target as HTMLElement;
+
+			// Ignore events on interactive form elements that should handle their own mouse events
+			const tagName = target.tagName.toLowerCase();
+			if (['input', 'textarea', 'select', 'button', 'a'].includes(tagName)) {
+				return true;
+			}
+
+			// Ignore events on elements that are inside interactive components
+			if (target.closest('input, textarea, select, button, a')) {
+				return true;
+			}
+
+			// For input elements specifically, check if they're range sliders or number inputs
+			if (tagName === 'input') {
+				const inputType = (target as HTMLInputElement).type;
+				if (['range', 'number', 'text', 'email', 'password'].includes(inputType)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		s.mousePressed = (evt: any) => {
-			if (p5CanvasEl && evt.target !== p5CanvasEl) return;
+			if (shouldIgnoreEvent(evt)) {
+				return true; // Let other elements handle their events
+			}
 			return handleMouseEvent('mousePressed', evt);
 		};
 
 		s.mouseDragged = (evt: any) => {
-			if (p5CanvasEl && evt.target !== p5CanvasEl) return;
+			if (shouldIgnoreEvent(evt)) {
+				return true; // Let other elements handle their events
+			}
 			return handleMouseEvent('mouseDragged', evt);
 		};
 
 		s.mouseWheel = (evt: WheelEvent) => {
-			if (p5CanvasEl && (evt.target as any) !== p5CanvasEl) return;
+			if (shouldIgnoreEvent(evt)) {
+				return true; // Let other elements handle their events
+			}
 			return handleMouseEvent('mouseWheel', evt);
 		};
 
 		// Touch event handlers for pinch zoom
 		s.touchStarted = (evt: any) => {
-			// console.log('touchStarted called, touches:', s.touches.length);
-			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
-
 			if (s.touches.length === 2) {
-				// console.log('Starting pinch gesture');
 				// Start pinch gesture
 				isPinching = true;
 				lastTouchDistance = getTouchDistance(s);
 				pinchCenter = getTouchCenter(s);
-				// console.log('Initial touch distance:', lastTouchDistance);
 				if (evt && evt.preventDefault) evt.preventDefault();
 				return false;
 			}
-
-			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
 			return true;
 		};
 
 		s.touchMoved = (evt: any) => {
-			// console.log('touchMoved called, touches:', s.touches.length, 'isPinching:', isPinching);
-			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
-
 			if (isPinching && s.touches.length === 2) {
 				const currentDistance = getTouchDistance(s);
 				const currentCenter = getTouchCenter(s);
@@ -925,32 +949,24 @@ from BossDB and displays it on the canvas.
 					const distanceRatio = currentDistance / lastTouchDistance;
 					const zoomChange = (distanceRatio - 1) * APP_CONFIG.pinchZoomSpeed * nav.zoom;
 					const newZoom = Math.max(0.1, Math.min(10, nav.zoom + zoomChange));
-					// console.log('Applying zoom change:', zoomChange, 'newZoom:', newZoom);
 
 					// Apply zoom towards the pinch center
 					pinchZoom(newZoom, currentCenter.x, currentCenter.y);
 				}
 
-				if (evt && p5CanvasEl && evt.target !== appCanvasEl) return;
+				lastTouchDistance = currentDistance;
 				pinchCenter = currentCenter;
 				if (evt && evt.preventDefault) evt.preventDefault();
 				return false;
 			}
-
-			if (evt && p5CanvasEl && evt.target !== appCanvasEl) return;
 		};
 
 		s.touchEnded = (evt: any) => {
-			// console.log('touchEnded called, touches:', s.touches.length);
-			if (evt && p5CanvasEl && evt.target !== p5CanvasEl) return;
-
 			if (s.touches.length < 2) {
-				// console.log('Ending pinch gesture');
 				// End pinch gesture
 				isPinching = false;
 				lastTouchDistance = 0;
 			}
-
 			return true;
 		};
 
@@ -974,8 +990,8 @@ from BossDB and displays it on the canvas.
 		};
 	};
 
-	export const app = new p5(sketch);
-	document.addEventListener('contextmenu', (event) => event.preventDefault());
+	// p5 app instance
+	let app: p5;
 
 	// Store references to event listeners for cleanup
 	let gestureStartListener: (e: Event) => void;
@@ -989,6 +1005,9 @@ from BossDB and displays it on the canvas.
 
 	// Initialize event listeners on mount
 	onMount(() => {
+		// Initialize the p5 app now that the DOM is ready
+		app = new p5(sketch);
+
 		// Prevent browser's default pinch zoom behavior
 		gestureStartListener = (e) => e.preventDefault();
 		gestureChangeListener = (e) => e.preventDefault();
@@ -996,32 +1015,55 @@ from BossDB and displays it on the canvas.
 
 		// Prevent default touch behaviors that might interfere with pinch zoom
 		touchStartListener = (e) => {
-			if (e.touches.length > 1) {
-				e.preventDefault();
+			// Only prevent default if the event is on or near the canvas
+			if (e.touches.length > 1 && p5CanvasEl) {
+				const target = e.target as HTMLElement;
+				if (target === p5CanvasEl || p5CanvasEl.contains(target)) {
+					e.preventDefault();
+				}
 			}
 		};
 
 		touchMoveListener = (e) => {
-			if (e.touches.length > 1) {
-				e.preventDefault();
+			// Only prevent default if the event is on or near the canvas
+			if (e.touches.length > 1 && p5CanvasEl) {
+				const target = e.target as HTMLElement;
+				if (target === p5CanvasEl || p5CanvasEl.contains(target)) {
+					e.preventDefault();
+				}
 			}
 		};
 
 		touchEndListener = (e) => {
-			// Allow single touch events but prevent multi-touch defaults
-			if (e.touches.length > 0) {
-				e.preventDefault();
+			// Only prevent default if the event is on or near the canvas
+			if (e.touches.length > 0 && p5CanvasEl) {
+				const target = e.target as HTMLElement;
+				if (target === p5CanvasEl || p5CanvasEl.contains(target)) {
+					e.preventDefault();
+				}
 			}
 		};
 
 		// Prevent browser's default pinch zoom behavior on all wheel events with ctrlKey
 		wheelListener = (e) => {
-			if (e.ctrlKey) {
-				e.preventDefault();
+			// Only prevent default if event is on canvas and ctrlKey is pressed
+			if (e.ctrlKey && p5CanvasEl) {
+				const target = e.target as HTMLElement;
+				if (target === p5CanvasEl || p5CanvasEl.contains(target)) {
+					e.preventDefault();
+				}
 			}
 		};
 
-		contextMenuListener = (e) => e.preventDefault();
+		contextMenuListener = (e) => {
+			// Only prevent context menu on the canvas
+			if (p5CanvasEl) {
+				const target = e.target as HTMLElement;
+				if (target === p5CanvasEl || p5CanvasEl.contains(target)) {
+					e.preventDefault();
+				}
+			}
+		};
 
 		// Add all event listeners
 		document.addEventListener('gesturestart', gestureStartListener);

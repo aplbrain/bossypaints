@@ -606,7 +606,7 @@ async def update_task_name(request: Request, task_id: TaskID, update_request: Up
 
     # Update the task name
     task_store.update_name(task_id, update_request.name)
-    
+
     return {"message": "Task name updated successfully", "name": update_request.name}
 
 

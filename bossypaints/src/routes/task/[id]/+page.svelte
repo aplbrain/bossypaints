@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Header from '$lib/Header.svelte';
 	import { generateNeuroglancerLink } from '$lib/neuroglancer';
+	import { getTaskDisplayName, formatCloudVolumePath } from '$lib/utils/task';
 	import API from '$lib/api';
 	import type { TaskInDB, TaskExports } from '$lib/api';
 	import {
@@ -27,8 +28,8 @@
 		[key: string]: any;
 	}
 
-	let user: User | null = null;
-	let showSettings = false;
+	let user: User | null = $state(null);
+	let showSettings = $state(false);
 
 	// Get user from local storage if available
 	if (localStorage.getItem('user')) {
@@ -37,40 +38,19 @@
 			: undefined;
 	}
 
-	function formatTaskId(id: string) {
-		return id.split('-')[0];
-	}
-
 	function nglLink(task: TaskInDB) {
 		return generateNeuroglancerLink(task);
 	}
 
-	// For CloudVolume URIs, show path without protocol and bucket/domain
-	function cvDisplayPath(uri?: string): string {
-		if (!uri) return '';
-		let u = uri.trim();
-		// Strip precomputed:// wrapper if present
-		if (u.startsWith('precomputed://')) {
-			u = u.slice('precomputed://'.length);
-		}
-		// Detect and strip scheme (e.g., gs://, s3://, file://, https://)
-		const schemeMatch = u.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//);
-		let scheme = '';
-		if (schemeMatch) {
-			scheme = (schemeMatch[1] || '').toLowerCase();
-			u = u.slice(schemeMatch[0].length);
-		}
-		// Normalize leading slashes
-		u = u.replace(/^\/+/, '/');
+	let isExporting = $state(false);
+	let exportMessage = $state('');
+	let isArchiving = $state(false);
+	let archiveMessage = $state('');
 
-		// Additional path simplification logic could go here
-		return u;
-	}
-
-	let isExporting = false;
-	let exportMessage = '';
-	let isArchiving = false;
-	let archiveMessage = '';
+	// Task name editing state
+	let isEditingName = $state(false);
+	let editingName = $state('');
+	let isUpdatingName = $state(false);
 
 	async function toggleArchive() {
 		if (isArchiving) return;
@@ -166,6 +146,44 @@
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 	}
 
+	async function startEditingName() {
+		console.log('startEditingName called'); // Debug log
+		isEditingName = true;
+		editingName = task.name || '';
+		console.log('isEditingName set to:', isEditingName); // Debug log
+	}
+
+	async function saveTaskName() {
+		if (isUpdatingName) return;
+
+		isUpdatingName = true;
+		try {
+			const trimmedName = editingName.trim();
+			const nameToSave = trimmedName === '' ? null : trimmedName;
+
+			await API.updateTaskName(task.id, nameToSave);
+			task.name = nameToSave;
+			isEditingName = false;
+		} catch (error) {
+			console.error('Failed to update task name:', error);
+		} finally {
+			isUpdatingName = false;
+		}
+	}
+
+	function cancelEditingName() {
+		isEditingName = false;
+		editingName = '';
+	}
+
+	function handleNameKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			saveTaskName();
+		} else if (event.key === 'Escape') {
+			cancelEditingName();
+		}
+	}
+
 	function formatDate(timestamp: number): string {
 		return new Date(timestamp * 1000).toLocaleDateString();
 	}
@@ -183,7 +201,7 @@
 </script>
 
 <svelte:head>
-	<title>Task {formatTaskId(task.id)} - BossyPaints</title>
+	<title>{getTaskDisplayName(task)} - BossyPaints</title>
 </svelte:head>
 
 <!-- Main Container -->
@@ -228,7 +246,7 @@
 							></path>
 						</svg>
 						<span class="ml-1 text-sm font-medium text-gray-500 md:ml-2">
-							Task {formatTaskId(task.id)}
+							{getTaskDisplayName(task)}
 						</span>
 					</div>
 				</li>
@@ -242,10 +260,66 @@
 					<div
 						class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-white text-lg font-bold mr-4"
 					>
-						{formatTaskId(task.id).slice(0, 2)}
+						{getTaskDisplayName(task).slice(0, 2).toUpperCase()}
 					</div>
-					<div>
-						<h1 class="text-3xl font-bold text-gray-900">Task {formatTaskId(task.id)}</h1>
+					<div class="flex-1">
+						{#if isEditingName}
+							<div class="flex items-center space-x-2">
+								<input
+									type="text"
+									bind:value={editingName}
+									onkeydown={handleNameKeydown}
+									placeholder="Enter task name..."
+									class="text-3xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none focus:border-blue-600 min-w-0 flex-1"
+									disabled={isUpdatingName}
+								/>
+								<button
+									onclick={saveTaskName}
+									disabled={isUpdatingName}
+									class="p-1 text-green-600 hover:text-green-700 disabled:opacity-50"
+									title="Save"
+									aria-label="Save task name"
+								>
+									<CheckIcon className="w-5 h-5" />
+								</button>
+								<button
+									onclick={cancelEditingName}
+									disabled={isUpdatingName}
+									class="p-1 text-gray-600 hover:text-gray-700 disabled:opacity-50"
+									title="Cancel"
+									aria-label="Cancel editing task name"
+								>
+									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M6 18L18 6M6 6l12 12"
+										></path>
+									</svg>
+								</button>
+							</div>
+						{:else}
+							<div class="flex items-center space-x-2">
+								<h1 class="text-3xl font-bold text-gray-900">{getTaskDisplayName(task)}</h1>
+								<button
+									onclick={startEditingName}
+									class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors duration-200 cursor-pointer"
+									title="Edit task name"
+									type="button"
+									aria-label="Edit task name"
+								>
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+										></path>
+									</svg>
+								</button>
+							</div>
+						{/if}
 						<p class="text-gray-600">
 							ID: <span class="font-mono text-sm">{task.id}</span>
 						</p>
@@ -268,8 +342,9 @@
 						Open in Neuroglancer
 					</a>
 					<button
-						on:click={triggerExport}
+						onclick={triggerExport}
 						disabled={isExporting || task.export_pending}
+						aria-label="Export task data"
 						class="inline-flex items-center px-4 py-2 {isExporting || task.export_pending
 							? 'bg-green-400 cursor-not-allowed'
 							: 'bg-green-600 hover:bg-green-700'} text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
@@ -283,8 +358,9 @@
 						{/if}
 					</button>
 					<button
-						on:click={toggleArchive}
+						onclick={toggleArchive}
 						disabled={isArchiving}
+						aria-label={task.archived ? 'Unarchive task' : 'Archive task'}
 						class="inline-flex items-center px-4 py-2 {task.archived
 							? 'bg-blue-600 hover:bg-blue-700'
 							: 'bg-orange-600 hover:bg-orange-700'} text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
@@ -352,7 +428,9 @@
 			<div class="mb-8 p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800">
 				<div class="flex items-center">
 					<ArchiveIcon className="w-5 h-5 mr-2" />
-					<span class="font-medium">This task is archived and will not appear in your main dashboard.</span>
+					<span class="font-medium"
+						>This task is archived and will not appear in your main dashboard.</span
+					>
 				</div>
 			</div>
 		{/if}
@@ -632,23 +710,32 @@
 					</div>
 					<h3 class="text-lg font-medium text-gray-900 mb-2">No Exports Available</h3>
 					<p class="text-gray-600 mb-6 max-w-md mx-auto">
-						Complete an annotation and save it to generate downloadable exports including 3D meshes
-						and segmentation channels.
+						Complete an annotation and hit "Export Annotations" to generate downloadable exports
+						including 3D meshes and segmentation channels.
 					</p>
 					<a
 						href="/app/{task.id}"
 						class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200"
 					>
-						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 10a9 9 0 11-18 0 9 9 0 0118 0z"
-							></path>
-						</svg>
+						<AnnotationIcon className="w-4 h-4 mr-2" />
 						Start Annotating
 					</a>
+					<button
+						onclick={triggerExport}
+						disabled={isExporting || task.export_pending}
+						aria-label="Export task data"
+						class="inline-flex items-center px-4 py-2 {isExporting || task.export_pending
+							? 'bg-green-400 cursor-not-allowed'
+							: 'bg-green-600 hover:bg-green-700'} text-white font-medium rounded-lg transition-colors duration-200 ml-3"
+					>
+						{#if isExporting || task.export_pending}
+							<SpinnerIcon className="w-4 h-4 mr-2 animate-spin" />
+							{task.export_pending ? 'Export Pending...' : 'Exporting...'}
+						{:else}
+							<ExportIcon className="w-4 h-4 mr-2" />
+							Export
+						{/if}
+					</button>
 				</div>
 			{/if}
 		</div>
@@ -696,7 +783,7 @@
 						<div>
 							<h3 class="text-sm font-medium text-gray-700 mb-2">Display Path</h3>
 							<p class="text-sm text-gray-900">
-								{cvDisplayPath(task.cloudvolume_uri) || 'N/A'}
+								{formatCloudVolumePath(task.cloudvolume_uri) || 'N/A'}
 							</p>
 						</div>
 					</div>
@@ -968,19 +1055,7 @@
 						class="flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors duration-200"
 					>
 						<div class="flex items-center">
-							<svg
-								class="w-5 h-5 text-blue-600 mr-3"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 10a9 9 0 11-18 0 9 9 0 0118 0z"
-								></path>
-							</svg>
+							<AnnotationIcon className="w-5 h-5 text-blue-600 mr-3" />
 							<div>
 								<p class="text-sm font-medium text-blue-900">Start Annotation</p>
 								<p class="text-xs text-blue-700">Begin annotating this task</p>

@@ -16,6 +16,14 @@
 	import 'notyf/notyf.min.css';
 	import PolygonAnnotation from '$lib/webpaint/PolygonAnnotation';
 	import { onMount, onDestroy } from 'svelte';
+	import {
+		AnnotationIcon,
+		CheckIcon,
+		HelpIcon,
+		LockIcon,
+		InfoIcon,
+		DownloadIcon
+	} from '$lib/icons';
 
 	const notyf = new Notyf();
 
@@ -24,6 +32,12 @@
 	let nav: NavigationStore;
 	let showKeybindings = false;
 	let showInfo = true;
+
+	// Navigation confirmation modal
+	let showNavigationModal = false;
+	let pendingNavigation: (() => void) | null = null;
+	let hasUnsavedChanges = false;
+	let lastCheckpointAnnotations: any[] = [];
 
 	// Histogram window state (default 8-bit window)
 	let histMin = 0;
@@ -35,6 +49,72 @@
 		const newMax = Math.max(newMin, Math.min(max, 65535));
 		histMin = newMin;
 		histMax = newMax;
+	}
+
+	// Function to check if there are unsaved changes
+	function checkForUnsavedChanges() {
+		if (!annotationStore) return false;
+
+		const currentAnnotations = annotationStore.getAllAnnotations();
+		const currentAnnotationsString = JSON.stringify(currentAnnotations);
+		const lastCheckpointString = JSON.stringify(lastCheckpointAnnotations);
+
+		return currentAnnotationsString !== lastCheckpointString;
+	}
+
+	// Function to handle navigation with confirmation
+	function handleNavigation(navigationFn: () => void) {
+		hasUnsavedChanges = checkForUnsavedChanges();
+
+		if (hasUnsavedChanges) {
+			pendingNavigation = navigationFn;
+			showNavigationModal = true;
+		} else {
+			navigationFn();
+		}
+	}
+
+	// Function to confirm navigation (discard changes)
+	function confirmNavigation() {
+		showNavigationModal = false;
+		if (pendingNavigation) {
+			pendingNavigation();
+			pendingNavigation = null;
+		}
+	}
+
+	// Function to cancel navigation
+	function cancelNavigation() {
+		showNavigationModal = false;
+		pendingNavigation = null;
+	}
+
+	// Function to save and then navigate
+	async function saveAndNavigate() {
+		try {
+			await API.checkpointTask({
+				taskId: task.id,
+				checkpoint: annotationStore.getAllAnnotations()
+			});
+
+			// Update last checkpoint to current state
+			lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+			hasUnsavedChanges = false;
+
+			notyf.success('Changes saved successfully!');
+
+			// Proceed with navigation after a brief delay
+			setTimeout(() => {
+				if (pendingNavigation) {
+					pendingNavigation();
+					pendingNavigation = null;
+				}
+				showNavigationModal = false;
+			}, 500);
+		} catch (error) {
+			notyf.error('Failed to save changes. Please try again.');
+			console.error('Save failed:', error);
+		}
 	}
 
 	async function loadTask() {
@@ -66,6 +146,10 @@
 				});
 			});
 		}
+
+		// Set initial checkpoint state after loading
+		lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+		hasUnsavedChanges = false;
 	}
 
 	function calculatePolygonArea(points: Array<[number, number]>) {
@@ -180,39 +264,24 @@
 		<div class="fixed bottom-4 right-4 flex flex-col gap-2">
 			<!-- Paint/Pan Mode Toggle -->
 			<button
-				class="{nav.drawing
+				class="tooltip {nav.drawing
 					? 'bg-green-500 hover:bg-green-600'
 					: 'bg-gray-500 hover:bg-gray-600'} text-white p-3 rounded-full shadow-lg transition-colors duration-200"
-				on:click={() => nav.setDrawing(!nav.drawing)}
-				title={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
+				onclick={() => nav.setDrawing(!nav.drawing)}
+				aria-label={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
+				data-tooltip={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
 			>
 				{#if nav.drawing}
-					<!-- Paintbrush icon -->
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M7 21a4 4 0 01-4-4 4 4 0 014-4h.5l9.793-9.793a1 1 0 011.414 0l2.086 2.086a1 1 0 010 1.414L11 16.5V17a4 4 0 01-4 4z"
-						></path>
-					</svg>
+					<AnnotationIcon className="w-5 h-5" />
 				{:else}
-					<!-- Pointer cursor icon -->
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
-						></path>
-					</svg>
+					<LockIcon class="w-5 h-5" />
 				{/if}
 			</button>
 
 			<!-- Save/Checkpoint Buttons -->
 			<button
-				class="bg-cyan-500 hover:bg-cyan-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
-				on:click={() => {
+				class="tooltip bg-cyan-500 hover:bg-cyan-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				onclick={() => {
 					API.checkpointTask({
 						taskId: task.id,
 						checkpoint: annotationStore.getAllAnnotations()
@@ -220,17 +289,10 @@
 						notyf.success('Checkpoint saved.');
 					});
 				}}
-				title="Checkpoint (Alt+S)"
+				aria-label="Save Progress (Alt+S)"
+				data-tooltip="Save Progress (Alt+S)"
 			>
-				<!-- Checkpoint icon -->
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
-					></path>
-				</svg>
+				<DownloadIcon className="w-5 h-5" />
 			</button>
 
 			<!-- Comment out the complete button for now -->
@@ -265,37 +327,139 @@
 
 			<!-- Help/Keybindings Toggle -->
 			<button
-				class="bg-gray-500 hover:bg-gray-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
-				on:click={() => (showKeybindings = !showKeybindings)}
-				title="Toggle Keybindings (H)"
+				class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				onclick={() => (showKeybindings = !showKeybindings)}
+				aria-label="Toggle Keybindings (H)"
+				data-tooltip="Toggle Keybindings (H)"
 			>
-				<!-- Help icon -->
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-					></path>
-				</svg>
+				<HelpIcon className="w-5 h-5" />
+			</button>
+
+			<!-- Go to Task Details Button -->
+			<button
+				class="tooltip bg-purple-500 hover:bg-purple-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				onclick={() => handleNavigation(() => goto(`/task/${task.id}`))}
+				aria-label="Go to Task Details"
+				data-tooltip="Go to Task Details"
+			>
+				<InfoIcon className="w-5 h-5" />
 			</button>
 
 			<!-- Back to Home Button -->
 			<button
-				class="bg-indigo-500 hover:bg-indigo-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
-				on:click={() => goto('/')}
-				title="Back to Home"
+				class="tooltip bg-indigo-500 hover:bg-indigo-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				onclick={() => handleNavigation(() => goto('/'))}
+				aria-label="Back to Home"
+				data-tooltip="Back to Home"
 			>
-				<!-- Home icon -->
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-					></path>
-				</svg>
+				<CheckIcon className="w-5 h-5" />
 			</button>
 		</div>
 	{/if}
+
+	<!-- Navigation Confirmation Modal -->
+	{#if showNavigationModal}
+		<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+			<div class="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+				<div class="flex items-center mb-4">
+					<div class="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center mr-3">
+						<svg
+							class="w-6 h-6 text-yellow-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.081 16.5c-.77.833.192 2.5 1.732 2.5z"
+							></path>
+						</svg>
+					</div>
+					<h3 class="text-lg font-medium text-gray-900">Unsaved Changes</h3>
+				</div>
+
+				<p class="text-gray-600 mb-6">You have unsaved changes. What would you like to do?</p>
+
+				<div class="flex flex-col space-y-3">
+					<button
+						class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
+						onclick={saveAndNavigate}
+						aria-label="Save and Continue"
+					>
+						Save and Continue
+					</button>
+
+					<button
+						class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors duration-200"
+						onclick={confirmNavigation}
+						aria-label="Discard and Continue"
+					>
+						Discard Changes
+					</button>
+
+					<button
+						class="w-full px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg transition-colors duration-200"
+						onclick={cancelNavigation}
+						aria-label="Cancel navigation"
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 </div>
+
+<style>
+	/* Custom tooltip styles for FAB buttons */
+	.tooltip {
+		position: relative;
+	}
+
+	.tooltip::after {
+		content: attr(data-tooltip);
+		position: absolute;
+		right: 100%;
+		top: 50%;
+		transform: translateY(-50%);
+		background: rgba(0, 0, 0, 0.9);
+		color: white;
+		padding: 8px 12px;
+		border-radius: 6px;
+		font-size: 12px;
+		font-weight: 500;
+		white-space: nowrap;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s ease-in-out;
+		margin-right: 10px;
+		z-index: 1000;
+		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+	}
+
+	.tooltip::before {
+		content: '';
+		position: absolute;
+		right: 100%;
+		top: 50%;
+		transform: translateY(-50%);
+		border: 5px solid transparent;
+		border-left-color: rgba(0, 0, 0, 0.9);
+		margin-right: 5px;
+		opacity: 0;
+		transition: opacity 0.2s ease-in-out;
+		z-index: 1000;
+	}
+
+	.tooltip:hover::after,
+	.tooltip:hover::before {
+		opacity: 1;
+	}
+
+	/* Ensure tooltips appear above other elements */
+	.tooltip:hover {
+		z-index: 1001;
+	}
+</style>
