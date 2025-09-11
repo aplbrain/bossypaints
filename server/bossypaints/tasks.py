@@ -3,6 +3,7 @@ import json
 import uuid
 import pydantic
 from typing import List, Optional, Literal
+import threading
 
 TaskID = str
 
@@ -35,6 +36,7 @@ class Task(pydantic.BaseModel):
     destination_channel: str | None = None
     assigned_to: str | None = None  # BossDB username of the assigned user
     export_pending: bool = False  # Flag to indicate if an export is currently in progress
+    archived: bool = False  # Flag to indicate if the task is archived
 
     @pydantic.validator('collection', 'experiment', 'channel')
     def validate_bossdb_fields(cls, v, values):
@@ -83,8 +85,23 @@ class TaskQueueStore(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def list_for_user_archived(self, username: str) -> List[TaskInDB]:
+        """Get all archived tasks for a user."""
+        pass
+
+    @abc.abstractmethod
+    def list_for_user_active(self, username: str) -> List[TaskInDB]:
+        """Get all non-archived tasks for a user."""
+        pass
+
+    @abc.abstractmethod
     def update_export_pending(self, task_id: TaskID, pending: bool) -> None:
         """Update the export_pending flag for a task."""
+        pass
+
+    @abc.abstractmethod
+    def update_archived(self, task_id: TaskID, archived: bool) -> None:
+        """Update the archived flag for a task."""
         pass
 
 
@@ -111,14 +128,27 @@ class InMemoryTaskQueueStore(TaskQueueStore):
         return [task for task in self._tasks.values()
                 if task.assigned_to == username]
 
+    def list_for_user_archived(self, username: str) -> List[TaskInDB]:
+        return [task for task in self._tasks.values()
+                if task.assigned_to == username and task.archived]
+
+    def list_for_user_active(self, username: str) -> List[TaskInDB]:
+        return [task for task in self._tasks.values()
+                if task.assigned_to == username and not task.archived]
+
     def update_export_pending(self, task_id: TaskID, pending: bool) -> None:
         if task_id in self._tasks:
             self._tasks[task_id].export_pending = pending
+
+    def update_archived(self, task_id: TaskID, archived: bool) -> None:
+        if task_id in self._tasks:
+            self._tasks[task_id].archived = archived
 
 
 class JSONFileTaskQueueStore(TaskQueueStore):
     def __init__(self, filename: str):
         self._filename = filename
+        self._lock = threading.Lock()
 
     def new_uid(self) -> TaskID:
         return str(uuid.uuid4())
@@ -141,20 +171,22 @@ class JSONFileTaskQueueStore(TaskQueueStore):
             json.dump({task_id: task.dict() for task_id, task in tasks.items()}, f)
 
     def put(self, task: Task) -> TaskID:
-        tasks = self._load_latest_from_file()
-        task_id = self.new_uid()
-        tasks[task_id] = TaskInDB(id=task_id, **task.dict())
-        self._write_to_file(tasks)
-        return task_id
+        with self._lock:
+            tasks = self._load_latest_from_file()
+            task_id = self.new_uid()
+            tasks[task_id] = TaskInDB(id=task_id, **task.dict())
+            self._write_to_file(tasks)
+            return task_id
 
     def get(self, task_id: TaskID) -> TaskInDB:
         tasks = self._load_latest_from_file()
         return tasks[task_id]
 
     def delete(self, task_id: TaskID) -> None:
-        tasks = self._load_latest_from_file()
-        del tasks[task_id]
-        self._write_to_file(tasks)
+        with self._lock:
+            tasks = self._load_latest_from_file()
+            del tasks[task_id]
+            self._write_to_file(tasks)
 
     def list(self) -> List[TaskInDB]:
         tasks = self._load_latest_from_file()
@@ -165,8 +197,26 @@ class JSONFileTaskQueueStore(TaskQueueStore):
         return [task for task in tasks.values()
                 if task.assigned_to == username]
 
-    def update_export_pending(self, task_id: TaskID, pending: bool) -> None:
+    def list_for_user_archived(self, username: str) -> List[TaskInDB]:
         tasks = self._load_latest_from_file()
-        if task_id in tasks:
-            tasks[task_id].export_pending = pending
-            self._write_to_file(tasks)
+        return [task for task in tasks.values()
+                if task.assigned_to == username and task.archived]
+
+    def list_for_user_active(self, username: str) -> List[TaskInDB]:
+        tasks = self._load_latest_from_file()
+        return [task for task in tasks.values()
+                if task.assigned_to == username and not task.archived]
+
+    def update_export_pending(self, task_id: TaskID, pending: bool) -> None:
+        with self._lock:
+            tasks = self._load_latest_from_file()
+            if task_id in tasks:
+                tasks[task_id].export_pending = pending
+                self._write_to_file(tasks)
+
+    def update_archived(self, task_id: TaskID, archived: bool) -> None:
+        with self._lock:
+            tasks = self._load_latest_from_file()
+            if task_id in tasks:
+                tasks[task_id].archived = archived
+                self._write_to_file(tasks)

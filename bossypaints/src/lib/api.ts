@@ -1,7 +1,7 @@
 import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 
-// const baseUrl = 'http://localhost:8000';
-const baseUrl = "https://api.paint.labs.bossdb.org";
+const baseUrl = 'http://localhost:8000';
+// const baseUrl = "https://api.paint.labs.bossdb.org";
 
 export { baseUrl };
 
@@ -27,6 +27,7 @@ export type Task = {
     destination_channel?: string;
     assigned_to?: string;
     export_pending?: boolean;
+    archived?: boolean;
 }
 
 export type TaskInDB = Task & {
@@ -79,6 +80,10 @@ class API {
         return this.get('/api/tasks');
     }
 
+    async getArchivedTasks(): Promise<{ tasks: TaskInDB[] }> {
+        return this.get('/api/tasks/archived');
+    }
+
     async getTask(taskId: TaskID): Promise<{ task: TaskInDB }> {
         return this.get(`/api/tasks/${taskId}`);
     }
@@ -101,6 +106,14 @@ class API {
 
     async createTask(task: Task): Promise<{ message: string }> {
         return this.post('/api/tasks/create', task);
+    }
+
+    async archiveTask(taskId: TaskID): Promise<{ message: string }> {
+        return this.post(`/api/tasks/${taskId}/archive`, {});
+    }
+
+    async unarchiveTask(taskId: TaskID): Promise<{ message: string }> {
+        return this.post(`/api/tasks/${taskId}/unarchive`, {});
     }
 
     async getBossDBUsernameFromToken(token: string): Promise<{ username: string }> {

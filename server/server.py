@@ -81,20 +81,55 @@ async def get_username_from_request(request: Request) -> str:
 @api_router.get("/tasks")
 async def get_tasks(request: Request):
     username = await get_username_from_request(request)
-    tasks = task_store.list_for_user(username)
+    tasks = task_store.list_for_user_active(username)  # Only return non-archived tasks
+    return {"tasks": tasks}
+
+
+@api_router.get("/tasks/archived")
+async def get_archived_tasks(request: Request):
+    username = await get_username_from_request(request)
+    tasks = task_store.list_for_user_archived(username)
     return {"tasks": tasks}
 
 
 @api_router.get("/tasks/next")
 async def get_next_task(request: Request):
     username = await get_username_from_request(request)
-    tasks = task_store.list_for_user(username)
+    tasks = task_store.list_for_user_active(username)  # Only consider non-archived tasks
     if tasks:
         # Sort by priority (higher priority first) and return the first one
         tasks.sort(key=lambda t: t.priority, reverse=True)
         return {"task": tasks[0]}
     else:
         return {"task": None}
+
+
+@api_router.post("/tasks/{task_id}/archive")
+async def archive_task(request: Request, task_id: TaskID):
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+
+    # Archive the task
+    task_store.update_archived(task_id, True)
+    return {"message": "Task archived successfully"}
+
+
+@api_router.post("/tasks/{task_id}/unarchive")
+async def unarchive_task(request: Request, task_id: TaskID):
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+
+    # Unarchive the task
+    task_store.update_archived(task_id, False)
+    return {"message": "Task unarchived successfully"}
 
 @api_router.post("/tasks/{task_id}/save")
 async def save_task(request: Request, task_id: TaskID, checkpoint: dict, background_tasks: BackgroundTasks):

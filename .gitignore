@@ -1,1 +1,4 @@
 server/exports/
+.DS_Store
+server/tasks.json
+server/checkpoints.json

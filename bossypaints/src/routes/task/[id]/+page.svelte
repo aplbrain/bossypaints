@@ -3,10 +3,23 @@
 	import { generateNeuroglancerLink } from '$lib/neuroglancer';
 	import API from '$lib/api';
 	import type { TaskInDB, TaskExports } from '$lib/api';
+	import {
+		ArchiveIcon,
+		UnarchiveIcon,
+		ExportIcon,
+		SpinnerIcon,
+		EyeIcon,
+		ExternalLinkIcon,
+		AnnotationIcon,
+		DownloadIcon,
+		CheckIcon,
+		AlertIcon,
+		InfoIcon
+	} from '$lib/icons';
 
 	let { data } = $props();
 
-	const task: TaskInDB = data.task;
+	let task: TaskInDB = $state(data.task);
 	const exports: TaskExports = data.exports || { meshes: [], segments: [] };
 
 	interface User {
@@ -56,6 +69,37 @@
 
 	let isExporting = false;
 	let exportMessage = '';
+	let isArchiving = false;
+	let archiveMessage = '';
+
+	async function toggleArchive() {
+		if (isArchiving) return;
+
+		isArchiving = true;
+		archiveMessage = '';
+
+		try {
+			if (task.archived) {
+				await API.unarchiveTask(task.id);
+				task.archived = false;
+				archiveMessage = 'Task unarchived successfully!';
+			} else {
+				await API.archiveTask(task.id);
+				task.archived = true;
+				archiveMessage = 'Task archived successfully!';
+			}
+
+			// Clear message after 3 seconds
+			setTimeout(() => {
+				archiveMessage = '';
+			}, 3000);
+		} catch (error) {
+			console.error('Archive operation failed:', error);
+			archiveMessage = 'Archive operation failed. Please try again.';
+		} finally {
+			isArchiving = false;
+		}
+	}
 
 	async function triggerExport() {
 		if (isExporting || task.export_pending) return;
@@ -212,14 +256,7 @@
 						href="/app/{task.id}"
 						class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
 					>
-						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 10a9 9 0 11-18 0 9 9 0 0118 0z"
-							></path>
-						</svg>
+						<AnnotationIcon className="w-4 h-4 mr-2" />
 						Start Annotation
 					</a>
 					<a
@@ -227,14 +264,7 @@
 						target="_blank"
 						class="inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
 					>
-						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-							></path>
-						</svg>
+						<ExternalLinkIcon className="w-4 h-4 mr-2" />
 						Open in Neuroglancer
 					</a>
 					<button
@@ -245,30 +275,29 @@
 							: 'bg-green-600 hover:bg-green-700'} text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
 					>
 						{#if isExporting || task.export_pending}
-							<svg
-								class="w-4 h-4 mr-2 animate-spin"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-								></path>
-							</svg>
+							<SpinnerIcon className="w-4 h-4 mr-2 animate-spin" />
 							{task.export_pending ? 'Export Pending...' : 'Exporting...'}
 						{:else}
-							<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-								></path>
-							</svg>
+							<ExportIcon className="w-4 h-4 mr-2" />
 							Export
+						{/if}
+					</button>
+					<button
+						on:click={toggleArchive}
+						disabled={isArchiving}
+						class="inline-flex items-center px-4 py-2 {task.archived
+							? 'bg-blue-600 hover:bg-blue-700'
+							: 'bg-orange-600 hover:bg-orange-700'} text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
+					>
+						{#if isArchiving}
+							<SpinnerIcon className="w-4 h-4 mr-2 animate-spin" />
+							Processing...
+						{:else if task.archived}
+							<UnarchiveIcon className="w-4 h-4 mr-2" />
+							Unarchive
+						{:else}
+							<ArchiveIcon className="w-4 h-4 mr-2" />
+							Archive
 						{/if}
 					</button>
 				</div>
@@ -284,18 +313,11 @@
 					: 'bg-blue-50 border border-blue-200 text-blue-800'}"
 			>
 				<div class="flex items-center">
-					<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d={exportMessage &&
-							(exportMessage.includes('failed') || exportMessage.includes('No annotations'))
-								? 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
-								: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'}
-						>
-						</path>
-					</svg>
+					{#if exportMessage && (exportMessage.includes('failed') || exportMessage.includes('No annotations'))}
+						<AlertIcon className="w-5 h-5 mr-2" />
+					{:else}
+						<InfoIcon className="w-5 h-5 mr-2" />
+					{/if}
 					<span class="font-medium">
 						{#if task.export_pending && !exportMessage}
 							Export is currently being processed in the background. Please wait...
@@ -303,6 +325,34 @@
 							{exportMessage}
 						{/if}
 					</span>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Archive Status Message -->
+		{#if archiveMessage}
+			<div
+				class="mb-8 p-4 rounded-lg {archiveMessage.includes('failed')
+					? 'bg-red-50 border border-red-200 text-red-800'
+					: 'bg-green-50 border border-green-200 text-green-800'}"
+			>
+				<div class="flex items-center">
+					{#if archiveMessage.includes('failed')}
+						<AlertIcon className="w-5 h-5 mr-2" />
+					{:else}
+						<CheckIcon className="w-5 h-5 mr-2" />
+					{/if}
+					<span class="font-medium">{archiveMessage}</span>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Archived Task Banner -->
+		{#if task.archived}
+			<div class="mb-8 p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800">
+				<div class="flex items-center">
+					<ArchiveIcon className="w-5 h-5 mr-2" />
+					<span class="font-medium">This task is archived and will not appear in your main dashboard.</span>
 				</div>
 			</div>
 		{/if}
