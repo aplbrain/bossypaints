@@ -627,6 +627,10 @@ async def get_unassigned_tasks(request: Request):
 
 EXPORTS_DIR = Path(__file__).resolve().parent / "exports"
 
+# Ensure the exports directory exists (when running in containers the working
+# directory can differ; creating it avoids RuntimeError: Directory '/app/exports' does not exist)
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
 # Serve the exports directory over HTTP so CloudVolume precomputed folders can be
 # referenced by Neuroglancer as an HTTP URL (e.g. http://host/exports/<task_id>/<cv_name>)
 app.mount("/exports", StaticFiles(directory=str(EXPORTS_DIR)), name="exports")
