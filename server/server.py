@@ -13,13 +13,13 @@ from pathlib import Path
 import numpy as np
 from cloudvolume import CloudVolume
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, validator
 from dotenv import load_dotenv
 
 from bossypaints.background import render_and_mesh
 from bossypaints.tasks import SQLiteTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, SQLiteCheckpointStore
+from bossypaints.staticfiles import GzipFallbackStaticFiles
 
 # Load environment variables from .env file
 load_dotenv()
@@ -639,27 +639,6 @@ EXPORTS_DIR = Path(__file__).resolve().parent / "exports"
 # Ensure the exports directory exists (when running in containers the working
 # directory can differ; creating it avoids RuntimeError: Directory '/app/exports' does not exist)
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
-
-# Serve the exports directory over HTTP so CloudVolume precomputed folders can be
-# referenced by Neuroglancer as an HTTP URL (e.g. http://host/exports/<task_id>/<cv_name>)
-class GzipFallbackStaticFiles(StaticFiles):
-    async def get_response(self, path: str, scope):
-        # 1) Try the normal path first (unchanged behavior)
-        resp = await super().get_response(path, scope)
-        if resp.status_code != 404:
-            return resp
-
-        # 2) Try the ".gz" sibling
-        gz_resp = await super().get_response(path + ".gz", scope)
-        if gz_resp.status_code == 404:
-            return resp  # still a 404
-
-        # 3) Serve gz file as the extensionless resource
-        gz_resp.headers["Content-Encoding"] = "gzip"
-        gz_resp.headers.setdefault("Content-Type", "application/octet-stream")
-        gz_resp.headers.setdefault("Cache-Control", "public, max-age=31536000")
-        gz_resp.headers.setdefault("Access-Control-Allow-Origin", "*")
-        return gz_resp
 
 # Keep the same mount path so other code doesn’t change:
 app.mount("/exports", GzipFallbackStaticFiles(directory=str(EXPORTS_DIR)), name="exports")
