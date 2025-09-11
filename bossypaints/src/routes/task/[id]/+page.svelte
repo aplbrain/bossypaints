@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Header from '$lib/Header.svelte';
-	import { generateNeuroglancerLink } from '$lib/neuroglancer';
+	import { generateNeuroglancerLink, generateNeuroglancerLinkWithSegmentation } from '$lib/neuroglancer';
 	import { getTaskDisplayName, formatCloudVolumePath } from '$lib/utils/task';
 	import API from '$lib/api';
 	import type { TaskInDB, TaskExports } from '$lib/api';
@@ -40,6 +40,12 @@
 
 	function nglLink(task: TaskInDB) {
 		return generateNeuroglancerLink(task);
+	}
+
+	function generateSegNglLink(task: TaskInDB, segUri: string) {
+		// segUri comes from backend as a served HTTP URL or a CloudVolume scheme.
+		// Pass it through directly; neuroglancer util will wrap as precomputed:// when needed.
+		return generateNeuroglancerLinkWithSegmentation(task, segUri);
 	}
 
 	let isExporting = $state(false);
@@ -196,7 +202,7 @@
 		return API.getTaskExportDownloadAllUrl(task.id);
 	}
 
-	const totalExports = $derived((exports?.meshes?.length || 0) + (exports?.segments?.length || 0));
+	const totalExports = $derived((exports?.meshes?.length || 0) + (exports?.segments?.length || 0) + (exports?.cloudvolumes?.length || 0));
 	const hasExports = $derived(totalExports > 0);
 </script>
 
@@ -639,6 +645,48 @@
 							</div>
 						</div>
 					{/if}
+
+					<!-- CloudVolume Exports -->
+						{#if exports?.cloudvolumes && exports.cloudvolumes.length > 0}
+							<div class="bg-gray-50 rounded-xl p-6">
+								<div class="flex items-center mb-4">
+									<div class="w-6 h-6 bg-yellow-100 rounded-lg flex items-center justify-center mr-3">
+										<svg class="w-3 h-3 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7M16 3v4M8 3v4" />
+										</svg>
+									</div>
+									<h3 class="text-lg font-medium text-gray-900">CloudVolume Exports ({exports?.cloudvolumes?.length || 0})</h3>
+								</div>
+								<div class="space-y-2 max-h-60 overflow-y-auto">
+									{#each exports.cloudvolumes as cv}
+										<div class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-yellow-200 transition-colors duration-200">
+											<div class="flex items-center min-w-0 flex-1">
+												<div class="min-w-0 flex-1">
+													<p class="text-sm font-medium text-gray-900 truncate">{cv.filename}</p>
+													<p class="text-xs text-gray-500">{formatFileSize(cv.size)} • {formatDate(cv.modified)}</p>
+												</div>
+											</div>
+											<div class="ml-3 flex items-center space-x-2">
+												<a href={getDownloadUrl(cv.filename)} download class="inline-flex items-center px-2 py-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 text-xs font-medium rounded transition-colors duration-200">
+													<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+													</svg>
+													Download
+												</a>
+												{#if cv.uri}
+													<a href={generateSegNglLink(task, cv.uri)} target="_blank" class="inline-flex items-center px-2 py-1 bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-medium rounded transition-colors duration-200">
+														<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+														</svg>
+														View in Neuroglancer
+													</a>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
 
 					<!-- Show placeholder if only one type exists -->
 					{#if (!exports?.meshes || exports.meshes.length === 0) && exports?.segments && exports.segments.length > 0}
