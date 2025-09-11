@@ -9,7 +9,7 @@
 	} from '$lib/neuroglancer';
 
 	// Data source type
-	let dataSourceType: 'bossdb' | 'cloudvolume' = 'bossdb';
+	let dataSourceType: 'bossdb' | 'cloudvolume' = 'cloudvolume';
 
 	// BossDB fields
 	let collection = '';

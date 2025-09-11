@@ -7,8 +7,11 @@ from skimage.draw import polygon
 from skimage.io import imsave
 import numpy as np
 import logging
+import os
+import json
 
 from intern import array
+from cloudvolume import CloudVolume
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,7 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
             for poly in checkpoint.polygons:
                 z = poly.z - task.z_min
                 if z < 0 or z >= z_size:
-                    logger.warning(f"Polygon z={poly.z} is outside volume bounds (z_min={task.z_min}, z_max={task.z_max})")
+                    logger.warning(f"Polygon z={poly.z} is outside volume bounds (z_min={task.z_min}, z_max={task.z_max}). Skipping.")
                     continue
 
                 # Use the new positiveRegions/negativeRegions schema
@@ -143,3 +146,103 @@ class BossDBInternVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
             task.y_min : task.y_max,
             task.x_min : task.x_max,
         ] = volume
+
+
+class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
+    """
+    Renderer that creates local CloudVolume channels for segmentation output.
+    This is the new default renderer.
+    """
+
+    def __init__(self, directory: str = "./", base_name: str = "segmentation"):
+        self.directory = directory
+        self.base_name = base_name
+        pathlib.Path(self.directory).mkdir(parents=True, exist_ok=True)
+
+    def render_from_checkpoints(self, task: TaskInDB, checkpoints: list[Checkpoint]):
+        """Render segmentation volume as a local CloudVolume (precomputed format)"""
+        volume = self._materialize_xyz_volume(task, checkpoints)
+
+        # CloudVolume expects (z, y, x) ordering
+        volume_zyx = volume.transpose(2, 1, 0)
+
+        # Create CloudVolume path
+        cv_path = f"file://{os.path.abspath(self.directory)}/{self.base_name}_task_{task.id}"
+
+        # Calculate voxel size (default to 1,1,1 if not available)
+        voxel_size = [1, 1, 1]  # nm
+        try:
+            # Try to get voxel size from source if it's BossDB
+            if task.data_source_type == "bossdb":
+                source_dataset = array(
+                    f"bossdb://{task.collection}/{task.experiment}/{task.channel}",
+                    resolution=task.resolution,
+                )
+                voxel_size = source_dataset.voxel_size
+            # For CloudVolume sources, try to get info from existing CloudVolume
+            elif task.data_source_type == "cloudvolume" and task.cloudvolume_uri:
+                source_cv = CloudVolume(task.cloudvolume_uri, mip=task.resolution, progress=False, cache=False)
+                if hasattr(source_cv, 'scales') and len(source_cv.scales) > task.resolution:
+                    scale = source_cv.scales[task.resolution]
+                    if hasattr(scale, 'resolution'):
+                        voxel_size = list(scale.resolution)
+        except Exception as e:
+            logger.warning(f"Could not determine voxel size from source: {e}")
+
+        # Scale voxel size by resolution factor
+        resolution_factor = 2 ** task.resolution
+        scaled_voxel_size = [v * resolution_factor for v in voxel_size]
+
+        logger.info(f"Creating CloudVolume at {cv_path} with voxel size {scaled_voxel_size}")
+        logger.info(f"Volume shape (z,y,x): {volume_zyx.shape}")
+
+        # Create CloudVolume info
+        info = {
+            "type": "segmentation",
+            "data_type": "uint64",
+            "num_channels": 1,
+            "scales": [{
+                "key": "0",  # Always use mip 0 for the single scale we're creating
+                "size": [volume_zyx.shape[2], volume_zyx.shape[1], volume_zyx.shape[0]],  # x, y, z
+                "resolution": scaled_voxel_size,  # x, y, z in nm
+                "voxel_offset": [task.x_min, task.y_min, task.z_min],
+                "chunk_sizes": [[64, 64, 64]],
+                "encoding": "raw",
+                "compressed_segmentation_block_size": [8, 8, 8]
+            }],
+            "segment_properties": "omit",
+            "mesh": "mesh",
+            "skeletons": "skeletons"
+        }
+
+        # Write info file
+        info_path = os.path.join(self.directory, f"{self.base_name}_task_{task.id}", "info")
+        os.makedirs(os.path.dirname(info_path), exist_ok=True)
+        with open(info_path, 'w') as f:
+            json.dump(info, f, indent=2)
+
+        # Create CloudVolume instance and write data (always use mip=0 for new datasets)
+        cv = CloudVolume(cv_path, mip=0, info=info, progress=False, cache=False)
+
+        # CloudVolume indexing is [x, y, z] but our volume data is in (z, y, x) order
+        # We need to transpose the volume to (x, y, z) order for CloudVolume
+        logger.info(f"Task bounds: x:[{task.x_min}:{task.x_max}] y:[{task.y_min}:{task.y_max}] z:[{task.z_min}:{task.z_max}]")
+        logger.info(f"Volume shape before processing: {volume_zyx.shape}")
+
+        # Ensure volume has channel dimension - add if missing
+        if volume_zyx.ndim == 3:
+            # Add channel dimension: (z, y, x) -> (z, y, x, 1)
+            volume_zyx = volume_zyx[..., np.newaxis]
+            logger.info(f"Added channel dimension, new shape: {volume_zyx.shape}")
+
+        # Transpose from (z, y, x, channel) to (x, y, z, channel) for CloudVolume
+        volume_xyzc = np.transpose(volume_zyx, (2, 1, 0, 3))
+        logger.info(f"Volume shape after transpose: {volume_xyzc.shape} (x, y, z, channel)")
+
+        # Write the segmentation data - CloudVolume expects (x, y, z) indexing and data
+        cv[task.x_min:task.x_max, task.y_min:task.y_max, task.z_min:task.z_max] = volume_xyzc
+
+        logger.info(f"Successfully created CloudVolume segmentation at {cv_path}")
+
+        # Return the CloudVolume path for potential use in meshing or other operations
+        return cv_path

@@ -48,19 +48,63 @@
 			u = u.slice(schemeMatch[0].length);
 		}
 		// Normalize leading slashes
-		u = u.replace(/^\/+/, '');
-		// For gs/s3/https, drop the first segment (bucket or host). For file, keep full path.
-		const parts = u.split('/');
-		if (scheme === 'gs' || scheme === 's3' || scheme.startsWith('http')) {
-			return parts.length > 1 ? parts.slice(1).join('/') : '';
-		} else if (scheme === 'file') {
-			// Preserve absolute path semantics
-			return '/' + parts.join('/');
-		}
-		// Fallback: if no scheme was detected, attempt to drop first segment as bucket-like
-		return parts.length > 1 ? parts.slice(1).join('/') : u;
+		u = u.replace(/^\/+/, '/');
+
+		// Additional path simplification logic could go here
+		return u;
 	}
 
+	let isExporting = false;
+	let exportMessage = '';
+
+	async function triggerExport() {
+		if (isExporting || task.export_pending) return;
+
+		isExporting = true;
+		exportMessage = 'Triggering export...';
+
+		try {
+			// Get the latest checkpoints for this task
+			const checkpointsResponse = await API.getTaskCheckpoints(task.id);
+			const checkpoints = checkpointsResponse.checkpoints;
+
+			if (!checkpoints || checkpoints.length === 0) {
+				exportMessage = 'No annotations found to export. Please annotate the task first.';
+				isExporting = false;
+				return;
+			}
+
+			// Get the latest checkpoint polygons
+			const latestCheckpoint = checkpoints[checkpoints.length - 1];
+
+			// Trigger the save/export process
+			await API.saveTask({
+				taskId: task.id,
+				checkpoint: latestCheckpoint.polygons
+			});
+
+			exportMessage = 'Export started! Processing in background...';
+
+			// Update the task's export_pending flag in the UI
+			task.export_pending = true;
+
+			// Reload the page after a delay to check for completion
+			setTimeout(() => {
+				window.location.reload();
+			}, 3000);
+		} catch (error) {
+			console.error('Export failed:', error);
+			if (error.response && error.response.status === 409) {
+				exportMessage = 'Export is already in progress for this task.';
+			} else {
+				exportMessage = 'Export failed. Please try again.';
+			}
+		} finally {
+			isExporting = false;
+		}
+	}
+
+	// Additional utility functions
 	function calculateVolume() {
 		const x_size = task.x_max - task.x_min;
 		const y_size = task.y_max - task.y_min;
@@ -193,9 +237,75 @@
 						</svg>
 						Open in Neuroglancer
 					</a>
+					<button
+						on:click={triggerExport}
+						disabled={isExporting || task.export_pending}
+						class="inline-flex items-center px-4 py-2 {isExporting || task.export_pending
+							? 'bg-green-400 cursor-not-allowed'
+							: 'bg-green-600 hover:bg-green-700'} text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
+					>
+						{#if isExporting || task.export_pending}
+							<svg
+								class="w-4 h-4 mr-2 animate-spin"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+								></path>
+							</svg>
+							{task.export_pending ? 'Export Pending...' : 'Exporting...'}
+						{:else}
+							<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+								></path>
+							</svg>
+							Export
+						{/if}
+					</button>
 				</div>
 			</div>
 		</div>
+
+		<!-- Export Status Message -->
+		{#if exportMessage || task.export_pending}
+			<div
+				class="mb-8 p-4 rounded-lg {exportMessage &&
+				(exportMessage.includes('failed') || exportMessage.includes('No annotations'))
+					? 'bg-red-50 border border-red-200 text-red-800'
+					: 'bg-blue-50 border border-blue-200 text-blue-800'}"
+			>
+				<div class="flex items-center">
+					<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d={exportMessage &&
+							(exportMessage.includes('failed') || exportMessage.includes('No annotations'))
+								? 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+								: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'}
+						>
+						</path>
+					</svg>
+					<span class="font-medium">
+						{#if task.export_pending && !exportMessage}
+							Export is currently being processed in the background. Please wait...
+						{:else}
+							{exportMessage}
+						{/if}
+					</span>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Exports Section -->
 		<div class="bg-white rounded-2xl shadow-sm p-8 border border-gray-200 mb-8">

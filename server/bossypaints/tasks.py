@@ -34,6 +34,7 @@ class Task(pydantic.BaseModel):
     destination_experiment: str | None = None
     destination_channel: str | None = None
     assigned_to: str | None = None  # BossDB username of the assigned user
+    export_pending: bool = False  # Flag to indicate if an export is currently in progress
 
     @pydantic.validator('collection', 'experiment', 'channel')
     def validate_bossdb_fields(cls, v, values):
@@ -45,7 +46,7 @@ class Task(pydantic.BaseModel):
     @pydantic.validator('cloudvolume_uri')
     def validate_cloudvolume_fields(cls, v, values):
         """Ensure CloudVolume URI is present when data_source_type is 'cloudvolume'"""
-        if values.get('data_source_type') == 'cloudvolume' and v is None:
+        if values.get('data_source_type') == 'cloudvolume' and v in [None, '']:
             raise ValueError('CloudVolume URI is required when data_source_type is "cloudvolume"')
         return v
 
@@ -81,6 +82,11 @@ class TaskQueueStore(abc.ABC):
     def list_for_user(self, username: str) -> List[TaskInDB]:
         pass
 
+    @abc.abstractmethod
+    def update_export_pending(self, task_id: TaskID, pending: bool) -> None:
+        """Update the export_pending flag for a task."""
+        pass
+
 
 class InMemoryTaskQueueStore(TaskQueueStore):
     def __init__(self):
@@ -104,6 +110,10 @@ class InMemoryTaskQueueStore(TaskQueueStore):
     def list_for_user(self, username: str) -> List[TaskInDB]:
         return [task for task in self._tasks.values()
                 if task.assigned_to == username]
+
+    def update_export_pending(self, task_id: TaskID, pending: bool) -> None:
+        if task_id in self._tasks:
+            self._tasks[task_id].export_pending = pending
 
 
 class JSONFileTaskQueueStore(TaskQueueStore):
@@ -154,3 +164,9 @@ class JSONFileTaskQueueStore(TaskQueueStore):
         tasks = self._load_latest_from_file()
         return [task for task in tasks.values()
                 if task.assigned_to == username]
+
+    def update_export_pending(self, task_id: TaskID, pending: bool) -> None:
+        tasks = self._load_latest_from_file()
+        if task_id in tasks:
+            tasks[task_id].export_pending = pending
+            self._write_to_file(tasks)

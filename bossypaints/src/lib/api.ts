@@ -1,7 +1,7 @@
 import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 
-const baseUrl = 'http://localhost:8000';
-// const baseUrl = "https://api.paint.labs.bossdb.org";
+// const baseUrl = 'http://localhost:8000';
+const baseUrl = "https://api.paint.labs.bossdb.org";
 
 export { baseUrl };
 
@@ -25,6 +25,8 @@ export type Task = {
     destination_collection?: string;
     destination_experiment?: string;
     destination_channel?: string;
+    assigned_to?: string;
+    export_pending?: boolean;
 }
 
 export type TaskInDB = Task & {

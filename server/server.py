@@ -105,11 +105,18 @@ async def save_task(request: Request, task_id: TaskID, checkpoint: dict, backgro
     if not task or task.assigned_to != username:
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
 
+    # Check if export is already in progress
+    if task.export_pending:
+        raise HTTPException(status_code=409, detail="Export already in progress for this task")
+
     checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
     checkpoint_store.save_checkpoint(checkpoint_obj)
 
+    # Set export pending flag to true
+    task_store.update_export_pending(task_id, True)
+
     # Kick off a background task to render the volume
-    background_tasks.add_task(render_and_mesh, task_id, task, checkpoint_store.get_checkpoints_for_task(task_id))
+    background_tasks.add_task(render_and_mesh, task_id, task, checkpoint_store.get_checkpoints_for_task(task_id), task_store)
     return {"message": "Checkpoint received and rendering started"}
 
 
@@ -125,6 +132,10 @@ async def checkpoint_task(request: Request, task_id: TaskID, checkpoint: dict):
 
     checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
     checkpoint_store.save_checkpoint(checkpoint_obj)
+
+    # Reset export pending flag since new annotations invalidate pending exports
+    task_store.update_export_pending(task_id, False)
+
     return {"message": "Checkpoint received"}
 
 
@@ -228,7 +239,7 @@ async def get_coord_frame(request: Request, collection: str, experiment: str):
 
 class CreateTaskRequest(BaseModel):
     # Data source type
-    data_source_type: Literal["bossdb", "cloudvolume"] = "bossdb"
+    data_source_type: Literal["bossdb", "cloudvolume"] = "cloudvolume"
     # Output destination type
     output_type: Literal["bossdb", "download"] = "download"
 
@@ -263,7 +274,7 @@ class CreateTaskRequest(BaseModel):
     @validator('cloudvolume_uri')
     def validate_cloudvolume_fields(cls, v, values):
         """Ensure CloudVolume URI is present when data_source_type is 'cloudvolume'"""
-        if values.get('data_source_type') == 'cloudvolume' and v is None:
+        if values.get('data_source_type') == 'cloudvolume' and v in [None, '']:
             raise ValueError('CloudVolume URI is required when data_source_type is "cloudvolume"')
         return v
 
@@ -326,7 +337,7 @@ async def create_task(
     elif new_task.data_source_type == "cloudvolume":
         # For CloudVolume, we'll do basic URI validation
         # Note: More sophisticated validation could be added here to test CloudVolume access
-        if not new_task.cloudvolume_uri:
+        if not new_task.cloudvolume_uri or new_task.cloudvolume_uri.strip() == "":
             response.status_code = 400
             return {"message": "CloudVolume URI is required"}
 

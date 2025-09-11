@@ -233,6 +233,8 @@
 				</svg>
 			</button>
 
+			<!-- Comment out the complete button for now -->
+			<!--
 			<button
 				class="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				on:click={() => {
@@ -248,7 +250,8 @@
 				}}
 				title="Submit (Alt+Shift+S)"
 			>
-				<!-- Submit/Save icon -->
+
+
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
 						stroke-linecap="round"
@@ -258,6 +261,7 @@
 					></path>
 				</svg>
 			</button>
+
 
 			<!-- Help/Keybindings Toggle -->
 			<button
