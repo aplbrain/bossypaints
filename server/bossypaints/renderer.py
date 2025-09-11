@@ -34,9 +34,13 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
             - as_channels: If True, render each seg ID as a separate channel in the volume.
 
         """
-        x_size = task.x_max - task.x_min
-        y_size = task.y_max - task.y_min
-        z_size = task.z_max - task.z_min
+        # Ensure voxel size is scaled correctly
+        voxel_size = [1, 1, 1]  # Default voxel size in nm
+
+        # Create a NumPy volume sized for the task's FOV
+        x_size = int((task.x_max - task.x_min) / voxel_size[0])
+        y_size = int((task.y_max - task.y_min) / voxel_size[1])
+        z_size = int((task.z_max - task.z_min) / voxel_size[2])
 
         ids = sorted(set(poly.segmentID for checkpoint in checkpoints for poly in checkpoint.polygons))
         id_count = len(ids)
@@ -44,11 +48,6 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
 
         volume = np.zeros((x_size, y_size, z_size, id_count) if as_channels else (x_size, y_size, z_size), dtype=np.uint64)
 
-        logger.info(f"Creating volume of size {x_size}x{y_size}x{z_size}")
-
-        # Calculate the resolution scaling factor
-        resolution_factor = 2 ** task.resolution
-        logger.info(f"Using resolution scaling factor: {resolution_factor} (resolution level: {task.resolution})")
 
         for checkpoint in checkpoints:
             for poly in checkpoint.polygons:
@@ -196,19 +195,56 @@ class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
         logger.info(f"Creating CloudVolume at {cv_path} with voxel size {scaled_voxel_size}")
         logger.info(f"Volume shape (z,y,x): {volume_zyx.shape}")
 
-        # Create CloudVolume info
+        # Determine source scale and voxel_offset to inherit
+        source_scale_index = 0
+        source_scale = None
+        source_voxel_offset = [0, 0, 0]
+        source_resolution = None
+        try:
+            if task.data_source_type == "cloudvolume" and task.cloudvolume_uri:
+                src_cv = CloudVolume(task.cloudvolume_uri, progress=False, cache=False, use_https=True)
+                available_scales = src_cv.scales if hasattr(src_cv, 'scales') else []
+                if len(available_scales) == 0:
+                    logger.warning("Source CloudVolume has no scales info; falling back to defaults")
+                # Choose the requested resolution index if available, else fallback to closest (0)
+                if task.resolution < len(available_scales):
+                    source_scale_index = task.resolution
+                else:
+                    logger.warning(f"Requested task.resolution={task.resolution} not in source scales (0..{len(available_scales)-1}); falling back to 0")
+                    source_scale_index = 0
+
+                if len(available_scales) > 0:
+                    # scales entries in CloudVolume are dict-like
+                    source_scale = available_scales[source_scale_index]
+                    source_resolution = source_scale.get('resolution', None) if isinstance(source_scale, dict) else None
+                    source_voxel_offset = source_scale.get('voxel_offset', source_voxel_offset) if isinstance(source_scale, dict) else source_voxel_offset
+                    logger.info(f"Selected source scale index={source_scale_index}, resolution={source_resolution}, voxel_offset={source_voxel_offset}")
+        except Exception as e:
+            logger.warning(f"Could not read source CloudVolume scales: {e}")
+
+        # If we got a source resolution, use it for the new dataset; else fall back to computed scaled_voxel_size
+        if source_resolution:
+            info_resolution = list(source_resolution)
+        else:
+            info_resolution = scaled_voxel_size
+
+        # Use the source voxel_offset, not the task bounds
+        info_voxel_offset = list(source_voxel_offset)
+
+        logger.info(f"Using info resolution={info_resolution} and info_voxel_offset={info_voxel_offset} for new CloudVolume")
+
+        # Create CloudVolume info using the source scale's resolution and voxel_offset
         info = {
             "type": "segmentation",
             "data_type": "uint64",
             "num_channels": 1,
             "scales": [{
-                "key": "0",  # Always use mip 0 for the single scale we're creating
+                "key": "0",
                 "size": [volume_zyx.shape[2], volume_zyx.shape[1], volume_zyx.shape[0]],  # x, y, z
-                "resolution": scaled_voxel_size,  # x, y, z in nm
-                "voxel_offset": [task.x_min, task.y_min, task.z_min],
+                "resolution": info_resolution,
+                "voxel_offset": info_voxel_offset,
                 "chunk_sizes": [[64, 64, 64]],
                 "encoding": "compressed_segmentation",
-                # "encoding": "raw",
                 "compressed_segmentation_block_size": [8, 8, 8]
             }],
         }
@@ -219,11 +255,8 @@ class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
         with open(info_path, 'w') as f:
             json.dump(info, f, indent=2)
 
-        # Create CloudVolume instance and write data (always use mip=0 for new datasets)
-        cv = CloudVolume(cv_path, mip=0, info=info, progress=False, cache=False, fill_missing=False)
-
         # CloudVolume indexing is [x, y, z] but our volume data is in (z, y, x) order
-        # We need to transpose the volume to (x, y, z) order for CloudVolume
+        # We will transpose later and write after selecting the correct source scale.
         logger.info(f"Task bounds: x:[{task.x_min}:{task.x_max}] y:[{task.y_min}:{task.y_max}] z:[{task.z_min}:{task.z_max}]")
         logger.info(f"Volume shape before processing: {volume_zyx.shape}")
 
@@ -237,10 +270,90 @@ class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
         volume_xyzc = np.transpose(volume_zyx, (2, 1, 0, 3))
         logger.info(f"Volume shape after transpose: {volume_xyzc.shape} (x, y, z, channel)")
 
-        # Write the segmentation data - CloudVolume expects (x, y, z) indexing and data
-        cv[task.x_min:task.x_max, task.y_min:task.y_max, task.z_min:task.z_max] = volume_xyzc
+        # If the source selected scale index differs from task.resolution, resample the volume by powers of two
+        scale_diff = source_scale_index - task.resolution
+        if scale_diff != 0:
+            factor = 2 ** abs(scale_diff)
+            logger.info(f"Resampling volume by factor {factor} (scale_diff={scale_diff}) to match source scale index")
+            if scale_diff > 0:
+                # Need to upsample volume (repeat voxels)
+                volume_xyzc = np.repeat(volume_xyzc, factor, axis=0)
+                volume_xyzc = np.repeat(volume_xyzc, factor, axis=1)
+                volume_xyzc = np.repeat(volume_xyzc, factor, axis=2)
+            else:
+                # Need to downsample volume (take every factor-th voxel)
+                volume_xyzc = volume_xyzc[::factor, ::factor, ::factor, ...]
+            logger.info(f"Volume shape after resample: {volume_xyzc.shape}")
 
-        logger.info(f"Successfully created CloudVolume segmentation at {cv_path}")
+        # Compute write indices relative to the new dataset's voxel_offset
+        # Convert task bounds (assumed in mip=task.resolution voxel coordinates) to the target mip coordinates
+        conv_factor = 2 ** (source_scale_index - task.resolution)
+        write_x0 = int(round(task.x_min * conv_factor - info_voxel_offset[0]))
+        write_x1 = int(round(task.x_max * conv_factor - info_voxel_offset[0]))
+        write_y0 = int(round(task.y_min * conv_factor - info_voxel_offset[1]))
+        write_y1 = int(round(task.y_max * conv_factor - info_voxel_offset[1]))
+        write_z0 = int(round(task.z_min * conv_factor - info_voxel_offset[2]))
+        write_z1 = int(round(task.z_max * conv_factor - info_voxel_offset[2]))
+
+        logger.info(f"Writing to new CloudVolume at indices x:[{write_x0}:{write_x1}] y:[{write_y0}:{write_y1}] z:[{write_z0}:{write_z1}]")
+
+        # Create CloudVolume instance for the target dataset/mip before writing
+        try:
+            cv = CloudVolume(cv_path, mip=source_scale_index, info=info, progress=True, cache=False, fill_missing=False)
+            logger.info(f"Created CloudVolume at {cv_path} mip={source_scale_index}")
+        except Exception as e:
+            logger.warning(f"Failed to create CloudVolume at mip={source_scale_index}: {e}; falling back to mip=0")
+            source_scale_index = 0
+            cv = CloudVolume(cv_path, mip=0, info=info, progress=True, cache=False, fill_missing=False)
+
+        # Determine target dataset size from the source scale if available (use the info we wrote or cv.info)
+        try:
+            target_size = None
+            if source_scale and isinstance(source_scale, dict) and 'size' in source_scale:
+                target_size = tuple(source_scale['size'])
+            elif hasattr(cv, 'info'):
+                target_size = tuple(cv.info.get('scales', [])[0].get('size', None))
+            if not target_size:
+                # Fallback to the info size we created earlier
+                target_size = tuple(info['scales'][0]['size'])
+            max_x, max_y, max_z = target_size[0], target_size[1], target_size[2]
+        except Exception:
+            max_x = volume_xyzc.shape[0]
+            max_y = volume_xyzc.shape[1]
+            max_z = volume_xyzc.shape[2]
+
+        # Clip write indices to dataset bounds and compute corresponding source slices from volume_xyzc
+        tx0 = max(0, write_x0)
+        ty0 = max(0, write_y0)
+        tz0 = max(0, write_z0)
+        tx1 = min(max_x, write_x1)
+        ty1 = min(max_y, write_y1)
+        tz1 = min(max_z, write_z1)
+
+        if tx0 >= tx1 or ty0 >= ty1 or tz0 >= tz1:
+            logger.warning(f"After clipping, write region is empty: x:[{tx0}:{tx1}] y:[{ty0}:{ty1}] z:[{tz0}:{tz1}]. Skipping write.")
+        else:
+            # Compute source slices into volume_xyzc
+            src_x0 = tx0 - write_x0
+            src_x1 = src_x0 + (tx1 - tx0)
+            src_y0 = ty0 - write_y0
+            src_y1 = src_y0 + (ty1 - ty0)
+            src_z0 = tz0 - write_z0
+            src_z1 = src_z0 + (tz1 - tz0)
+
+            # Ensure slice indices are within volume bounds
+            src_x0 = max(0, src_x0); src_y0 = max(0, src_y0); src_z0 = max(0, src_z0)
+            src_x1 = min(volume_xyzc.shape[0], src_x1)
+            src_y1 = min(volume_xyzc.shape[1], src_y1)
+            src_z1 = min(volume_xyzc.shape[2], src_z1)
+
+            logger.info(f"Clipped write region x:[{tx0}:{tx1}] y:[{ty0}:{ty1}] z:[{tz0}:{tz1}], src slice x:[{src_x0}:{src_x1}] y:[{src_y0}:{src_y1}] z:[{src_z0}:{src_z1}]")
+
+            try:
+                cv[tx0:tx1, ty0:ty1, tz0:tz1] = volume_xyzc[src_x0:src_x1, src_y0:src_y1, src_z0:src_z1, ...]
+                logger.info(f"Successfully wrote clipped volume to {cv_path} at mip={source_scale_index}")
+            except Exception as e:
+                logger.error(f"Failed to save volume to CloudVolume: {e}")
 
         # Return the CloudVolume path for potential use in meshing or other operations
         return cv_path

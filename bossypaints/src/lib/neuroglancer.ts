@@ -161,14 +161,15 @@ export function createImageLayer(task: TaskInDB): NeuroglancerLayer {
  * @returns Annotation layer configuration
  */
 export function createAnnotationLayer(task: TaskInDB): NeuroglancerLayer {
+    const resolutionFactor = Math.pow(2, task.resolution);
     return {
         type: 'annotation',
         source: {
             url: 'local://annotations',
             transform: {
                 outputDimensions: {
-                    x: [1e-9, 'm'],
-                    y: [1e-9, 'm'],
+                    x: [1e-9 * resolutionFactor, 'm'],
+                    y: [1e-9 * resolutionFactor, 'm'],
                     z: [3e-8, 'm']
                 }
             }
@@ -187,15 +188,16 @@ export function createAnnotationLayer(task: TaskInDB): NeuroglancerLayer {
  * @returns Bounding box annotation configuration
  */
 export function createBoundingBoxAnnotation(task: TaskInDB): NeuroglancerAnnotation {
+    const resolutionFactor = Math.pow(2, task.resolution);
     return {
         pointA: [
-            task.x_min * Math.pow(2, task.resolution),
-            task.y_min * Math.pow(2, task.resolution),
+            task.x_min * resolutionFactor,
+            task.y_min * resolutionFactor,
             task.z_min
         ],
         pointB: [
-            task.x_max * Math.pow(2, task.resolution),
-            task.y_max * Math.pow(2, task.resolution),
+            task.x_max * resolutionFactor,
+            task.y_max * resolutionFactor,
             task.z_max
         ],
         type: 'axis_aligned_bounding_box',
@@ -204,18 +206,14 @@ export function createBoundingBoxAnnotation(task: TaskInDB): NeuroglancerAnnotat
     };
 }
 
-/**
- * Create navigation configuration for neuroglancer
- * @param task - The task object containing volume information
- * @returns Navigation configuration
- */
 export function createNavigationConfig(task: TaskInDB) {
+    const resolutionFactor = Math.pow(2, task.resolution);
     return {
         pose: {
             position: {
                 voxelCoordinates: [
-                    Math.round(((task.x_max + task.x_min) / 2) * Math.pow(2, task.resolution)),
-                    Math.round(((task.y_max + task.y_min) / 2) * Math.pow(2, task.resolution)),
+                    Math.round(((task.x_max + task.x_min) / 2) * resolutionFactor),
+                    Math.round(((task.y_max + task.y_min) / 2) * resolutionFactor),
                     Math.round((task.z_max + task.z_min) / 2)
                 ]
             }
