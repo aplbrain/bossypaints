@@ -2,8 +2,9 @@
 	import API from '$lib/api';
 	import type { TaskInDB } from '$lib/api';
 	import Header from '$lib/Header.svelte';
-	import { generateNeuroglancerLink } from '$lib/neuroglancer';
-	import { getTaskDisplayName, formatTaskBounds, formatCloudVolumePath } from '$lib/utils/task';
+	import TaskRow from '$lib/TaskRow.svelte';
+	import SettingsSidebar from '$lib/SettingsSidebar.svelte';
+	import WelcomeSection from '$lib/WelcomeSection.svelte';
 	import { ArchiveIcon, EyeIcon, ExternalLinkIcon, CheckIcon, SpinnerIcon } from '$lib/icons';
 
 	interface User {
@@ -37,10 +38,6 @@
 			tasks = [];
 			loading = false;
 		});
-
-	function nglLink(task: TaskInDB) {
-		return generateNeuroglancerLink(task);
-	}
 
 	async function saveApiToken() {
 		if (apiToken) {
@@ -114,54 +111,13 @@
 		</nav>
 
 		{#if !apiToken}
-			<!-- Welcome Section -->
-			<div class="max-w-2xl mx-auto text-center">
-				<div class="bg-white rounded-2xl shadow-sm p-8 border border-gray-200">
-					<div
-						class="w-16 h-16 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl mx-auto mb-6 flex items-center justify-center"
-					>
-						<ArchiveIcon className="w-8 h-8 text-white" />
-					</div>
-					<h2 class="text-3xl font-bold text-gray-900 mb-4">Archived Tasks</h2>
-					<p class="text-lg text-gray-600 mb-8">View and manage your archived annotation tasks.</p>
-					<div class="bg-orange-50 rounded-lg p-6 mb-6">
-						<h3 class="text-lg font-semibold text-orange-900 mb-2">Get Started</h3>
-						<p class="text-orange-800 mb-4">
-							Please enter your BossDB API token to access your archived tasks.
-						</p>
-						<a
-							href="https://api.bossdb.io/v1/mgmt/token"
-							target="_blank"
-							class="inline-flex items-center text-orange-600 hover:text-orange-800 font-medium"
-						>
-							Generate API Token
-							<svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-								></path>
-							</svg>
-						</a>
-					</div>
-					<button
-						onclick={() => (showSettings = true)}
-						aria-label="Open API token settings"
-						class="inline-flex items-center px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
-					>
-						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-							></path>
-						</svg>
-						Enter API Token
-					</button>
-				</div>
-			</div>
+			<WelcomeSection 
+				title="Archived Tasks"
+				subtitle="View and manage your archived annotation tasks."
+				description="Please enter your BossDB API token to access your archived tasks."
+				icon={ArchiveIcon}
+				showSettings={() => (showSettings = true)}
+			/>
 		{:else if user?.username}
 			<!-- Archive Header -->
 			<div class="bg-white rounded-2xl shadow-sm p-8 border border-gray-200 mb-8">
@@ -294,103 +250,7 @@
 								</thead>
 								<tbody class="bg-white divide-y divide-gray-200">
 									{#each tasks as task, index}
-										<tr class="hover:bg-gray-50 transition-colors duration-150">
-											<td class="px-6 py-4 whitespace-nowrap">
-												<div class="flex items-center">
-													<div
-														class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-													>
-														{index + 1}
-													</div>
-													<div class="ml-3">
-														<div class="text-sm font-medium text-gray-900">
-															<a
-																href="/task/{task.id}"
-																class="text-orange-600 hover:text-orange-800"
-															>
-																{getTaskDisplayName(task)}
-															</a>
-														</div>
-														<div class="text-xs text-gray-500">
-															ID: {task.id.substring(0, 8)}...
-														</div>
-													</div>
-												</div>
-											</td>
-											<td class="px-6 py-4 whitespace-nowrap">
-												{#if task.data_source_type === 'cloudvolume'}
-													<div class="flex items-center space-x-2">
-														<span
-															class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200"
-															>CV</span
-														>
-														<div class="text-sm text-gray-900">
-															{formatCloudVolumePath(task.cloudvolume_uri) || task.cloudvolume_uri}
-														</div>
-													</div>
-													<div
-														class="text-xs text-gray-500 truncate max-w-xs"
-														title={task.cloudvolume_uri}
-													>
-														{task.cloudvolume_uri}
-													</div>
-												{:else}
-													<div class="text-sm text-gray-900">{task.collection}</div>
-													<div class="text-xs text-gray-500">
-														{task.experiment} / {task.channel}
-													</div>
-												{/if}
-											</td>
-											<td class="px-6 py-4 whitespace-nowrap">
-												<span
-													class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-												>
-													{task.resolution}
-												</span>
-											</td>
-											<td class="px-6 py-4 text-sm text-gray-700">
-												<div class="space-y-1 font-mono">
-													<div class="flex items-center">
-														<span
-															class="inline-flex items-center px-1.5 py-0.5 mr-2 rounded-full text-[10px] font-semibold bg-black text-white"
-															>X</span
-														>
-														<span>{task.x_min}–{task.x_max}</span>
-													</div>
-													<div class="flex items-center">
-														<span
-															class="inline-flex items-center px-1.5 py-0.5 mr-2 rounded-full text-[10px] font-semibold bg-black text-white"
-															>Y</span
-														>
-														<span>{task.y_min}–{task.y_max}</span>
-													</div>
-													<div class="flex items-center">
-														<span
-															class="inline-flex items-center px-1.5 py-0.5 mr-2 rounded-full text-[10px] font-semibold bg-black text-white"
-															>Z</span
-														>
-														<span>{task.z_min}–{task.z_max}</span>
-													</div>
-												</div>
-											</td>
-											<td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-												<a
-													href="/task/{task.id}"
-													class="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium rounded-md transition-colors duration-200"
-												>
-													<EyeIcon className="w-3 h-3 mr-1" />
-													Details
-												</a>
-												<a
-													href={nglLink(task)}
-													target="_blank"
-													class="inline-flex items-center px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-xs font-medium rounded-md transition-colors duration-200"
-												>
-													<ExternalLinkIcon className="w-3 h-3 mr-1" />
-													Neuroglancer
-												</a>
-											</td>
-										</tr>
+										<TaskRow {task} {index} variant="archived" />
 									{/each}
 								</tbody>
 							</table>
@@ -402,125 +262,11 @@
 	</main>
 
 	<!-- Settings Sidebar -->
-	{#if showSettings}
-		<div class="fixed inset-0 z-50 overflow-hidden">
-			<div class="absolute inset-0 overflow-hidden">
-				<!-- Backdrop -->
-				<button
-					class="absolute inset-0 bg-black bg-opacity-50 transition-opacity w-full h-full cursor-default"
-					onclick={() => (showSettings = false)}
-					aria-label="Close settings"
-				></button>
-
-				<!-- Slide-out panel -->
-				<section class="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-xl">
-					<div class="flex flex-col h-full">
-						<!-- Header -->
-						<div class="px-6 py-4 border-b border-gray-200">
-							<div class="flex items-center justify-between">
-								<h3 class="text-lg font-semibold text-gray-900">Settings</h3>
-								<button
-									onclick={() => (showSettings = false)}
-									class="text-gray-400 hover:text-gray-600 transition-colors duration-200"
-									aria-label="Close settings"
-								>
-									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M6 18L18 6M6 6l12 12"
-										></path>
-									</svg>
-								</button>
-							</div>
-						</div>
-
-						<!-- Content -->
-						<div class="flex-1 px-6 py-6 space-y-6">
-							<div>
-								<label for="apiToken" class="block text-sm font-medium text-gray-700 mb-2">
-									BossDB API Token
-								</label>
-								<div class="space-y-3">
-									<input
-										type={user?.username ? 'password' : 'text'}
-										placeholder="Enter your API token"
-										id="apiToken"
-										bind:value={apiToken}
-										class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
-									/>
-									<button
-										onclick={saveApiToken}
-										aria-label="Save API token"
-										class="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors duration-200 text-sm"
-									>
-										Save Token
-									</button>
-								</div>
-								{#if user?.username}
-									<div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-										<div class="flex items-center">
-											<svg
-												class="w-4 h-4 text-green-600 mr-2"
-												fill="none"
-												stroke="currentColor"
-												viewBox="0 0 24 24"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M5 13l4 4L19 7"
-												></path>
-											</svg>
-											<span class="text-sm font-medium text-green-800"
-												>Connected as {user.username}</span
-											>
-										</div>
-									</div>
-								{/if}
-							</div>
-
-							<div class="border-t border-gray-200 pt-6">
-								<h4 class="text-sm font-medium text-gray-900 mb-3">Quick Links</h4>
-								<div class="space-y-2">
-									<a
-										href="https://api.bossdb.io/v1/mgmt/token"
-										target="_blank"
-										class="flex items-center text-sm text-orange-600 hover:text-orange-800"
-									>
-										<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-											></path>
-										</svg>
-										Generate API Token
-									</a>
-									<a
-										href="https://bossdb.org/help"
-										target="_blank"
-										class="flex items-center text-sm text-orange-600 hover:text-orange-800"
-									>
-										<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-											></path>
-										</svg>
-										Help & Documentation
-									</a>
-								</div>
-							</div>
-						</div>
-					</div>
-				</section>
-			</div>
-		</div>
-	{/if}
+	<SettingsSidebar 
+		bind:showSettings 
+		bind:apiToken 
+		{user} 
+		variant="archived" 
+		{saveApiToken} 
+	/>
 </div>
