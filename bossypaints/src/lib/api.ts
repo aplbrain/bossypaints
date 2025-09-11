@@ -9,6 +9,7 @@ export type TaskID = string;
 
 export type Task = {
     data_source_type: "bossdb" | "cloudvolume";
+    name?: string;
     collection?: string;
     experiment?: string;
     channel?: string;
@@ -114,6 +115,10 @@ class API {
 
     async unarchiveTask(taskId: TaskID): Promise<{ message: string }> {
         return this.post(`/api/tasks/${taskId}/unarchive`, {});
+    }
+
+    async updateTaskName(taskId: TaskID, name: string | null): Promise<{ message: string, name: string | null }> {
+        return this.post(`/api/tasks/${taskId}/update-name`, { name });
     }
 
     async getBossDBUsernameFromToken(token: string): Promise<{ username: string }> {
