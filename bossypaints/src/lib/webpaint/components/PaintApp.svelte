@@ -426,15 +426,15 @@ from BossDB and displays it on the canvas.
 			debugUtil.log(
 				`LOAD: Requesting filmstrip chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:[${chunkId.z_min}-${chunkId.z_max}] (priority: ${chunks.indexOf(chunk)})`
 			);
-	       // Pass filmstrip and resolution context for smart cancellation
-	       const context = {
-		       filmstripRange: { z_min: chunkId.z_min, z_max: chunkId.z_max },
-		       resolution: chunkId.resolution
-	       };
-	       const loadPromise = imageCache.getImage(chunkId, context).catch((err) => {
-		       debugUtil.warn(`LOAD: Failed to load chunk:`, err);
-	       });
-	       chunkPromises.push(loadPromise);
+			// Pass filmstrip and resolution context for smart cancellation
+			const context = {
+				filmstripRange: { z_min: chunkId.z_min, z_max: chunkId.z_max },
+				resolution: chunkId.resolution
+			};
+			const loadPromise = imageCache.getImage(chunkId, context).catch((err) => {
+				debugUtil.warn(`LOAD: Failed to load chunk:`, err);
+			});
+			chunkPromises.push(loadPromise);
 		}
 
 		// Load all chunks but don't wait for completion (async loading)
