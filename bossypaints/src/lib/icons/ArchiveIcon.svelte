@@ -3,12 +3,7 @@
 	export let stroke: string = 'currentColor';
 </script>
 
-<svg 
-	class={className} 
-	fill="none" 
-	stroke={stroke} 
-	viewBox="0 0 24 24"
->
+<svg class={className} fill="none" {stroke} viewBox="0 0 24 24">
 	<path
 		stroke-linecap="round"
 		stroke-linejoin="round"
