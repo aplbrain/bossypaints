@@ -17,8 +17,8 @@ from pydantic import BaseModel, validator
 from dotenv import load_dotenv
 
 from bossypaints.background import render_and_mesh
-from bossypaints.tasks import JSONFileTaskQueueStore, Task, TaskID
-from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
+from bossypaints.tasks import SQLiteTaskQueueStore, Task, TaskID
+from bossypaints.checkpoints import Checkpoint, SQLiteCheckpointStore
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,9 +36,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-task_store = JSONFileTaskQueueStore("tasks.json")
+task_store = SQLiteTaskQueueStore("tasks.db")
 
-checkpoint_store = JSONCheckpointStore("checkpoints.json")
+checkpoint_store = SQLiteCheckpointStore("checkpoints.db")
 
 api_router = APIRouter()
 
@@ -278,6 +278,9 @@ class CreateTaskRequest(BaseModel):
     # Output destination type
     output_type: Literal["bossdb", "download"] = "download"
 
+    # Task metadata
+    name: Optional[str] = None
+
     # BossDB fields
     collection: Optional[str] = None
     experiment: Optional[str] = None
@@ -388,7 +391,8 @@ async def create_task(
     # Create the task
     task = Task(
         data_source_type=new_task.data_source_type,
-    output_type=new_task.output_type,
+        output_type=new_task.output_type,
+        name=new_task.name,
         collection=new_task.collection,
         experiment=new_task.experiment,
         channel=new_task.channel,
@@ -405,9 +409,7 @@ async def create_task(
         destination_experiment=new_task.destination_experiment,
         destination_channel=new_task.destination_channel,
         assigned_to=username,  # Assign the task to the user creating it
-    )
-
-    # Create or confirm access to the destination collection, experiment, and channel
+    )    # Create or confirm access to the destination collection, experiment, and channel
     # (This only applies to BossDB destinations for now)
     if (
         task.output_type == "bossdb"
@@ -588,6 +590,26 @@ async def assign_task(request: Request, task_id: TaskID, assign_request: AssignT
     return {"message": f"Task {task_id} assigned to {assign_request.assigned_to}"}
 
 
+class UpdateTaskNameRequest(BaseModel):
+    name: Optional[str] = None
+
+
+@api_router.post("/tasks/{task_id}/update-name")
+async def update_task_name(request: Request, task_id: TaskID, update_request: UpdateTaskNameRequest):
+    """Update the name of a task. Only the owner can update the task name."""
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+
+    # Update the task name
+    task_store.update_name(task_id, update_request.name)
+
+    return {"message": "Task name updated successfully", "name": update_request.name}
+
+
 @api_router.get("/tasks/unassigned")
 async def get_unassigned_tasks(request: Request):
     """Get all tasks that are not assigned to any user."""
@@ -758,7 +780,7 @@ async def filmstrip_cloudvolume(
     cv_uri = uri
 
     try:
-        vol = CloudVolume(cv_uri, mip=res, progress=False, cache=False)
+        vol = CloudVolume(cv_uri, mip=res, progress=False, cache=False, use_https=True)
         # Fetch block: index order is [x, y, z]
         block = vol[xmin:xmax, ymin:ymax, zmin:zmax]
         # block shape: (x, y, z[, c])

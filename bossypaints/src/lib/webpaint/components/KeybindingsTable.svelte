@@ -44,8 +44,8 @@
 	<!-- Modal backdrop -->
 	<div
 		class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-		on:click={handleBackdropClick}
-		on:keydown={handleKeydown}
+		onclick={handleBackdropClick}
+		onkeydown={handleKeydown}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="keybindings-title"
@@ -57,7 +57,7 @@
 				<h2 id="keybindings-title" class="text-xl font-semibold text-gray-900">Keybindings</h2>
 				<button
 					class="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors"
-					on:click={() => (show = false)}
+					onclick={() => (show = false)}
 					aria-label="Close keybindings"
 				>
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

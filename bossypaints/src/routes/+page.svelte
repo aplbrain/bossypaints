@@ -3,6 +3,7 @@
 	import type { TaskInDB } from '$lib/api';
 	import Header from '$lib/Header.svelte';
 	import { generateNeuroglancerLink } from '$lib/neuroglancer';
+	import { getTaskDisplayName, formatCloudVolumePath } from '$lib/utils/task';
 	import {
 		ArchiveIcon,
 		EyeIcon,
@@ -63,45 +64,9 @@
 				loading = false;
 			} catch (error) {
 				console.error('Failed to validate token:', error);
+				loading = false;
 			}
 		}
-	}
-
-	function formatTaskId(id: string) {
-		return id.split('-')[0];
-	}
-
-	function formatBounds(task: TaskInDB) {
-		return `${task.x_min}–${task.x_max} × ${task.y_min}–${task.y_max} × ${task.z_min}–${task.z_max}`;
-	}
-
-	// For CloudVolume URIs, show path without protocol and bucket/domain
-	function cvDisplayPath(uri?: string): string {
-		if (!uri) return '';
-		let u = uri.trim();
-		// Strip precomputed:// wrapper if present
-		if (u.startsWith('precomputed://')) {
-			u = u.slice('precomputed://'.length);
-		}
-		// Detect and strip scheme (e.g., gs://, s3://, file://, https://)
-		const schemeMatch = u.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//);
-		let scheme = '';
-		if (schemeMatch) {
-			scheme = (schemeMatch[1] || '').toLowerCase();
-			u = u.slice(schemeMatch[0].length);
-		}
-		// Normalize leading slashes
-		u = u.replace(/^\/+/, '');
-		// For gs/s3/https, drop the first segment (bucket or host). For file, keep full path.
-		const parts = u.split('/');
-		if (scheme === 'gs' || scheme === 's3' || scheme.startsWith('http')) {
-			return parts.length > 1 ? parts.slice(1).join('/') : '';
-		} else if (scheme === 'file') {
-			// Preserve absolute path semantics
-			return '/' + parts.join('/');
-		}
-		// Fallback: if no scheme was detected, attempt to drop first segment as bucket-like
-		return parts.length > 1 ? parts.slice(1).join('/') : u;
 	}
 </script>
 
@@ -144,7 +109,8 @@
 						</a>
 					</div>
 					<button
-						on:click={() => (showSettings = true)}
+						onclick={() => (showSettings = true)}
+						aria-label="Open API token settings"
 						class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"
 					>
 						<LockIcon class="w-4 h-4 mr-2" />
@@ -302,7 +268,7 @@
 													<div class="ml-3">
 														<div class="text-sm font-medium text-gray-900">
 															<a href="/app/{task.id}" class="text-blue-600 hover:text-blue-800">
-																{formatTaskId(task.id)}
+																{getTaskDisplayName(task)}
 															</a>
 														</div>
 														<div class="text-xs text-gray-500">
@@ -319,7 +285,7 @@
 															>CV</span
 														>
 														<div class="text-sm text-gray-900">
-															{cvDisplayPath(task.cloudvolume_uri) || task.cloudvolume_uri}
+															{formatCloudVolumePath(task.cloudvolume_uri) || task.cloudvolume_uri}
 														</div>
 													</div>
 													<div
@@ -402,7 +368,7 @@
 				<!-- Backdrop -->
 				<button
 					class="absolute inset-0 bg-black bg-opacity-50 transition-opacity w-full h-full cursor-default"
-					on:click={() => (showSettings = false)}
+					onclick={() => (showSettings = false)}
 					aria-label="Close settings"
 				></button>
 
@@ -414,7 +380,7 @@
 							<div class="flex items-center justify-between">
 								<h3 class="text-lg font-semibold text-gray-900">Settings</h3>
 								<button
-									on:click={() => (showSettings = false)}
+									onclick={() => (showSettings = false)}
 									class="text-gray-400 hover:text-gray-600 transition-colors duration-200"
 									aria-label="Close settings"
 								>
@@ -438,7 +404,8 @@
 										class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
 									/>
 									<button
-										on:click={saveApiToken}
+										onclick={saveApiToken}
+										aria-label="Save API token"
 										class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 text-sm"
 									>
 										Save Token
