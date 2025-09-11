@@ -210,8 +210,6 @@ class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
                 "encoding": "raw",
                 "compressed_segmentation_block_size": [8, 8, 8]
             }],
-            "mesh": "mesh",
-            "skeletons": "skeletons"
         }
 
         # Write info file
