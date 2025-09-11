@@ -111,7 +111,7 @@
 		</nav>
 
 		{#if !apiToken}
-			<WelcomeSection 
+			<WelcomeSection
 				title="Archived Tasks"
 				subtitle="View and manage your archived annotation tasks."
 				description="Please enter your BossDB API token to access your archived tasks."
@@ -262,11 +262,5 @@
 	</main>
 
 	<!-- Settings Sidebar -->
-	<SettingsSidebar 
-		bind:showSettings 
-		bind:apiToken 
-		{user} 
-		variant="archived" 
-		{saveApiToken} 
-	/>
+	<SettingsSidebar bind:showSettings bind:apiToken {user} variant="archived" {saveApiToken} />
 </div>

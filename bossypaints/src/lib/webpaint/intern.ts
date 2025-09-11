@@ -45,7 +45,14 @@ class BossRemote {
 			.catch((err) => debug.error(err));
 	}
 
-	async getCutoutPNG(uri: string, res: number, xs: [number, number], ys: [number, number], zs: [number, number]) {
+	   async getCutoutPNG(
+		   uri: string,
+		   res: number,
+		   xs: [number, number],
+		   ys: [number, number],
+		   zs: [number, number],
+		   signal?: AbortSignal
+	   ) {
 		/*
 		Get a cutout in PNG filmstrip format
 
@@ -80,11 +87,12 @@ class BossRemote {
 				Accept: 'image/png, image/jpeg' // Accept both PNG and JPEG formats
 			};
 
-			const response = await fetch(url, {
-				headers: headers,
-				// Add cache busting to prevent browser caching
-				cache: 'no-store'
-			});
+	       const response = await fetch(url, {
+		       headers: headers,
+		       // Add cache busting to prevent browser caching
+		       cache: 'no-store',
+		       signal
+	       });
 
 			if (!response.ok) {
 				debug.error(`NETWORK ERROR [${requestId}]: ${response.status} ${response.statusText} from ${url}`);

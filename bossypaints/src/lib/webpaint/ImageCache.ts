@@ -51,7 +51,15 @@ export interface CacheOptions {
  * LRU Cache implementation for image chunks
  * Caching is always enabled - no option to disable
  */
+export interface RequestContext {
+    filmstripRange?: { z_min: number; z_max: number };
+    spatialRegion?: { x_min: number; x_max: number; y_min: number; y_max: number };
+    resolution?: number;
+}
+
 export class ImageCache {
+    // Track active requests for smart cancellation
+    private activeRequests = new Map<string, { controller: AbortController; context: RequestContext }>();
     private cache: Map<string, CachedChunk> = new Map();
     private maxSizeBytes: number;
     private maxItems: number;
@@ -487,46 +495,77 @@ export class ImageCache {
     /**
      * This method loads the image if not cached and returns it
      */
-    async getImage(identifier: ChunkIdentifier): Promise<any> {
+    async getImage(identifier: ChunkIdentifier, context?: RequestContext): Promise<any> {
         // First check if it's already cached
         const cached = this.get(identifier);
         if (cached) {
             return cached;
         }
 
-        // If not cached, we need to load it
         if (!this.bossRemote || !this.datasetURI) {
             debugUtil.warn('ImageCache.getImage: Image not in cache and BossRemote/URI not available for loading');
             return null;
         }
 
+        // Generate a request key based on chunk and context
+        const requestKey = this.generateKey(identifier) +
+            (context && context.filmstripRange ? `-z${context.filmstripRange.z_min}_${context.filmstripRange.z_max}` : '') +
+            (context && context.resolution !== undefined ? `-r${context.resolution}` : '');
+
+        // Cancel obsolete requests
+        this.cancelObsoleteRequests(context);
+
+        const controller = new AbortController();
+        this.activeRequests.set(requestKey, { controller, context: context || {} });
         try {
-            // Use getCutoutPNG method to load the image
             const blob = await this.bossRemote.getCutoutPNG(
                 this.datasetURI,
-                identifier.resolution, // resolution level
-                [identifier.x_min, identifier.x_max], // x range
-                [identifier.y_min, identifier.y_max], // y range
-                [identifier.z_min, identifier.z_max]  // z range
+                identifier.resolution,
+                [identifier.x_min, identifier.x_max],
+                [identifier.y_min, identifier.y_max],
+                [identifier.z_min, identifier.z_max],
+                controller.signal
             );
-
+            this.activeRequests.delete(requestKey);
             if (blob && this.p5Instance) {
-                // Convert blob to p5.Image
                 const url = URL.createObjectURL(blob);
                 const image = this.p5Instance.loadImage(url, () => {
-                    // Clean up the object URL after the image loads
                     URL.revokeObjectURL(url);
                 });
-
-                // Cache the image
                 this.set(identifier, image);
                 return image;
             }
-
             return null;
-        } catch (error) {
+        } catch (error: any) {
+            this.activeRequests.delete(requestKey);
+            if (error && error.name === 'AbortError') {
+                debugUtil.log('Image request cancelled:', requestKey);
+                return null;
+            }
             debugUtil.warn('ImageCache.getImage: Failed to load image:', error);
             return null;
+        }
+    }
+
+    // Cancel requests that are obsolete based on filmstrip batch and resolution
+    private cancelObsoleteRequests(newContext?: RequestContext) {
+        if (!newContext || !newContext.filmstripRange) return;
+        for (const [key, req] of this.activeRequests.entries()) {
+            if (req.context && req.context.filmstripRange && req.context.resolution !== undefined) {
+                // Cancel if different filmstrip batch or different resolution
+                const old = req.context;
+                const newF = newContext.filmstripRange;
+                const oldF = old.filmstripRange;
+                let diffBatch = false;
+                if (oldF && newF) {
+                    diffBatch = oldF.z_min !== newF.z_min || oldF.z_max !== newF.z_max;
+                }
+                const diffRes = old.resolution !== newContext.resolution;
+                if (diffBatch || diffRes) {
+                    req.controller.abort();
+                    this.activeRequests.delete(key);
+                }
+            }
         }
     }
 
