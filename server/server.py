@@ -642,7 +642,27 @@ EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Serve the exports directory over HTTP so CloudVolume precomputed folders can be
 # referenced by Neuroglancer as an HTTP URL (e.g. http://host/exports/<task_id>/<cv_name>)
-app.mount("/exports", StaticFiles(directory=str(EXPORTS_DIR)), name="exports")
+class GzipFallbackStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        # 1) Try the normal path first (unchanged behavior)
+        resp = await super().get_response(path, scope)
+        if resp.status_code != 404:
+            return resp
+
+        # 2) Try the ".gz" sibling
+        gz_resp = await super().get_response(path + ".gz", scope)
+        if gz_resp.status_code == 404:
+            return resp  # still a 404
+
+        # 3) Serve gz file as the extensionless resource
+        gz_resp.headers["Content-Encoding"] = "gzip"
+        gz_resp.headers.setdefault("Content-Type", "application/octet-stream")
+        gz_resp.headers.setdefault("Cache-Control", "public, max-age=31536000")
+        gz_resp.headers.setdefault("Access-Control-Allow-Origin", "*")
+        return gz_resp
+
+# Keep the same mount path so other code doesn’t change:
+app.mount("/exports", GzipFallbackStaticFiles(directory=str(EXPORTS_DIR)), name="exports")
 
 @api_router.get("/tasks/{task_id}/exports")
 async def list_task_exports(request: Request, task_id: TaskID):

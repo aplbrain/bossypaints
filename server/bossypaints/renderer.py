@@ -207,7 +207,8 @@ class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
                 "resolution": scaled_voxel_size,  # x, y, z in nm
                 "voxel_offset": [task.x_min, task.y_min, task.z_min],
                 "chunk_sizes": [[64, 64, 64]],
-                "encoding": "raw",
+                "encoding": "compressed_segmentation",
+                # "encoding": "raw",
                 "compressed_segmentation_block_size": [8, 8, 8]
             }],
         }
