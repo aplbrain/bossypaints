@@ -181,7 +181,7 @@ class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
                 voxel_size = source_dataset.voxel_size
             # For CloudVolume sources, try to get info from existing CloudVolume
             elif task.data_source_type == "cloudvolume" and task.cloudvolume_uri:
-                source_cv = CloudVolume(task.cloudvolume_uri, mip=task.resolution, progress=False, cache=False)
+                source_cv = CloudVolume(task.cloudvolume_uri, mip=task.resolution, progress=False, cache=False, use_https=True)
                 if hasattr(source_cv, 'scales') and len(source_cv.scales) > task.resolution:
                     scale = source_cv.scales[task.resolution]
                     if hasattr(scale, 'resolution'):
@@ -220,7 +220,7 @@ class LocalCloudVolumePolygonRenderer(NumpyInMemoryVolumePolygonRenderer):
             json.dump(info, f, indent=2)
 
         # Create CloudVolume instance and write data (always use mip=0 for new datasets)
-        cv = CloudVolume(cv_path, mip=0, info=info, progress=False, cache=False)
+        cv = CloudVolume(cv_path, mip=0, info=info, progress=False, cache=False, fill_missing=False)
 
         # CloudVolume indexing is [x, y, z] but our volume data is in (z, y, x) order
         # We need to transpose the volume to (x, y, z) order for CloudVolume
