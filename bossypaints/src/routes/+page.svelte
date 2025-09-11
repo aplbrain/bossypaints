@@ -75,7 +75,7 @@
 	<!-- Main Content -->
 	<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 		{#if !apiToken}
-			<WelcomeSection 
+			<WelcomeSection
 				title="Welcome to BossyPaints"
 				subtitle="A powerful neural annotation platform for precise volumetric data analysis and annotation tasks."
 				description="Please enter your BossDB API token to access your annotation tasks."
@@ -233,11 +233,5 @@
 	</main>
 
 	<!-- Settings Sidebar -->
-	<SettingsSidebar 
-		bind:showSettings 
-		bind:apiToken 
-		{user} 
-		variant="default" 
-		{saveApiToken} 
-	/>
+	<SettingsSidebar bind:showSettings bind:apiToken {user} variant="default" {saveApiToken} />
 </div>
