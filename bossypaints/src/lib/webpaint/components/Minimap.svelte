@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import p5 from 'p5';
+	import { onDestroy } from 'svelte';
 	import type { NavigationStore } from '../stores/NavigationStore.svelte';
 	import type { AnnotationManagerStore } from '../stores/AnnotationManagerStore.svelte';
 
@@ -15,6 +16,9 @@
 	export let nav: NavigationStore;
 
 	export let height = 256;
+
+	let minimapPointerDownHandler: (e: PointerEvent) => void;
+	let minimapCanvasEl: HTMLCanvasElement | null = null;
 
 	// Create the canvas element and attach it to the DOM:
 	const canvas = document.createElement('canvas');
@@ -26,7 +30,38 @@
 	const minimapSketch = (s: p5) => {
 		s.setup = () => {
 			// runs once
-			s.createCanvas(64, height, document.getElementById('minimap'));
+			const renderer = s.createCanvas(64, height);
+			const parent = document.getElementById('minimap');
+			if (parent) renderer.parent(parent);
+			minimapCanvasEl = (s.drawingContext as CanvasRenderingContext2D).canvas as HTMLCanvasElement;
+
+			// Attach Pointer Events for touch tapping to change layers
+			minimapPointerDownHandler = (e: PointerEvent) => {
+				// Only handle direct taps on the minimap canvas
+				if (!minimapCanvasEl || e.target !== minimapCanvasEl) return;
+
+				const rect = minimapCanvasEl!.getBoundingClientRect();
+				const localX = e.clientX - rect.left;
+				const localY = e.clientY - rect.top;
+
+				if (localX < 0 || localX > s.width || localY < 0 || localY > s.height) {
+					return;
+				}
+
+				const totalLayers = nav.maxLayer - nav.minLayer;
+				const clickedLayer = Math.floor((localY / height) * totalLayers);
+				const newLayer = Math.max(nav.minLayer, Math.min(nav.maxLayer - 1, clickedLayer));
+				nav.setLayer(newLayer);
+
+				e.preventDefault();
+				e.stopPropagation();
+				return false as unknown as boolean;
+			};
+			minimapCanvasEl = (s.drawingContext as CanvasRenderingContext2D).canvas as HTMLCanvasElement;
+			minimapCanvasEl.addEventListener('pointerdown', minimapPointerDownHandler, {
+				passive: false
+			});
+
 			s.background(0, 0, 0);
 		};
 
@@ -64,9 +99,7 @@
 			});
 		};
 
-		s.mousePressed = (event) => {
-			// Allow clicks to change layers
-			if (event.target !== s.canvas) return;
+		s.mousePressed = () => {
 			const mouseX = s.mouseX;
 			const mouseY = s.mouseY;
 
@@ -79,13 +112,17 @@
 			const newLayer = Math.max(nav.minLayer, Math.min(nav.maxLayer - 1, clickedLayer));
 			nav.setLayer(newLayer);
 
-			event.preventDefault();
-			event.stopPropagation();
 			return false;
 		};
 	};
 
 	export const minimap = new p5(minimapSketch);
+
+	onDestroy(() => {
+		if (minimapCanvasEl && minimapPointerDownHandler) {
+			minimapCanvasEl.removeEventListener('pointerdown', minimapPointerDownHandler as any);
+		}
+	});
 </script>
 
 <style>
@@ -95,5 +132,11 @@
 		left: 0;
 		z-index: 100;
 		background: transparent;
+
+		/* Touch ergonomics */
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		overscroll-behavior: contain;
 	}
 </style>

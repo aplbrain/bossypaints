@@ -250,7 +250,7 @@
 
 		<!-- Percentage Complete Bar - slides down to hide, hover to show -->
 		<div
-			class="fixed bottom-0 left-1/2 transform -translate-x-1/2 transition-transform duration-300 ease-in-out translate-y-16 hover:translate-y-0"
+			class="fixed bottom-0 left-1/2 transform -translate-x-1/2 transition-transform duration-300 ease-in-out translate-y-16 hover:translate-y-0 z-20 pointer-events-auto"
 		>
 			<div class="p-4 bg-white border border-gray-300 rounded-t-lg text-center shadow-lg">
 				<p class="text-sm font-medium">
@@ -261,12 +261,13 @@
 		</div>
 
 		<!-- Floating Menu - Bottom Right -->
-		<div class="fixed bottom-4 right-4 flex flex-col gap-2">
+		<div class="fixed bottom-4 right-4 flex flex-col gap-2 z-30 pointer-events-auto">
 			<!-- Paint/Pan Mode Toggle -->
 			<button
 				class="tooltip {nav.drawing
 					? 'bg-green-500 hover:bg-green-600'
 					: 'bg-gray-500 hover:bg-gray-600'} text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				style="touch-action: manipulation"
 				onclick={() => nav.setDrawing(!nav.drawing)}
 				aria-label={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
 				data-tooltip={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
@@ -328,6 +329,7 @@
 			<!-- Help/Keybindings Toggle -->
 			<button
 				class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				style="touch-action: manipulation"
 				onclick={() => (showKeybindings = !showKeybindings)}
 				aria-label="Toggle Keybindings (H)"
 				data-tooltip="Toggle Keybindings (H)"
@@ -338,6 +340,7 @@
 			<!-- Go to Task Details Button -->
 			<button
 				class="tooltip bg-purple-500 hover:bg-purple-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				style="touch-action: manipulation"
 				onclick={() => handleNavigation(() => goto(`/task/${task.id}`))}
 				aria-label="Go to Task Details"
 				data-tooltip="Go to Task Details"
@@ -348,6 +351,7 @@
 			<!-- Back to Home Button -->
 			<button
 				class="tooltip bg-indigo-500 hover:bg-indigo-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
+				style="touch-action: manipulation"
 				onclick={() => handleNavigation(() => goto('/'))}
 				aria-label="Back to Home"
 				data-tooltip="Back to Home"
@@ -385,6 +389,7 @@
 				<div class="flex flex-col space-y-3">
 					<button
 						class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
+						style="touch-action: manipulation"
 						onclick={saveAndNavigate}
 						aria-label="Save and Continue"
 					>
