@@ -242,6 +242,12 @@ from BossDB and displays it on the canvas.
 	let lastTouchDistance: number = 0;
 	let isPinching: boolean = false;
 	let pinchCenter: { x: number; y: number } = { x: 0, y: 0 };
+	let lastTouchPos: { x: number; y: number } | null = null;
+	// Long-press selection state
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let longPressStartPos: { x: number; y: number } | null = null;
+	const LONG_PRESS_MS = 450;
+	const LONG_PRESS_MOVE_TOLERANCE = 10;
 
 	// Function to calculate native task center coordinates
 	function calculateNativeTaskCenter() {
@@ -930,13 +936,52 @@ from BossDB and displays it on the canvas.
 			return handleMouseEvent('mouseWheel', evt);
 		};
 
-		// Touch event handlers for pinch zoom
+		// Touch event handlers for pinch zoom and single-finger interactions
 		s.touchStarted = (evt: any) => {
 			if (s.touches.length === 2) {
 				// Start pinch gesture
 				isPinching = true;
 				lastTouchDistance = getTouchDistance(s);
 				pinchCenter = getTouchCenter(s);
+				if (evt && evt.preventDefault) evt.preventDefault();
+				return false;
+			}
+			if (s.touches.length === 1) {
+				const touches = s.touches as Array<{ x: number; y: number }>;
+				const t = touches[0];
+
+				// Prepare long-press selection (when not drawing)
+				longPressStartPos = { x: t.x, y: t.y };
+				if (longPressTimer) clearTimeout(longPressTimer);
+				if (!nav.drawing) {
+					longPressTimer = setTimeout(() => {
+						if (longPressStartPos) {
+							const dx = t.x - longPressStartPos.x;
+							const dy = t.y - longPressStartPos.y;
+							if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE) {
+								const dataPos = nav.sceneToData(t.x, t.y);
+								const annoUnderMouse = annotationStore
+									.getAllAnnotations()
+									.find((a) => a.pointIsInside([dataPos.x, dataPos.y]));
+								if (annoUnderMouse) {
+									annotationStore.setHoveredAnnotation(annoUnderMouse);
+									annotationStore.setCurrentSegmentID(annoUnderMouse.segmentID);
+									annotationStore.currentAnnotation.annotation.segmentID = annoUnderMouse.segmentID;
+								}
+							}
+						}
+						longPressTimer = null;
+					}, LONG_PRESS_MS);
+				}
+
+				// Start draw or pan baseline
+				if (nav.drawing) {
+					const dataSpaceCoord = nav.sceneToData(t.x, t.y);
+					annotationStore.currentAnnotation.addVertex([dataSpaceCoord.x, dataSpaceCoord.y]);
+					lastTouchPos = { x: t.x, y: t.y };
+				} else {
+					lastTouchPos = { x: t.x, y: t.y };
+				}
 				if (evt && evt.preventDefault) evt.preventDefault();
 				return false;
 			}
@@ -947,7 +992,6 @@ from BossDB and displays it on the canvas.
 			if (isPinching && s.touches.length === 2) {
 				const currentDistance = getTouchDistance(s);
 				const currentCenter = getTouchCenter(s);
-				// console.log('Pinch move - distance:', currentDistance, 'lastDistance:', lastTouchDistance);
 
 				if (lastTouchDistance > 0) {
 					// Calculate zoom factor based on distance change
@@ -964,6 +1008,37 @@ from BossDB and displays it on the canvas.
 				if (evt && evt.preventDefault) evt.preventDefault();
 				return false;
 			}
+			// Single-finger draw or pan
+			if (s.touches.length === 1) {
+				const touches = s.touches as Array<{ x: number; y: number }>;
+				const curr = { x: touches[0].x, y: touches[0].y };
+
+				// Cancel long-press if user moves beyond tolerance
+				if (longPressStartPos) {
+					const mdx = curr.x - longPressStartPos.x;
+					const mdy = curr.y - longPressStartPos.y;
+					if (Math.hypot(mdx, mdy) > LONG_PRESS_MOVE_TOLERANCE && longPressTimer) {
+						clearTimeout(longPressTimer);
+						longPressTimer = null;
+					}
+				}
+
+				if (nav.drawing) {
+					const dataSpaceCoord = nav.sceneToData(curr.x, curr.y);
+					annotationStore.currentAnnotation.addVertex([dataSpaceCoord.x, dataSpaceCoord.y]);
+				} else if (lastTouchPos) {
+					const dx = curr.x - lastTouchPos.x;
+					const dy = curr.y - lastTouchPos.y;
+					if (dx !== 0 || dy !== 0) {
+						nav.incrementX(dx / nav.zoom);
+						nav.incrementY(dy / nav.zoom);
+						saveNavigationStateDebounced();
+					}
+				}
+				lastTouchPos = curr;
+				if (evt && evt.preventDefault) evt.preventDefault();
+				return false;
+			}
 		};
 
 		s.touchEnded = (evt: any) => {
@@ -971,6 +1046,16 @@ from BossDB and displays it on the canvas.
 				// End pinch gesture
 				isPinching = false;
 				lastTouchDistance = 0;
+			}
+			// Clear any pending long-press
+			if (longPressTimer) {
+				clearTimeout(longPressTimer);
+				longPressTimer = null;
+			}
+			longPressStartPos = null;
+
+			if (s.touches.length === 0) {
+				lastTouchPos = null;
 			}
 			return true;
 		};
@@ -1219,6 +1304,21 @@ from BossDB and displays it on the canvas.
 		width: 100vw;
 		height: 100vh;
 		z-index: 0;
+
+		/* Touch-friendly defaults to keep interactions inside the canvas */
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+		overscroll-behavior: contain;
+	}
+
+	/* Ensure the p5 canvas itself also blocks browser gestures */
+	.paint-app-canvas canvas {
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	.debug-overlay {
