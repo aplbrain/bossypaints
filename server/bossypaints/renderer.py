@@ -25,13 +25,21 @@ class VolumePolygonRenderer:
 
 class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
 
-    def _materialize_xyz_volume(self, task: TaskInDB, checkpoints: list[Checkpoint], as_channels: bool = False):
+    def _materialize_xyz_volume(
+        self,
+        task: TaskInDB,
+        checkpoints: list[Checkpoint],
+        as_channels: bool = False,
+        segment_ids: list[int] | None = None,
+    ):
         """Materialize a volume in Numpy array format from a list of Checkpoints.
 
         Arguments:
             - task: TaskInDB object containing task metadata.
             - checkpoints: List of Checkpoint objects to render.
             - as_channels: If True, render each seg ID as a separate channel in the volume.
+            - segment_ids: Optional list of segment IDs to include. When provided and
+              as_channels is True, only those IDs are materialized into channels.
 
         """
         # TODO: scale correctly
@@ -42,17 +50,34 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
         y_size = int((task.y_max - task.y_min) / voxel_size[1])
         z_size = int((task.z_max - task.z_min) / voxel_size[2])
 
-        ids = sorted(set(poly.segmentID for checkpoint in checkpoints for poly in checkpoint.polygons))
+        if segment_ids is None:
+            ids = sorted(set(poly.segmentID for checkpoint in checkpoints for poly in checkpoint.polygons))
+        else:
+            ids = list(segment_ids)
         id_count = len(ids)
-        logger.info(f"Total unique segment IDs found: {id_count}")
+        if segment_ids is None:
+            logger.info(f"Total unique segment IDs found: {id_count}")
+        else:
+            logger.info(f"Using {id_count} segment IDs for volume materialization")
 
         volume = np.zeros((x_size, y_size, z_size, id_count) if as_channels else (x_size, y_size, z_size), dtype=np.uint64)
+
+        segment_id_set = set(ids) if segment_ids is not None else None
+        id_to_channel = {seg_id: idx for idx, seg_id in enumerate(ids)} if as_channels else None
 
         resolution_factor = 2 ** task.resolution
         scaled_voxel_size = [v * resolution_factor for v in voxel_size]
 
         for checkpoint in checkpoints:
             for poly in checkpoint.polygons:
+                seg_id = poly.segmentID
+                if segment_id_set is not None and seg_id not in segment_id_set:
+                    continue
+                channel_index = None
+                if as_channels:
+                    channel_index = id_to_channel.get(seg_id)
+                    if channel_index is None:
+                        continue
                 z = poly.z - task.z_min
                 if z < 0 or z >= z_size:
                     logger.warning(f"Polygon z={poly.z} is outside volume bounds (z_min={task.z_min}, z_max={task.z_max}). Skipping.")
@@ -80,11 +105,11 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
                     rr = np.clip(rr, 0, y_size - 1)
                     cc = np.clip(cc, 0, x_size - 1)
 
-                    logger.info(f"Positive region: {len(rr)} pixels set to segmentID {poly.segmentID}")
+                    logger.info(f"Positive region: {len(rr)} pixels set to segmentID {seg_id}")
                     if as_channels:
-                        volume[cc, rr, z, ids.index(poly.segmentID)] = poly.segmentID
+                        volume[cc, rr, z, channel_index] = seg_id
                     else:
-                        volume[cc, rr, z] = poly.segmentID
+                        volume[cc, rr, z] = seg_id
 
                 # Subtract all negative regions (holes)
                 for negative_region in poly.negativeRegions:
@@ -104,7 +129,7 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
 
                     logger.info(f"Negative region: {len(hole_rr)} pixels cleared")
                     if as_channels:
-                        volume[hole_cc, hole_rr, z, ids.index(poly.segmentID)] = 0
+                        volume[hole_cc, hole_rr, z, channel_index] = 0
                     else:
                         volume[hole_cc, hole_rr, z] = 0
 
