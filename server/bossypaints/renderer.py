@@ -34,7 +34,7 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
             - as_channels: If True, render each seg ID as a separate channel in the volume.
 
         """
-        # Ensure voxel size is scaled correctly
+        # TODO: scale correctly
         voxel_size = [1, 1, 1]  # Default voxel size in nm
 
         # Create a NumPy volume sized for the task's FOV
@@ -48,6 +48,8 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
 
         volume = np.zeros((x_size, y_size, z_size, id_count) if as_channels else (x_size, y_size, z_size), dtype=np.uint64)
 
+        resolution_factor = 2 ** task.resolution
+        scaled_voxel_size = [v * resolution_factor for v in voxel_size]
 
         for checkpoint in checkpoints:
             for poly in checkpoint.polygons:
