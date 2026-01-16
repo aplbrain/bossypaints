@@ -575,30 +575,6 @@ async def create_task(
 
 
 
-class AssignTaskRequest(BaseModel):
-    assigned_to: str
-
-
-@api_router.post("/tasks/{task_id}/assign")
-async def assign_task(request: Request, task_id: TaskID, assign_request: AssignTaskRequest):
-    """Assign a task to a specific user. Currently allows any authenticated user to reassign tasks."""
-    username = await get_username_from_request(request)  # Verify the requester is authenticated
-
-    task = task_store.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Update the task assignment
-    task.assigned_to = assign_request.assigned_to
-
-    # Save the updated task back to the store
-    tasks = task_store._load_latest_from_file()
-    tasks[task_id] = task
-    task_store._write_to_file(tasks)
-
-    return {"message": f"Task {task_id} assigned to {assign_request.assigned_to}"}
-
-
 class UpdateTaskNameRequest(BaseModel):
     name: Optional[str] = None
 
