@@ -224,6 +224,8 @@
 			{histMax}
 			onCheckpointData={(data) => {
 				API.checkpointTask({ taskId: task.id, checkpoint: data }).then(() => {
+					lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+					hasUnsavedChanges = false;
 					notyf.success('Checkpoint saved');
 				});
 			}}
@@ -287,6 +289,8 @@
 						taskId: task.id,
 						checkpoint: annotationStore.getAllAnnotations()
 					}).then(() => {
+						lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+						hasUnsavedChanges = false;
 						notyf.success('Checkpoint saved.');
 					});
 				}}
