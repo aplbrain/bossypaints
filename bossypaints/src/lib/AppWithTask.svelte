@@ -32,6 +32,10 @@
 	let nav: NavigationStore;
 	let showKeybindings = false;
 	let showInfo = true;
+	const CHECKPOINT_DEBOUNCE_MS = 1000;
+	let checkpointTimer: ReturnType<typeof setTimeout> | null = null;
+	let checkpointInFlight = false;
+	let queuedCheckpoint: any[] | null = null;
 
 	// Navigation confirmation modal
 	let showNavigationModal = false;
@@ -115,6 +119,39 @@
 			notyf.error('Failed to save changes. Please try again.');
 			console.error('Save failed:', error);
 		}
+	}
+
+	async function runCheckpoint() {
+		if (checkpointInFlight || !queuedCheckpoint) return;
+		checkpointInFlight = true;
+		const payload = queuedCheckpoint;
+		queuedCheckpoint = null;
+
+		try {
+			await API.checkpointTask({ taskId: task.id, checkpoint: payload });
+			lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+			hasUnsavedChanges = false;
+			notyf.success('Checkpoint saved.');
+		} catch (error) {
+			notyf.error('Failed to save checkpoint. Please try again.');
+			console.error('Checkpoint failed:', error);
+		} finally {
+			checkpointInFlight = false;
+			if (queuedCheckpoint) {
+				runCheckpoint();
+			}
+		}
+	}
+
+	function queueCheckpoint(data: any[]) {
+		queuedCheckpoint = data;
+		if (checkpointTimer) {
+			clearTimeout(checkpointTimer);
+		}
+		checkpointTimer = setTimeout(() => {
+			checkpointTimer = null;
+			runCheckpoint();
+		}, CHECKPOINT_DEBOUNCE_MS);
 	}
 
 	async function loadTask() {
@@ -205,6 +242,10 @@
 		document.body.style.margin = '';
 		document.body.style.padding = '';
 		document.body.style.overflow = '';
+		if (checkpointTimer) {
+			clearTimeout(checkpointTimer);
+			checkpointTimer = null;
+		}
 	});
 </script>
 
@@ -223,11 +264,7 @@
 			{histMin}
 			{histMax}
 			onCheckpointData={(data) => {
-				API.checkpointTask({ taskId: task.id, checkpoint: data }).then(() => {
-					lastCheckpointAnnotations = annotationStore.getAllAnnotations();
-					hasUnsavedChanges = false;
-					notyf.success('Checkpoint saved');
-				});
+				queueCheckpoint(data);
 			}}
 			onToggleInfo={() => (showInfo = !showInfo)}
 			onSubmitData={(data) => {
@@ -285,14 +322,7 @@
 			<button
 				class="tooltip bg-cyan-500 hover:bg-cyan-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				onclick={() => {
-					API.checkpointTask({
-						taskId: task.id,
-						checkpoint: annotationStore.getAllAnnotations()
-					}).then(() => {
-						lastCheckpointAnnotations = annotationStore.getAllAnnotations();
-						hasUnsavedChanges = false;
-						notyf.success('Checkpoint saved.');
-					});
+					queueCheckpoint(annotationStore.getAllAnnotations());
 				}}
 				aria-label="Save Progress (Alt+S)"
 				data-tooltip="Save Progress (Alt+S)"
