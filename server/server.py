@@ -595,16 +595,6 @@ async def update_task_name(request: Request, task_id: TaskID, update_request: Up
     return {"message": "Task name updated successfully", "name": update_request.name}
 
 
-@api_router.get("/tasks/unassigned")
-async def get_unassigned_tasks(request: Request):
-    """Get all tasks that are not assigned to any user."""
-    username = await get_username_from_request(request)  # Verify the requester is authenticated
-
-    tasks = task_store.list()
-    unassigned_tasks = [task for task in tasks if task.assigned_to is None]
-    return {"tasks": unassigned_tasks}
-
-
 # ----------------------------
 # Export endpoints
 # ----------------------------
