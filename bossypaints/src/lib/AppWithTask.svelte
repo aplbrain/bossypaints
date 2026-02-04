@@ -307,7 +307,7 @@
 					? 'bg-green-500 hover:bg-green-600'
 					: 'bg-gray-500 hover:bg-gray-600'} text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onclick={() => nav.setDrawing(!nav.drawing)}
+				onpointerdown={() => nav.setDrawing(!nav.drawing)}
 				aria-label={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
 				data-tooltip={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
 			>
@@ -321,7 +321,7 @@
 			<!-- Save/Checkpoint Buttons -->
 			<button
 				class="tooltip bg-cyan-500 hover:bg-cyan-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
-				onclick={() => {
+				onpointerdown={() => {
 					queueCheckpoint(annotationStore.getAllAnnotations());
 				}}
 				aria-label="Save Progress (Alt+S)"
@@ -357,14 +357,14 @@
 						d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
 					></path>
 				</svg>
-			</button>
+			</button> -->
 
 
 			<!-- Help/Keybindings Toggle -->
 			<button
 				class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onclick={() => (showKeybindings = !showKeybindings)}
+				onpointerdown={() => (showKeybindings = !showKeybindings)}
 				aria-label="Toggle Keybindings (H)"
 				data-tooltip="Toggle Keybindings (H)"
 			>
@@ -375,7 +375,7 @@
 			<button
 				class="tooltip bg-purple-500 hover:bg-purple-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onclick={() => handleNavigation(() => goto(`/task/${task.id}`))}
+				onpointerdown={() => handleNavigation(() => goto(`/task/${task.id}`))}
 				aria-label="Go to Task Details"
 				data-tooltip="Go to Task Details"
 			>
@@ -386,7 +386,7 @@
 			<button
 				class="tooltip bg-indigo-500 hover:bg-indigo-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onclick={() => handleNavigation(() => goto('/'))}
+				onpointerdown={() => handleNavigation(() => goto('/'))}
 				aria-label="Back to Home"
 				data-tooltip="Back to Home"
 			>
