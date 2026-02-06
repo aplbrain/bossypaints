@@ -938,6 +938,9 @@ from BossDB and displays it on the canvas.
 
 		// Touch event handlers for pinch zoom and single-finger interactions
 		s.touchStarted = (evt: any) => {
+			if (shouldIgnoreEvent(evt)) {
+				return true; // Let other elements handle their events
+			}
 			if (s.touches.length === 2) {
 				// Start pinch gesture
 				isPinching = true;
@@ -989,6 +992,9 @@ from BossDB and displays it on the canvas.
 		};
 
 		s.touchMoved = (evt: any) => {
+			if (shouldIgnoreEvent(evt)) {
+				return true; // Let other elements handle their events
+			}
 			if (isPinching && s.touches.length === 2) {
 				const currentDistance = getTouchDistance(s);
 				const currentCenter = getTouchCenter(s);
@@ -1042,6 +1048,9 @@ from BossDB and displays it on the canvas.
 		};
 
 		s.touchEnded = (evt: any) => {
+			if (shouldIgnoreEvent(evt)) {
+				return true; // Let other elements handle their events
+			}
 			if (s.touches.length < 2) {
 				// End pinch gesture
 				isPinching = false;
