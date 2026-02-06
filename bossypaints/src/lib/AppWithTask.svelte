@@ -307,7 +307,7 @@
 					? 'bg-green-500 hover:bg-green-600'
 					: 'bg-gray-500 hover:bg-gray-600'} text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onpointerdown={() => nav.setDrawing(!nav.drawing)}
+				onclick={() => nav.setDrawing(!nav.drawing)}
 				aria-label={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
 				data-tooltip={nav.drawing ? 'Switch to Pan Mode' : 'Switch to Paint Mode'}
 			>
@@ -321,7 +321,7 @@
 			<!-- Save/Checkpoint Buttons -->
 			<button
 				class="tooltip bg-cyan-500 hover:bg-cyan-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
-				onpointerdown={() => {
+				onclick={() => {
 					queueCheckpoint(annotationStore.getAllAnnotations());
 				}}
 				aria-label="Save Progress (Alt+S)"
@@ -364,7 +364,7 @@
 			<button
 				class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onpointerdown={() => (showKeybindings = !showKeybindings)}
+				onclick={() => (showKeybindings = !showKeybindings)}
 				aria-label="Toggle Keybindings (H)"
 				data-tooltip="Toggle Keybindings (H)"
 			>
@@ -375,7 +375,7 @@
 			<button
 				class="tooltip bg-purple-500 hover:bg-purple-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onpointerdown={() => handleNavigation(() => goto(`/task/${task.id}`))}
+				onclick={() => handleNavigation(() => goto(`/task/${task.id}`))}
 				aria-label="Go to Task Details"
 				data-tooltip="Go to Task Details"
 			>
@@ -386,7 +386,7 @@
 			<button
 				class="tooltip bg-indigo-500 hover:bg-indigo-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				style="touch-action: manipulation"
-				onpointerdown={() => handleNavigation(() => goto('/'))}
+				onclick={() => handleNavigation(() => goto('/'))}
 				aria-label="Back to Home"
 				data-tooltip="Back to Home"
 			>
