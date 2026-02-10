@@ -23,7 +23,7 @@ const APP_CONFIG = {
      * Pinch zoom speed.
      * Controls how quickly the zoom level changes when the user pinches.
      */
-    pinchZoomSpeed: 0.01,
+    pinchZoomSpeed: 0.1,
 
     /**
      * Resolution system configuration.
