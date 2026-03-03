@@ -2,6 +2,7 @@ import p5 from 'p5';
 import type { NavigationStore } from './stores/NavigationStore.svelte';
 import type { AnnotationManagerStore } from './stores/AnnotationManagerStore.svelte';
 import APP_CONFIG from './config';
+import { substractSegment, saveSegment } from '$lib/utils/annotation';
 
 export type EventType = 'key' | 'mouse';
 export type MouseEventType = 'mousePressed' | 'mouseDragged' | 'mouseReleased' | 'mouseWheel';
@@ -156,8 +157,7 @@ export const keybindings: Keybinding[] = [
         action: 'Submit current annotation',
         matcher: (s) => s.keyCode === s.ENTER,
         handler: (s, annotationStore, nav) => {
-            annotationStore.currentAnnotation.annotation.editing = false;
-            annotationStore.saveCurrentAndCreateNewAnnotation(nav.layer);
+            saveSegment(annotationStore, nav.layer)
         },
         eventType: 'key',
     },
@@ -217,8 +217,7 @@ export const keybindings: Keybinding[] = [
         action: 'Subtract the active segment',
         matcher: (s) => s.keyCode === s.BACKSPACE,
         handler: (s, annotationStore, nav) => {
-            annotationStore.currentAnnotation.annotation.editing = false;
-            annotationStore.subtractCurrentAnnotation(nav.layer);
+            substractSegment(annotationStore, nav.layer)
         },
         eventType: 'key',
     },

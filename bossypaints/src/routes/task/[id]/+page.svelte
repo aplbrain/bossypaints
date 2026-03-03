@@ -327,7 +327,7 @@
 						</p>
 					</div>
 				</div>
-				<div class="flex space-x-3">
+				<div class="flex space-x-3 flex-wrap space-y-3">
 					<a
 						href="/app/{task.id}"
 						class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-sm"

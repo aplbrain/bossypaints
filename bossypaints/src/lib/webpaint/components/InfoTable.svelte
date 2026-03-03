@@ -7,14 +7,17 @@ manager and navigation store.
 @prop currentLayer {number} - The current layer number
 @prop currentSegmentID {number} - The current segment ID
 @prop layerAnnotationCount {number} - Number of annotations on current layer
+@prop onLayerChange {function} - Callback to change layer number
 @prop onSegmentIDChange {function} - Callback to change segment ID
 -->
 <script lang="ts">
+	import { ArrowDownIcon, ArrowUpIcon } from '$lib/icons';
 	import { segmentIdToRGB } from '$lib/webpaint/colorutils';
 
 	export let currentLayer: number;
 	export let currentSegmentID: number;
 	export let layerAnnotationCount: number;
+	export let onLayerChange: (newLayer: number) => void;
 	export let onSegmentIDChange: (id: number) => void;
 
 	// Histogram window controls (assume uint8 range)
@@ -56,6 +59,14 @@ manager and navigation store.
 				inputElement.select();
 			}
 		}, 0);
+	}
+
+	function incrementLayer() {
+		onLayerChange(currentLayer + 1);
+	}
+
+	function decrementLayer() {
+		onLayerChange(currentLayer - 1);
 	}
 
 	function saveSegmentId() {
@@ -127,11 +138,31 @@ manager and navigation store.
 		<!-- Layer Info -->
 		<div class="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
 			<span class="text-sm font-medium text-gray-600">Layer</span>
-			<span
-				class="text-lg font-bold text-gray-900 bg-blue-50 px-3 py-1 rounded-full border border-blue-200"
-			>
-				{currentLayer}
-			</span>
+			<div class="flex items-center gap-2">
+				<span
+					class="text-lg font-bold text-gray-900 bg-blue-50 px-3 py-1 rounded-full border border-blue-200"
+				>
+					{currentLayer}
+				</span>
+				<div class="flex flex-col flex-center">
+					<button
+						on:click={incrementLayer}
+						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400 rounded-t-xl px-2 py-1.5 transition-colors cursor-pointer"
+						title="Click to increment layer"
+					>
+						<ArrowUpIcon className="w-3 h-3" />
+						<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">.</span> -->
+					</button>
+					<button
+						on:click={decrementLayer}
+						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400  px-2 py-1.5 rounded-b-xl transition-colors cursor-pointer"
+						title="Click to decrement layer"
+					>
+						<ArrowDownIcon className="w-3 h-3" />
+						<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">,</span> -->
+					</button>
+				</div>
+			</div>
 		</div>
 
 		<!-- Segment ID with Color -->

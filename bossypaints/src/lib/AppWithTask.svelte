@@ -22,8 +22,10 @@
 		HelpIcon,
 		LockIcon,
 		InfoIcon,
-		DownloadIcon
+		DownloadIcon,
+		CloseIcon
 	} from '$lib/icons';
+	import { substractSegment, saveSegment } from './utils/annotation';
 
 	const notyf = new Notyf();
 
@@ -278,6 +280,7 @@
 			currentLayer={nav.layer}
 			currentSegmentID={annotationStore.currentSegmentID}
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
+			onLayerChange={nav.setLayer}
 			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
 			{histMin}
 			{histMax}
@@ -357,7 +360,7 @@
 						d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
 					></path>
 				</svg>
-			</button>
+			</button> -->
 
 
 			<!-- Help/Keybindings Toggle -->
@@ -393,6 +396,29 @@
 				<CheckIcon className="w-5 h-5" />
 			</button>
 		</div>
+
+		<!-- Subtract / Save Segment Buttons - For Touch Screen -->
+		{#if nav.drawing && annotationStore.currentAnnotation}
+			<!-- add check for if drawing/done drawing?? -->
+			<div  class="fixed top-10 left-1/3 flex gap-2 z-30 pointer-events-auto">
+				<button
+					class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-2 rounded-full shadow-lg transition-colors duration-200"
+					aria-label="Subtract Segment"
+					data-tooltip="Subtract Segment"
+					onclick={() => substractSegment(annotationStore, nav.layer)}
+				>
+					<CloseIcon class="w-4 h-4" />
+				</button>
+				<button
+					class="tooltip bg-green-500 hover:bg-green-600 text-white p-2 rounded-full shadow-lg transition-colors duration-200"
+					aria-label="Save Segment"
+					data-tooltip="Save Segment"
+					onclick={() => saveSegment(annotationStore, nav.layer)}
+				>
+					<CheckIcon className="w-4 h-4" />
+				</button>
+			</div>
+		{/if}
 	{/if}
 
 	<!-- Navigation Confirmation Modal -->
