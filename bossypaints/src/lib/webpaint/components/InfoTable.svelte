@@ -140,21 +140,21 @@ manager and navigation store.
 			<span class="text-sm font-medium text-gray-600">Layer</span>
 			<div class="flex items-center gap-2">
 				<span
-					class="text-lg font-bold text-gray-900 bg-gray-50 px-3 py-1 rounded-full border border-gray-200"
+					class="text-lg font-bold text-gray-900 bg-blue-50 px-3 py-1 rounded-full border border-blue-200"
 				>
 					{currentLayer}
 				</span>
 				<div class="flex flex-col flex-center">
 					<button
 						on:click={incrementLayer}
-						class="bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-t-xl p-2 transition-colors cursor-pointer"
+						class="bg-blue-200 hover:bg-blue-100 border border-blue-400 rounded-t-xl p-2 transition-colors cursor-pointer"
 						title="Click to increment layer"
 					>
 						<ArrowUpIcon className="w-2 h-2" />
 					</button>
 					<button
 						on:click={decrementLayer}
-						class="bg-blue-50 hover:bg-blue-100 border border-blue-200 p-2 rounded-b-xl transition-colors cursor-pointer"
+						class="bg-blue-200 hover:bg-blue-100 border border-blue-400 p-2 rounded-b-xl transition-colors cursor-pointer"
 						title="Click to decrement layer"
 					>
 						<ArrowDownIcon className="w-2 h-2" />
