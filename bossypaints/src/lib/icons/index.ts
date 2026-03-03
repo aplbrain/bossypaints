@@ -16,3 +16,5 @@ export { default as EmptyIcon } from './EmptyIcon.svelte';
 export { default as LockIcon } from './LockIcon.svelte';
 export { default as LightningIcon } from './LightningIcon.svelte';
 export { default as CloseIcon } from './CloseIcon.svelte';
+export { default as ArrowUpIcon } from './ArrowUpIcon.svelte';
+export { default as ArrowDownIcon } from './ArrowDownIcon.svelte';

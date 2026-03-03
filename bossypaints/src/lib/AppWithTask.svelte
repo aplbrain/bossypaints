@@ -280,6 +280,7 @@
 			currentLayer={nav.layer}
 			currentSegmentID={annotationStore.currentSegmentID}
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
+			onLayerChange={nav.setLayer}
 			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
 			{histMin}
 			{histMax}
@@ -399,14 +400,14 @@
 		<!-- Discard / Save Segment Buttons - For Touch Screen -->
 		{#if nav.drawing && annotationStore.currentAnnotation}
 			<!-- add check for if drawing/done drawing?? -->
-			<div  class="fixed top-5 left-1/2 flex gap-2 z-30 pointer-events-auto">
+			<div  class="fixed top-10 left-1/3 flex gap-2 z-30 pointer-events-auto">
 				<button
 					class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-2 rounded-full shadow-lg transition-colors duration-200"
 					aria-label="Discard Segment"
 					data-tooltip="Discard Segment"
 					onclick={() => discardSegment(annotationStore, nav.layer)}
 				>
-					<CloseIcon class="w-3 h-3" />
+					<CloseIcon class="w-4 h-4" />
 				</button>
 				<button
 					class="tooltip bg-green-500 hover:bg-green-600 text-white p-2 rounded-full shadow-lg transition-colors duration-200"
@@ -414,7 +415,7 @@
 					data-tooltip="Save Segment"
 					onclick={() => saveSegment(annotationStore, nav.layer)}
 				>
-					<CheckIcon className="w-3 h-3" />
+					<CheckIcon className="w-4 h-4" />
 				</button>
 			</div>
 		{/if}
