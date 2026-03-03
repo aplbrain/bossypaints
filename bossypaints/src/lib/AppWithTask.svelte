@@ -25,7 +25,7 @@
 		DownloadIcon,
 		CloseIcon
 	} from '$lib/icons';
-	import { discardSegment, saveSegment } from './utils/annotation';
+	import { substractSegment, saveSegment } from './utils/annotation';
 
 	const notyf = new Notyf();
 
@@ -397,15 +397,15 @@
 			</button>
 		</div>
 
-		<!-- Discard / Save Segment Buttons - For Touch Screen -->
+		<!-- Subtract / Save Segment Buttons - For Touch Screen -->
 		{#if nav.drawing && annotationStore.currentAnnotation}
 			<!-- add check for if drawing/done drawing?? -->
 			<div  class="fixed top-10 left-1/3 flex gap-2 z-30 pointer-events-auto">
 				<button
 					class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-2 rounded-full shadow-lg transition-colors duration-200"
-					aria-label="Discard Segment"
-					data-tooltip="Discard Segment"
-					onclick={() => discardSegment(annotationStore, nav.layer)}
+					aria-label="Subtract Segment"
+					data-tooltip="Subtract Segment"
+					onclick={() => substractSegment(annotationStore, nav.layer)}
 				>
 					<CloseIcon class="w-4 h-4" />
 				</button>

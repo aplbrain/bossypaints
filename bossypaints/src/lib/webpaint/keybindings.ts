@@ -2,7 +2,7 @@ import p5 from 'p5';
 import type { NavigationStore } from './stores/NavigationStore.svelte';
 import type { AnnotationManagerStore } from './stores/AnnotationManagerStore.svelte';
 import APP_CONFIG from './config';
-import { discardSegment, saveSegment } from '$lib/utils/annotation';
+import { substractSegment, saveSegment } from '$lib/utils/annotation';
 
 export type EventType = 'key' | 'mouse';
 export type MouseEventType = 'mousePressed' | 'mouseDragged' | 'mouseReleased' | 'mouseWheel';
@@ -217,7 +217,7 @@ export const keybindings: Keybinding[] = [
         action: 'Subtract the active segment',
         matcher: (s) => s.keyCode === s.BACKSPACE,
         handler: (s, annotationStore, nav) => {
-            discardSegment(annotationStore, nav.layer)
+            substractSegment(annotationStore, nav.layer)
         },
         eventType: 'key',
     },

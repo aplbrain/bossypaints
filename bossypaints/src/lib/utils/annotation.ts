@@ -13,12 +13,12 @@ export function saveSegment(annotationStore: AnnotationManagerStore, layerIndex:
 }
 
 /**
- * Wrapper function for discarding the current annotation.
+ * Wrapper function for subtracting the current annotation.
  * 
  * @param annotationStore 
  * @param layerIndex 
  */
-export function discardSegment(annotationStore: AnnotationManagerStore, layerIndex: number) {
+export function substractSegment(annotationStore: AnnotationManagerStore, layerIndex: number) {
     annotationStore.currentAnnotation.annotation.editing = false;
     annotationStore.subtractCurrentAnnotation(layerIndex);
 }
