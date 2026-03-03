@@ -147,17 +147,19 @@ manager and navigation store.
 				<div class="flex flex-col flex-center">
 					<button
 						on:click={incrementLayer}
-						class="bg-blue-200 hover:bg-blue-100 border border-blue-400 rounded-t-xl p-2 transition-colors cursor-pointer"
+						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400 rounded-t-xl px-2 py-1.5 transition-colors cursor-pointer"
 						title="Click to increment layer"
 					>
-						<ArrowUpIcon className="w-2 h-2" />
+						<ArrowUpIcon className="w-3 h-3" />
+						<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">.</span> -->
 					</button>
 					<button
 						on:click={decrementLayer}
-						class="bg-blue-200 hover:bg-blue-100 border border-blue-400 p-2 rounded-b-xl transition-colors cursor-pointer"
+						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400  px-2 py-1.5 rounded-b-xl transition-colors cursor-pointer"
 						title="Click to decrement layer"
 					>
-						<ArrowDownIcon className="w-2 h-2" />
+						<ArrowDownIcon className="w-3 h-3" />
+						<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">,</span> -->
 					</button>
 				</div>
 			</div>

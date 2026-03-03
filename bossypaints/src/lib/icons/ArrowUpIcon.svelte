@@ -7,7 +7,7 @@
     <path
         stroke-linecap="round"
         stroke-linejoin="round"
-        stroke-width="2"
+        stroke-width="4"
         d="m4.5 15.75 7.5-7.5 7.5 7.5"
     />
 </svg>
