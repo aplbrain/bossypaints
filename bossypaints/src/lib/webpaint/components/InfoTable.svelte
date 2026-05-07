@@ -20,7 +20,10 @@ manager and navigation store.
 	export let onLayerChange: (newLayer: number) => void;
 	export let onSegmentIDChange: (id: number) => void;
 	export let onCopyFromLastSlice: () => void = () => {};
-	export let copyFromLastSourceLayer: number | null = null;
+	export let onPropagateFromLastSlice: () => void | Promise<void> = () => {};
+	export let adjacentSegmentSourceLayer: number | null = null;
+	export let propagationActionLabel: string = 'Propagate from last slice';
+	export let propagationInFlight: boolean = false;
 
 	// Histogram window controls (assume uint8 range)
 	export let histMin: number = 0;
@@ -245,21 +248,38 @@ manager and navigation store.
 			<div class="pt-3 mt-3 border-t border-gray-100">
 				<div class="flex items-center justify-between mb-2">
 					<span class="text-gray-600">Segment Tools</span>
-					{#if copyFromLastSourceLayer !== null}
-						<span class="text-xs text-gray-500">from z {copyFromLastSourceLayer}</span>
+					{#if adjacentSegmentSourceLayer !== null}
+						<span class="text-xs text-gray-500">from z {adjacentSegmentSourceLayer}</span>
 					{/if}
 				</div>
-				<button
-					class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200"
-					on:click={onCopyFromLastSlice}
-					disabled={copyFromLastSourceLayer === null}
-					aria-label="Copy from last slice"
-					title={copyFromLastSourceLayer === null
-						? 'No nearby slice has this segment ID'
-						: `Copy segment from z ${copyFromLastSourceLayer}`}
-				>
-					Copy from last slice
-				</button>
+				<div class="grid gap-2">
+					<button
+						class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200"
+						on:click={onCopyFromLastSlice}
+						disabled={adjacentSegmentSourceLayer === null || propagationInFlight}
+						aria-label="Copy from last slice"
+						title={propagationInFlight
+							? 'Wait for the current propagation request to finish'
+							: adjacentSegmentSourceLayer === null
+								? 'No nearby slice has this segment ID'
+								: `Copy segment from z ${adjacentSegmentSourceLayer}`}
+					>
+						Copy from last slice
+					</button>
+					<button
+						class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200"
+						on:click={onPropagateFromLastSlice}
+						disabled={adjacentSegmentSourceLayer === null || propagationInFlight}
+						aria-label={propagationActionLabel}
+						title={propagationInFlight
+							? 'Propagation request in progress'
+							: adjacentSegmentSourceLayer === null
+								? 'No nearby slice has this segment ID'
+								: `${propagationActionLabel} from z ${adjacentSegmentSourceLayer}`}
+					>
+						{propagationInFlight ? 'Propagating...' : propagationActionLabel}
+					</button>
+				</div>
 			</div>
 
 			<!-- Histogram Window Controls -->

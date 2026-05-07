@@ -1,4 +1,4 @@
-from typing import Optional, Literal
+from typing import Any, Optional, Literal
 
 import fastapi
 import httpx
@@ -13,12 +13,13 @@ from pathlib import Path
 import numpy as np
 from cloudvolume import CloudVolume
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field, validator
 from dotenv import load_dotenv
 
 from bossypaints.background import render_and_mesh
 from bossypaints.tasks import SQLiteTaskQueueStore, Task, TaskID
-from bossypaints.checkpoints import Checkpoint, SQLiteCheckpointStore
+from bossypaints.checkpoints import Checkpoint, SQLiteCheckpointStore, Polygon
+from bossypaints.propagation import CropBox, PropagationContext, propagate_segment
 
 # Load environment variables from .env file
 load_dotenv()
@@ -54,19 +55,7 @@ api_router = APIRouter()
 
 async def get_username_from_request(request: Request) -> str:
     """Extract username from BossDB token in request headers or query params."""
-    token = None
-
-    # Try to get token from Authorization header first
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Token "):
-        token = auth_header.split(" ")[1]
-
-    # If no token in header, try query parameter (for file downloads)
-    if not token:
-        token = request.query_params.get("token")
-
-    if not token:
-        raise HTTPException(status_code=401, detail="Authorization token required")
+    token = get_token_from_request(request)
 
     async with httpx.AsyncClient() as client:
         try:
@@ -85,6 +74,24 @@ async def get_username_from_request(request: Request) -> str:
             return username
         except Exception as e:
             raise HTTPException(status_code=401, detail=f"Invalid authorization token: {str(e)}")
+
+
+def get_token_from_request(request: Request) -> str:
+    """Extract an auth token from the request headers or query params."""
+    token = None
+
+    # Try to get token from Authorization header first
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Token "):
+        token = auth_header.split(" ")[1]
+
+    # If no token in header, try query parameter (for file downloads)
+    if not token:
+        token = request.query_params.get("token")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization token required")
+    return token
 
 
 @api_router.get("/tasks")
@@ -206,6 +213,143 @@ async def get_task_by_id(request: Request, task_id: TaskID):
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
 
     return {"task": task}
+
+
+class PropagateSegmentRequest(BaseModel):
+    method: str = "random_walker"
+    source_z: int
+    target_z: int
+    segment_id: int
+    source_polygons: list[Polygon]
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+def _load_cloudvolume_task_slice(task: Task, z: int, crop_box: CropBox) -> np.ndarray:
+    if not task.cloudvolume_uri:
+        raise ValueError("CloudVolume task is missing a source URI.")
+
+    volume = CloudVolume(
+        task.cloudvolume_uri,
+        mip=task.resolution,
+        progress=False,
+        cache=False,
+        use_https=True,
+    )
+    block = np.asarray(volume[crop_box.x0:crop_box.x1, crop_box.y0:crop_box.y1, z : z + 1])
+    if block.ndim == 4:
+        block = block[..., 0]
+    if block.ndim != 3 or block.shape[2] == 0:
+        raise ValueError("CloudVolume source did not return a single slice cutout.")
+    return block[:, :, 0].T.astype(np.float32, copy=False)
+
+
+def _load_bossdb_task_slice(
+    task: Task,
+    token: str,
+    z: int,
+    crop_box: CropBox,
+) -> np.ndarray:
+    if not task.collection or not task.experiment or not task.channel:
+        raise ValueError("BossDB task is missing collection, experiment, or channel metadata.")
+
+    cutout_url = (
+        f"https://api.bossdb.io/v1/cutout/"
+        f"{task.collection}/{task.experiment}/{task.channel}/{task.resolution}/"
+        f"{crop_box.x0}:{crop_box.x1}/{crop_box.y0}:{crop_box.y1}/{z}:{z + 1}/"
+    )
+    with httpx.Client(timeout=60.0) as client:
+        response = client.get(
+            cutout_url,
+            headers={
+                "Authorization": f"Token {token}",
+                "Accept": "image/png",
+            },
+        )
+        response.raise_for_status()
+
+    image = imageio.imread(io.BytesIO(response.content))
+    if image.ndim == 3:
+        image = image[..., 0]
+    if image.ndim != 2:
+        raise ValueError("BossDB cutout did not decode into a single grayscale slice.")
+    return np.asarray(image, dtype=np.float32)
+
+
+def _load_task_slice(
+    task: Task,
+    token: str,
+    z: int,
+    crop_box: CropBox,
+) -> np.ndarray:
+    if z < task.z_min or z >= task.z_max:
+        raise ValueError(f"Slice z={z} is outside task bounds [{task.z_min}, {task.z_max}).")
+
+    if task.data_source_type == "cloudvolume":
+        return _load_cloudvolume_task_slice(task, z, crop_box)
+    return _load_bossdb_task_slice(task, token, z, crop_box)
+
+
+@api_router.post("/tasks/{task_id}/propagate-segment")
+async def propagate_task_segment(
+    request: Request,
+    task_id: TaskID,
+    propagate_request: PropagateSegmentRequest,
+):
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    # Verify user owns this task
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+
+    if propagate_request.source_z < task.z_min or propagate_request.source_z >= task.z_max:
+        raise HTTPException(status_code=400, detail="Source slice is outside task bounds.")
+    if propagate_request.target_z < task.z_min or propagate_request.target_z >= task.z_max:
+        raise HTTPException(status_code=400, detail="Target slice is outside task bounds.")
+
+    source_polygons = [
+        polygon
+        for polygon in propagate_request.source_polygons
+        if polygon.segmentID == propagate_request.segment_id
+    ]
+    if not source_polygons:
+        raise HTTPException(status_code=400, detail="No source polygons were provided for the active segment.")
+
+    token = get_token_from_request(request)
+
+    def load_slice(z: int, crop_box: CropBox) -> np.ndarray:
+        return _load_task_slice(task, token, z, crop_box)
+
+    try:
+        result = propagate_segment(
+            propagate_request.method,
+            PropagationContext(
+                task=task,
+                segment_id=propagate_request.segment_id,
+                source_z=propagate_request.source_z,
+                target_z=propagate_request.target_z,
+                source_polygons=source_polygons,
+                load_slice=load_slice,
+                options=propagate_request.options,
+            ),
+        )
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text if exc.response is not None else str(exc)
+        raise HTTPException(status_code=502, detail=f"Source imagery request failed: {detail}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Propagation failed: {exc}") from exc
+
+    return {
+        "method": result.method,
+        "display_name": result.display_name,
+        "source_z": propagate_request.source_z,
+        "target_z": propagate_request.target_z,
+        "segment_id": propagate_request.segment_id,
+        "polygons": result.polygons,
+        "meta": result.meta,
+    }
 
 
 @api_router.get("/bossdb/username")

@@ -1,177 +1,256 @@
-import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
+import type PolygonAnnotation from '$lib/webpaint/PolygonAnnotation';
 
-// const baseUrl = 'http://localhost:8000';
-const baseUrl = "https://api.paint.labs.bossdb.org";
+const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
+	/\/$/,
+	''
+);
+const baseUrl = configuredBaseUrl || 'https://api.paint.labs.bossdb.org';
 
 export { baseUrl };
 
 export type TaskID = string;
 
 export type Task = {
-    data_source_type: "bossdb" | "cloudvolume";
-    name?: string;
-    collection?: string;
-    experiment?: string;
-    channel?: string;
-    cloudvolume_uri?: string;
-    resolution: number;
-    x_min: number;
-    x_max: number;
-    y_min: number;
-    y_max: number;
-    z_min: number;
-    z_max: number;
-    priority?: number;
-    output_type?: "bossdb" | "download";
-    destination_collection?: string;
-    destination_experiment?: string;
-    destination_channel?: string;
-    assigned_to?: string;
-    export_pending?: boolean;
-    archived?: boolean;
-}
+	data_source_type: 'bossdb' | 'cloudvolume';
+	name?: string;
+	collection?: string;
+	experiment?: string;
+	channel?: string;
+	cloudvolume_uri?: string;
+	resolution: number;
+	x_min: number;
+	x_max: number;
+	y_min: number;
+	y_max: number;
+	z_min: number;
+	z_max: number;
+	priority?: number;
+	output_type?: 'bossdb' | 'download';
+	destination_collection?: string;
+	destination_experiment?: string;
+	destination_channel?: string;
+	assigned_to?: string;
+	export_pending?: boolean;
+	archived?: boolean;
+};
 
 export type TaskInDB = Task & {
-    id: TaskID;
-}
+	id: TaskID;
+};
 
 export type ExportFile = {
-    filename: string;
-    size: number;
-    modified: number;
-}
+	filename: string;
+	size: number;
+	modified: number;
+};
 
 export type TaskExports = {
-    meshes: ExportFile[];
-    segments: ExportFile[];
-    cloudvolumes?: ExportFile[];
-}
+	meshes: ExportFile[];
+	segments: ExportFile[];
+	cloudvolumes?: ExportFile[];
+};
+
+export type PolygonAnnotationPayload = {
+	positiveRegions: Array<Array<[number, number]>>;
+	negativeRegions?: Array<Array<[number, number]>>;
+	editing: boolean;
+	segmentID: number;
+	color?: number[] | null;
+	z: number;
+};
+
+export type PropagateSegmentResponse = {
+	method: string;
+	display_name: string;
+	source_z: number;
+	target_z: number;
+	segment_id: number;
+	polygons: PolygonAnnotationPayload[];
+	meta?: Record<string, unknown>;
+};
 
 class API {
-    async get(url: string) {
-        url = url.startsWith('/') ? url : `/${url}`;
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-        if (localStorage.getItem('apiToken')) {
-            headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
-        }
-        const response = await fetch(`${baseUrl}${url}`, {
-            headers,
-        });
-        return response.json();
-    }
+	private buildHeaders(): Record<string, string> {
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json'
+		};
+		if (localStorage.getItem('apiToken')) {
+			headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
+		}
+		return headers;
+	}
 
-    async post(url: string, data: any) {
-        url = url.startsWith('/') ? url : `/${url}`;
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-        if (localStorage.getItem('apiToken')) {
-            headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
-        }
-        const response = await fetch(`${baseUrl}${url}`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(data),
-        });
-        return response.json();
-    }
+	async get(url: string) {
+		url = url.startsWith('/') ? url : `/${url}`;
+		const response = await fetch(`${baseUrl}${url}`, {
+			headers: this.buildHeaders()
+		});
+		return response.json();
+	}
 
-    async getTasks(): Promise<{ tasks: TaskInDB[] }> {
-        return this.get('/api/tasks');
-    }
+	async post(url: string, data: any) {
+		url = url.startsWith('/') ? url : `/${url}`;
+		const response = await fetch(`${baseUrl}${url}`, {
+			method: 'POST',
+			headers: this.buildHeaders(),
+			body: JSON.stringify(data)
+		});
+		return response.json();
+	}
 
-    async getArchivedTasks(): Promise<{ tasks: TaskInDB[] }> {
-        return this.get('/api/tasks/archived');
-    }
+	async getTasks(): Promise<{ tasks: TaskInDB[] }> {
+		return this.get('/api/tasks');
+	}
 
-    async getTask(taskId: TaskID): Promise<{ task: TaskInDB }> {
-        return this.get(`/api/tasks/${taskId}`);
-    }
+	async getArchivedTasks(): Promise<{ tasks: TaskInDB[] }> {
+		return this.get('/api/tasks/archived');
+	}
 
-    async getNextTask(): Promise<{ task: TaskInDB }> {
-        return this.get('/api/tasks/next');
-    }
+	async getTask(taskId: TaskID): Promise<{ task: TaskInDB }> {
+		return this.get(`/api/tasks/${taskId}`);
+	}
 
-    async checkpointTask({ taskId, checkpoint }: { taskId: TaskID, checkpoint: PolygonAnnotation[] }) {
-        return this.post(`/api/tasks/${taskId}/checkpoint`, { checkpoint });
-    }
+	async getNextTask(): Promise<{ task: TaskInDB }> {
+		return this.get('/api/tasks/next');
+	}
 
-    async getTaskCheckpoints(taskId: TaskID): Promise<{ checkpoints: Array<{ polygons: Array<PolygonAnnotation>, taskID: TaskID }> }> {
-        return this.get(`/api/tasks/${taskId}/checkpoints`);
-    }
+	async checkpointTask({
+		taskId,
+		checkpoint
+	}: {
+		taskId: TaskID;
+		checkpoint: PolygonAnnotation[];
+	}) {
+		return this.post(`/api/tasks/${taskId}/checkpoint`, { checkpoint });
+	}
 
-    async saveTask({ taskId, checkpoint }: { taskId: TaskID, checkpoint: PolygonAnnotation[] }) {
-        return this.post(`/api/tasks/${taskId}/save`, { checkpoint });
-    }
+	async getTaskCheckpoints(
+		taskId: TaskID
+	): Promise<{ checkpoints: Array<{ polygons: Array<PolygonAnnotation>; taskID: TaskID }> }> {
+		return this.get(`/api/tasks/${taskId}/checkpoints`);
+	}
 
-    async createTask(task: Task): Promise<{ message: string }> {
-        return this.post('/api/tasks/create', task);
-    }
+	async saveTask({ taskId, checkpoint }: { taskId: TaskID; checkpoint: PolygonAnnotation[] }) {
+		return this.post(`/api/tasks/${taskId}/save`, { checkpoint });
+	}
 
-    async archiveTask(taskId: TaskID): Promise<{ message: string }> {
-        return this.post(`/api/tasks/${taskId}/archive`, {});
-    }
+	async createTask(task: Task): Promise<{ message: string }> {
+		return this.post('/api/tasks/create', task);
+	}
 
-    async unarchiveTask(taskId: TaskID): Promise<{ message: string }> {
-        return this.post(`/api/tasks/${taskId}/unarchive`, {});
-    }
+	async archiveTask(taskId: TaskID): Promise<{ message: string }> {
+		return this.post(`/api/tasks/${taskId}/archive`, {});
+	}
 
-    async updateTaskName(taskId: TaskID, name: string | null): Promise<{ message: string, name: string | null }> {
-        return this.post(`/api/tasks/${taskId}/update-name`, { name });
-    }
+	async unarchiveTask(taskId: TaskID): Promise<{ message: string }> {
+		return this.post(`/api/tasks/${taskId}/unarchive`, {});
+	}
 
-    async getBossDBUsernameFromToken(token: string): Promise<{ username: string }> {
-        const response = await fetch(`${baseUrl}/api/bossdb/username`, {
-            headers: {
-                "Authorization": `Token ${token}`,
-                "Accept": "application/json",
-            }
-        });
-        return response.json();
-    }
+	async updateTaskName(
+		taskId: TaskID,
+		name: string | null
+	): Promise<{ message: string; name: string | null }> {
+		return this.post(`/api/tasks/${taskId}/update-name`, { name });
+	}
 
-    async autocompleteBossDBResource({
-        collection,
-        experiment,
-        channel,
-    }: {
-        collection: string;
-        experiment: string | null;
-        channel: string | null;
-    }): Promise<{ resources: string[] }> {
-        let res = await this.get(`/api/bossdb/autocomplete?collection=${collection}&experiment=${experiment || ''}&channel=${channel || ''}`);
-        return res;
-    }
+	async propagateSegment({
+		taskId,
+		method,
+		sourceZ,
+		targetZ,
+		segmentID,
+		sourcePolygons,
+		options
+	}: {
+		taskId: TaskID;
+		method: string;
+		sourceZ: number;
+		targetZ: number;
+		segmentID: number;
+		sourcePolygons: PolygonAnnotation[];
+		options?: Record<string, unknown>;
+	}): Promise<PropagateSegmentResponse> {
+		const response = await fetch(`${baseUrl}/api/tasks/${taskId}/propagate-segment`, {
+			method: 'POST',
+			headers: this.buildHeaders(),
+			body: JSON.stringify({
+				method,
+				source_z: sourceZ,
+				target_z: targetZ,
+				segment_id: segmentID,
+				source_polygons: sourcePolygons,
+				options: options || {}
+			})
+		});
+		const payload = await response.json();
+		if (!response.ok) {
+			throw new Error(payload.detail || payload.message || 'Segment propagation failed.');
+		}
+		return payload;
+	}
 
-    async getCoordFrame(collection: string, experiment: string): Promise<{ x_start: number, x_stop: number, y_start: number, y_stop: number, z_start: number, z_stop: number }> {
-        return this.get(`/api/bossdb/coord_frame/${collection}/${experiment}`);
-    }
+	async getBossDBUsernameFromToken(token: string): Promise<{ username: string }> {
+		const response = await fetch(`${baseUrl}/api/bossdb/username`, {
+			headers: {
+				Authorization: `Token ${token}`,
+				Accept: 'application/json'
+			}
+		});
+		return response.json();
+	}
 
-    async getTaskExports(taskId: TaskID): Promise<{ exports: TaskExports }> {
-        return this.get(`/api/tasks/${taskId}/exports`);
-    }
+	async autocompleteBossDBResource({
+		collection,
+		experiment,
+		channel
+	}: {
+		collection: string;
+		experiment: string | null;
+		channel: string | null;
+	}): Promise<{ resources: string[] }> {
+		let res = await this.get(
+			`/api/bossdb/autocomplete?collection=${collection}&experiment=${experiment || ''}&channel=${channel || ''}`
+		);
+		return res;
+	}
 
-    getTaskExportDownloadUrl(taskId: TaskID, filename: string): string {
-        const headers: Record<string, string> = {};
-        if (localStorage.getItem('apiToken')) {
-            headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
-        }
-        const params = new URLSearchParams();
-        if (localStorage.getItem('apiToken')) {
-            params.append('token', localStorage.getItem('apiToken') || '');
-        }
-        return `${baseUrl}/api/tasks/${taskId}/exports/download/${filename}?${params.toString()}`;
-    }
+	async getCoordFrame(
+		collection: string,
+		experiment: string
+	): Promise<{
+		x_start: number;
+		x_stop: number;
+		y_start: number;
+		y_stop: number;
+		z_start: number;
+		z_stop: number;
+	}> {
+		return this.get(`/api/bossdb/coord_frame/${collection}/${experiment}`);
+	}
 
-    getTaskExportDownloadAllUrl(taskId: TaskID): string {
-        const params = new URLSearchParams();
-        if (localStorage.getItem('apiToken')) {
-            params.append('token', localStorage.getItem('apiToken') || '');
-        }
-        return `${baseUrl}/api/tasks/${taskId}/exports/download-all?${params.toString()}`;
-    }
-};
+	async getTaskExports(taskId: TaskID): Promise<{ exports: TaskExports }> {
+		return this.get(`/api/tasks/${taskId}/exports`);
+	}
+
+	getTaskExportDownloadUrl(taskId: TaskID, filename: string): string {
+		const headers: Record<string, string> = {};
+		if (localStorage.getItem('apiToken')) {
+			headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
+		}
+		const params = new URLSearchParams();
+		if (localStorage.getItem('apiToken')) {
+			params.append('token', localStorage.getItem('apiToken') || '');
+		}
+		return `${baseUrl}/api/tasks/${taskId}/exports/download/${filename}?${params.toString()}`;
+	}
+
+	getTaskExportDownloadAllUrl(taskId: TaskID): string {
+		const params = new URLSearchParams();
+		if (localStorage.getItem('apiToken')) {
+			params.append('token', localStorage.getItem('apiToken') || '');
+		}
+		return `${baseUrl}/api/tasks/${taskId}/exports/download-all?${params.toString()}`;
+	}
+}
 
 export default new API();
