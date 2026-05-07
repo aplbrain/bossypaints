@@ -49,7 +49,7 @@
 				}
 
 				const totalLayers = nav.maxLayer - nav.minLayer;
-				const clickedLayer = Math.floor((localY / height) * totalLayers);
+				const clickedLayer = nav.minLayer + Math.floor((localY / height) * totalLayers);
 				const newLayer = Math.max(nav.minLayer, Math.min(nav.maxLayer - 1, clickedLayer));
 				nav.setLayer(newLayer);
 
@@ -74,18 +74,19 @@
 			s.stroke(255);
 			s.line(
 				0,
-				s.map(nav.layer, 0, nav.maxLayer - nav.minLayer, 0, height),
+				s.map(nav.layer, nav.minLayer, nav.maxLayer, 0, height),
 				s.width,
-				s.map(nav.layer, 0, nav.maxLayer - nav.minLayer, 0, height)
+				s.map(nav.layer, nav.minLayer, nav.maxLayer, 0, height)
 			);
 
 			s.noStroke();
 			annotationStore.annotations.forEach((annolist, layer) => {
+				const absoluteLayer = nav.minLayer + layer;
 				annolist.forEach((anno) => {
 					s.fill(anno.color[0], anno.color[1], anno.color[2], 150);
 					s.ellipse(
 						anno.segmentID * indicatorSize,
-						s.map(layer, 0, nav.maxLayer - nav.minLayer, 0, height),
+						s.map(absoluteLayer, nav.minLayer, nav.maxLayer, 0, height),
 						indicatorSize,
 						indicatorSize
 					);
@@ -108,7 +109,7 @@
 			}
 
 			const totalLayers = nav.maxLayer - nav.minLayer;
-			const clickedLayer = Math.floor(s.map(mouseY, 0, height, 0, totalLayers));
+			const clickedLayer = nav.minLayer + Math.floor(s.map(mouseY, 0, height, 0, totalLayers));
 			const newLayer = Math.max(nav.minLayer, Math.min(nav.maxLayer - 1, clickedLayer));
 			nav.setLayer(newLayer);
 

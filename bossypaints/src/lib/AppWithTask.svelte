@@ -157,10 +157,13 @@
 	}
 
 	async function loadTask() {
-		annotationStore = createAnnotationManagerStore(Math.max(1, task.z_max - task.z_min - 1));
+		annotationStore = createAnnotationManagerStore(
+			Math.max(1, task.z_max - task.z_min),
+			task.z_min
+		);
 		nav = createNavigationStore({
 			minLayer: task.z_min,
-			maxLayer: task.z_max - 1,
+			maxLayer: task.z_max,
 			layer: Math.floor((task.z_max + task.z_min) / 2),
 			imageWidth: task.x_max - task.x_min,
 			imageHeight: task.y_max - task.y_min
@@ -362,7 +365,6 @@
 				</svg>
 			</button> -->
 
-
 			<!-- Help/Keybindings Toggle -->
 			<button
 				class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
@@ -400,7 +402,7 @@
 		<!-- Subtract / Save Segment Buttons - For Touch Screen -->
 		{#if nav.drawing && annotationStore.currentAnnotation}
 			<!-- add check for if drawing/done drawing?? -->
-			<div  class="fixed top-10 left-1/3 flex gap-2 z-30 pointer-events-auto">
+			<div class="fixed top-10 left-1/3 flex gap-2 z-30 pointer-events-auto">
 				<button
 					class="tooltip bg-gray-500 hover:bg-gray-600 text-white p-2 rounded-full shadow-lg transition-colors duration-200"
 					aria-label="Subtract Segment"
