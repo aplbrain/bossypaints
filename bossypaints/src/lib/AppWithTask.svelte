@@ -44,6 +44,8 @@
 	let pendingNavigation: (() => void) | null = null;
 	let hasUnsavedChanges = false;
 	let lastCheckpointAnnotations: any[] = [];
+	let lastVisitedLayer: number | null = null;
+	let trackedLayer: number | null = null;
 
 	// Histogram window state (default 8-bit window)
 	let histMin = 0;
@@ -156,6 +158,68 @@
 		}, CHECKPOINT_DEBOUNCE_MS);
 	}
 
+	function layerHasSegment(layer: number, segmentID: number): boolean {
+		return annotationStore.getSegmentAnnotations(layer, segmentID).length > 0;
+	}
+
+	function getCopyFromLastSourceLayer(): number | null {
+		if (!annotationStore || !nav) return null;
+
+		const currentLayer = nav.layer;
+		const segmentID = annotationStore.currentSegmentID;
+		const lowerLayer = currentLayer - 1;
+		const upperLayer = currentLayer + 1;
+		const lowerHasSegment = lowerLayer >= nav.minLayer && layerHasSegment(lowerLayer, segmentID);
+		const upperHasSegment = upperLayer < nav.maxLayer && layerHasSegment(upperLayer, segmentID);
+
+		if (
+			lastVisitedLayer !== null &&
+			(lastVisitedLayer === lowerLayer || lastVisitedLayer === upperLayer) &&
+			layerHasSegment(lastVisitedLayer, segmentID)
+		) {
+			return lastVisitedLayer;
+		}
+
+		if (lowerHasSegment && !upperHasSegment) {
+			return lowerLayer;
+		}
+		if (!lowerHasSegment && upperHasSegment) {
+			return upperLayer;
+		}
+		if (lowerHasSegment && upperHasSegment) {
+			return lowerLayer;
+		}
+		return null;
+	}
+
+	function copyCurrentSegmentFromLastSlice() {
+		if (!annotationStore || !nav) return;
+
+		const sourceLayer = getCopyFromLastSourceLayer();
+		const targetLayer = nav.layer;
+		const segmentID = annotationStore.currentSegmentID;
+
+		if (sourceLayer === null) {
+			notyf.error(`No nearby slice contains segment ${segmentID}.`);
+			return;
+		}
+
+		const sourceAnnotations = annotationStore.getSegmentAnnotations(sourceLayer, segmentID);
+		if (sourceAnnotations.length === 0) {
+			notyf.error(`No annotations found for segment ${segmentID} on z ${sourceLayer}.`);
+			return;
+		}
+
+		const copiedAnnotations = sourceAnnotations.map((annotation) =>
+			annotation.cloneToLayer(targetLayer, false)
+		);
+
+		annotationStore.replaceSegmentAnnotations(targetLayer, segmentID, copiedAnnotations);
+		annotationStore.resetCurrentAnnotation();
+		hasUnsavedChanges = checkForUnsavedChanges();
+		notyf.success(`Copied segment ${segmentID} from z ${sourceLayer} to z ${targetLayer}.`);
+	}
+
 	async function loadTask() {
 		annotationStore = createAnnotationManagerStore(
 			Math.max(1, task.z_max - task.z_min),
@@ -234,6 +298,16 @@
 
 	loadTask();
 
+	$: if (nav) {
+		const currentLayer = nav.layer;
+		if (trackedLayer === null) {
+			trackedLayer = currentLayer;
+		} else if (trackedLayer !== currentLayer) {
+			lastVisitedLayer = trackedLayer;
+			trackedLayer = currentLayer;
+		}
+	}
+
 	// Set up paint app body styles on mount and clean up on destroy
 	onMount(() => {
 		// Apply paint app specific styles
@@ -285,6 +359,8 @@
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
 			onLayerChange={nav.setLayer}
 			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
+			onCopyFromLastSlice={copyCurrentSegmentFromLastSlice}
+			copyFromLastSourceLayer={getCopyFromLastSourceLayer()}
 			{histMin}
 			{histMax}
 			onHistogramChange={handleHistogramChange}

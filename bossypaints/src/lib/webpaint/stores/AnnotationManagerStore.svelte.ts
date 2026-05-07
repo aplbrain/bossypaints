@@ -66,6 +66,12 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			return layerwiseAnnotations[idx];
 		},
 
+		getSegmentAnnotations: (layerIndex: number, segmentID: number): Array<PolygonAnnotation> => {
+			return store
+				.getLayerAnnotations(layerIndex)
+				.filter((annotation) => annotation.segmentID === segmentID);
+		},
+
 		/**
 		 * Get all annotations as a flat array.
 		 * Note that this is only useful if you need some operation on all
@@ -300,6 +306,27 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 				layerwiseAnnotations[idx].splice(index, 1);
 				layerwiseAnnotations[idx] = layerwiseAnnotations[idx].slice(); // Trigger reactivity
 			}
+		},
+
+		replaceSegmentAnnotations: (
+			layerIndex: number,
+			segmentID: number,
+			annotations: Array<PolygonAnnotation>
+		): void => {
+			const idx = toLayerIndex(layerIndex);
+			if (idx < 0 || idx >= layerwiseAnnotations.length) {
+				return;
+			}
+
+			const otherAnnotations = layerwiseAnnotations[idx].filter(
+				(annotation) => annotation.segmentID !== segmentID
+			);
+			const replacementAnnotations = annotations.map((annotation) => {
+				annotation.z = layerIndex;
+				return annotation;
+			});
+
+			layerwiseAnnotations[idx] = [...otherAnnotations, ...replacementAnnotations];
 		},
 
 		/**

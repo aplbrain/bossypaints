@@ -19,6 +19,8 @@ manager and navigation store.
 	export let layerAnnotationCount: number;
 	export let onLayerChange: (newLayer: number) => void;
 	export let onSegmentIDChange: (id: number) => void;
+	export let onCopyFromLastSlice: () => void = () => {};
+	export let copyFromLastSourceLayer: number | null = null;
 
 	// Histogram window controls (assume uint8 range)
 	export let histMin: number = 0;
@@ -155,7 +157,7 @@ manager and navigation store.
 					</button>
 					<button
 						on:click={decrementLayer}
-						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400  px-2 py-1.5 rounded-b-xl transition-colors cursor-pointer"
+						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400 px-2 py-1.5 rounded-b-xl transition-colors cursor-pointer"
 						title="Click to decrement layer"
 					>
 						<ArrowDownIcon className="w-3 h-3" />
@@ -238,6 +240,26 @@ manager and navigation store.
 				<span class="font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
 					{layerAnnotationCount}
 				</span>
+			</div>
+
+			<div class="pt-3 mt-3 border-t border-gray-100">
+				<div class="flex items-center justify-between mb-2">
+					<span class="text-gray-600">Segment Tools</span>
+					{#if copyFromLastSourceLayer !== null}
+						<span class="text-xs text-gray-500">from z {copyFromLastSourceLayer}</span>
+					{/if}
+				</div>
+				<button
+					class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200"
+					on:click={onCopyFromLastSlice}
+					disabled={copyFromLastSourceLayer === null}
+					aria-label="Copy from last slice"
+					title={copyFromLastSourceLayer === null
+						? 'No nearby slice has this segment ID'
+						: `Copy segment from z ${copyFromLastSourceLayer}`}
+				>
+					Copy from last slice
+				</button>
 			</div>
 
 			<!-- Histogram Window Controls -->
