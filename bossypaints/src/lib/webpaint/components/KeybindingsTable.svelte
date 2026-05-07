@@ -12,6 +12,55 @@
 
 	export let show = true;
 
+	type KeybindingSection = {
+		title: string;
+		keys: string[];
+	};
+
+	const keybindingSections: KeybindingSection[] = [
+		{
+			title: 'Mouse & Drawing',
+			keys: ['Space', 'Click', 'Drag', 'SHIFT + Drag', 'Right Click']
+		},
+		{
+			title: 'Navigation',
+			keys: [
+				'Left Arrow',
+				'Right Arrow',
+				'Up Arrow',
+				'Down Arrow',
+				', (comma)',
+				'. (period)',
+				'ESC'
+			]
+		},
+		{
+			title: 'Propagation',
+			keys: ['Alt + C', 'Alt + Shift + C', 'Shift + ,', 'Shift + .', 'Alt + ,', 'Alt + .']
+		},
+		{
+			title: 'Segments',
+			keys: ['ENTER', 'Backspace', 'x', 'd', 'n', 'b']
+		},
+		{
+			title: 'Display',
+			keys: ['a', 't', 'v']
+		},
+		{
+			title: 'Zoom',
+			keys: ['+', '-', '0', 'Scroll']
+		}
+	];
+
+	const assignedKeys = new Set(keybindingSections.flatMap((section) => section.keys));
+	$: groupedKeybindings = keybindingSections
+		.map((section) => ({
+			title: section.title,
+			items: keybindings.filter((kb) => section.keys.includes(kb.key))
+		}))
+		.filter((section) => section.items.length > 0);
+	$: ungroupedKeybindings = keybindings.filter((kb) => !assignedKeys.has(kb.key));
+
 	// Close modal when clicking outside or pressing Escape
 	function handleBackdropClick(event: MouseEvent) {
 		if (event.target === event.currentTarget) {
@@ -73,23 +122,58 @@
 			</div>
 
 			<!-- Modal body -->
-			<div class="p-6">
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-					{#each keybindings as kb}
-						<div
-							class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-						>
-							<span
-								class="font-mono text-sm bg-white px-2 py-1 rounded border border-gray-300 text-gray-700"
-							>
-								{kb.key}
-							</span>
-							<span class="text-gray-700 text-sm flex-1 ml-4">
-								{kb.action}
-							</span>
+			<div class="p-6 space-y-6">
+				{#each groupedKeybindings as section}
+					<section class="space-y-3">
+						<div class="flex items-center gap-3">
+							<h3 class="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+								{section.title}
+							</h3>
+							<div class="h-px flex-1 bg-gray-200"></div>
 						</div>
-					{/each}
-				</div>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+							{#each section.items as kb}
+								<div class="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+									<div class="flex items-start gap-3">
+										<span
+											class="font-mono text-sm bg-white px-2 py-1 rounded border border-gray-300 text-gray-700 shrink-0"
+										>
+											{kb.key}
+										</span>
+										<span class="text-gray-700 text-sm leading-5">
+											{kb.action}
+										</span>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/each}
+
+				{#if ungroupedKeybindings.length > 0}
+					<section class="space-y-3">
+						<div class="flex items-center gap-3">
+							<h3 class="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Other</h3>
+							<div class="h-px flex-1 bg-gray-200"></div>
+						</div>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+							{#each ungroupedKeybindings as kb}
+								<div class="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+									<div class="flex items-start gap-3">
+										<span
+											class="font-mono text-sm bg-white px-2 py-1 rounded border border-gray-300 text-gray-700 shrink-0"
+										>
+											{kb.key}
+										</span>
+										<span class="text-gray-700 text-sm leading-5">
+											{kb.action}
+										</span>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/if}
 			</div>
 
 			<!-- Modal footer -->

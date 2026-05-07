@@ -24,6 +24,9 @@ manager and navigation store.
 	export let adjacentSegmentSourceLayer: number | null = null;
 	export let propagationActionLabel: string = 'Propagate from last slice';
 	export let propagationInFlight: boolean = false;
+	export let propagationMode: string = 'RW';
+	export let propagationModes: string[] = ['RW'];
+	export let onPropagationModeChange: (mode: string) => void = () => {};
 
 	// Histogram window controls (assume uint8 range)
 	export let histMin: number = 0;
@@ -252,33 +255,113 @@ manager and navigation store.
 						<span class="text-xs text-gray-500">from z {adjacentSegmentSourceLayer}</span>
 					{/if}
 				</div>
+				<div class="flex items-center justify-between gap-3 mb-2">
+					<label class="text-xs text-gray-500" for="propagation-mode">Propagate Mode</label>
+					<select
+						id="propagation-mode"
+						class="px-2 py-1 text-xs border border-gray-300 rounded bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+						value={propagationMode}
+						on:change={(event) =>
+							onPropagationModeChange((event.target as HTMLSelectElement).value)}
+					>
+						{#each propagationModes as mode}
+							<option value={mode}>{mode}</option>
+						{/each}
+					</select>
+				</div>
 				<div class="grid gap-2">
-					<button
-						class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200"
-						on:click={onCopyFromLastSlice}
-						disabled={adjacentSegmentSourceLayer === null || propagationInFlight}
-						aria-label="Copy from last slice"
-						title={propagationInFlight
-							? 'Wait for the current propagation request to finish'
-							: adjacentSegmentSourceLayer === null
-								? 'No nearby slice has this segment ID'
-								: `Copy segment from z ${adjacentSegmentSourceLayer}`}
-					>
-						Copy from last slice
-					</button>
-					<button
-						class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200"
-						on:click={onPropagateFromLastSlice}
-						disabled={adjacentSegmentSourceLayer === null || propagationInFlight}
-						aria-label={propagationActionLabel}
-						title={propagationInFlight
-							? 'Propagation request in progress'
-							: adjacentSegmentSourceLayer === null
-								? 'No nearby slice has this segment ID'
-								: `${propagationActionLabel} from z ${adjacentSegmentSourceLayer}`}
-					>
-						{propagationInFlight ? 'Propagating...' : propagationActionLabel}
-					</button>
+					<div class="relative group">
+						<button
+							class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200 text-left"
+							on:click={onCopyFromLastSlice}
+							disabled={adjacentSegmentSourceLayer === null || propagationInFlight}
+							aria-label="Copy from last slice"
+						>
+							<span class="flex w-full items-start justify-between gap-3">
+								<span class="block">Copy from last slice</span>
+								<kbd
+									class="ml-auto shrink-0 px-1.5 py-0.5 text-[11px] font-mono bg-white border border-blue-200 rounded"
+									>Alt+C</kbd
+								>
+							</span>
+						</button>
+						<div
+							class="pointer-events-none absolute left-0 top-full z-10 mt-2 hidden w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg group-hover:block group-focus-within:block"
+						>
+							{#if propagationInFlight}
+								<div>Wait for the current propagation request to finish.</div>
+							{:else if adjacentSegmentSourceLayer === null}
+								<div>No nearby slice has this segment ID.</div>
+							{:else}
+								<div>Copy from z {adjacentSegmentSourceLayer} onto the current slice.</div>
+							{/if}
+							<div class="mt-2 border-t border-white/20 pt-2">
+								<div class="mb-1 font-medium">Directional shortcuts</div>
+								<div class="flex items-center justify-between gap-3">
+									<span>Copy to previous z</span>
+									<kbd
+										class="px-1.5 py-0.5 text-[11px] font-mono bg-white/10 border border-white/20 rounded"
+										>Shift+,</kbd
+									>
+								</div>
+								<div class="mt-1 flex items-center justify-between gap-3">
+									<span>Copy to next z</span>
+									<kbd
+										class="px-1.5 py-0.5 text-[11px] font-mono bg-white/10 border border-white/20 rounded"
+										>Shift+.</kbd
+									>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="relative group">
+						<button
+							class="w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200 text-left"
+							on:click={onPropagateFromLastSlice}
+							disabled={adjacentSegmentSourceLayer === null || propagationInFlight}
+							aria-label={propagationActionLabel}
+						>
+							<span class="flex w-full items-start justify-between gap-3">
+								<span class="block"
+									>{propagationInFlight ? 'Propagating...' : propagationActionLabel}</span
+								>
+								<kbd
+									class="ml-auto shrink-0 px-1.5 py-0.5 text-[11px] font-mono bg-white border border-emerald-200 rounded"
+									>Alt+Shift+C</kbd
+								>
+							</span>
+						</button>
+						<div
+							class="pointer-events-none absolute left-0 top-full z-10 mt-2 hidden w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg group-hover:block group-focus-within:block"
+						>
+							{#if propagationInFlight}
+								<div>Propagation request in progress.</div>
+							{:else if adjacentSegmentSourceLayer === null}
+								<div>No nearby slice has this segment ID.</div>
+							{:else}
+								<div>
+									{propagationActionLabel} from z {adjacentSegmentSourceLayer} onto the current slice.
+								</div>
+							{/if}
+							<div class="mt-2 border-t border-white/20 pt-2">
+								<div class="mb-1 font-medium">Directional shortcuts</div>
+								<div class="flex items-center justify-between gap-3">
+									<span>Propagate to previous z</span>
+									<kbd
+										class="px-1.5 py-0.5 text-[11px] font-mono bg-white/10 border border-white/20 rounded"
+										>Alt+,</kbd
+									>
+								</div>
+								<div class="mt-1 flex items-center justify-between gap-3">
+									<span>Propagate to next z</span>
+									<kbd
+										class="px-1.5 py-0.5 text-[11px] font-mono bg-white/10 border border-white/20 rounded"
+										>Alt+.</kbd
+									>
+								</div>
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 

@@ -46,6 +46,10 @@ from BossDB and displays it on the canvas.
 	export let onSubmitData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
 	export let onCheckpointData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
 	export let onToggleInfo: () => void = () => {};
+	export let onCopyToAdjacentSlice: (direction: -1 | 1) => void | Promise<void> = () => {};
+	export let onCopyFromLastSlice: () => void | Promise<void> = () => {};
+	export let onPropagateToAdjacentSlice: (direction: -1 | 1) => void | Promise<void> = () => {};
+	export let onPropagateFromLastSlice: () => void | Promise<void> = () => {};
 
 	// Toggle visibility of task region (yellow rectangle) and axes
 	let showAxesAndTaskRegion = true;
@@ -853,6 +857,8 @@ from BossDB and displays it on the canvas.
 		};
 
 		s.keyPressed = (evt: any) => {
+			const keyEvent = evt as KeyboardEvent | undefined;
+
 			// Alt + S = checkpoint
 			if (s.keyIsDown(s.ALT) && s.keyCode === 83) {
 				// If SHIFT is also pressed, submit the data
@@ -863,6 +869,47 @@ from BossDB and displays it on the canvas.
 					onCheckpointData(annotationStore.getAllAnnotations());
 					return false;
 				}
+			}
+
+			if (keyEvent?.shiftKey && !keyEvent.altKey && keyEvent.code === 'Comma') {
+				void Promise.resolve(onCopyToAdjacentSlice(-1)).finally(() => {
+					saveNavigationStateDebounced();
+				});
+				return false;
+			}
+
+			if (keyEvent?.shiftKey && !keyEvent.altKey && keyEvent.code === 'Period') {
+				void Promise.resolve(onCopyToAdjacentSlice(1)).finally(() => {
+					saveNavigationStateDebounced();
+				});
+				return false;
+			}
+
+			if (keyEvent?.altKey && !keyEvent.shiftKey && keyEvent.code === 'Comma') {
+				void Promise.resolve(onPropagateToAdjacentSlice(-1)).finally(() => {
+					saveNavigationStateDebounced();
+				});
+				return false;
+			}
+
+			if (keyEvent?.altKey && !keyEvent.shiftKey && keyEvent.code === 'Period') {
+				void Promise.resolve(onPropagateToAdjacentSlice(1)).finally(() => {
+					saveNavigationStateDebounced();
+				});
+				return false;
+			}
+
+			if (keyEvent?.altKey && keyEvent.code === 'KeyC') {
+				if (keyEvent.shiftKey) {
+					void Promise.resolve(onPropagateFromLastSlice()).finally(() => {
+						saveNavigationStateDebounced();
+					});
+				} else {
+					void Promise.resolve(onCopyFromLastSlice()).finally(() => {
+						saveNavigationStateDebounced();
+					});
+				}
+				return false;
 			}
 
 			// 't' key = toggle info panel visibility
@@ -1003,7 +1050,10 @@ from BossDB and displays it on the canvas.
 					// Calculate zoom factor based on distance change
 					const distanceRatio = currentDistance / lastTouchDistance;
 					const zoomChange = (distanceRatio - 1) * APP_CONFIG.pinchZoomSpeed * nav.zoom;
-					const newZoom = Math.max(0.1, Math.min(10, nav.zoom + zoomChange));
+					const newZoom = Math.max(
+						APP_CONFIG.zoomBounds.min,
+						Math.min(APP_CONFIG.zoomBounds.max, nav.zoom + zoomChange)
+					);
 
 					// Apply zoom towards the pinch center
 					pinchZoom(newZoom, currentCenter.x, currentCenter.y);

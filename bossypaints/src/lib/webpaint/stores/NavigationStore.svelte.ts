@@ -1,6 +1,7 @@
 /**
  * @module NavigationStore
  */
+import APP_CONFIG from '../config';
 
 /**
  * Create a store for managing navigation in a multi-layered volume.
@@ -23,10 +24,17 @@ export function createNavigationStore({
 	imageWidth = 512,
 	imageHeight = 512
 }) {
+	const clampZoom = (value: number): number => {
+		if (!Number.isFinite(value)) {
+			return APP_CONFIG.zoomBounds.min;
+		}
+		return Math.min(APP_CONFIG.zoomBounds.max, Math.max(APP_CONFIG.zoomBounds.min, value));
+	};
+
 	let _x = $state(x);
 	let _y = $state(y);
 	let _layer = $state(layer);
-	let _zoom = $state(zoom);
+	let _zoom = $state(clampZoom(zoom));
 	const _minLayer = $state(minLayer);
 	const _maxLayer = $state(maxLayer);
 	let _drawing = $state(false);
@@ -168,7 +176,7 @@ export function createNavigationStore({
 		 * method in the keybindings.
 		 */
 		setZoom: (newZoom: number) => {
-			_zoom = newZoom;
+			_zoom = clampZoom(newZoom);
 		},
 		get minLayer() {
 			return _minLayer;
@@ -177,7 +185,7 @@ export function createNavigationStore({
 			return _maxLayer;
 		},
 		reset: () => {
-			_zoom = 1;
+			_zoom = clampZoom(1);
 			_layer = Math.floor((_minLayer + _maxLayer) / 2);
 		},
 
