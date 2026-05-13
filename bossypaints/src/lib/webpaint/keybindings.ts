@@ -130,15 +130,69 @@ export const keybindings: Keybinding[] = [
     {
         key: ', (comma)',
         action: 'Previous z',
-        matcher: (s) => s.key === ',',
+        matcher: (s) => s.key === ',' && !s.keyIsDown(s.SHIFT) && !s.keyIsDown(s.ALT),
         handler: (s, annotationStore, nav) => nav.decrementLayer(),
         eventType: 'key',
     },
     {
         key: '. (period)',
         action: 'Next z',
-        matcher: (s) => s.key === '.',
+        matcher: (s) => s.key === '.' && !s.keyIsDown(s.SHIFT) && !s.keyIsDown(s.ALT),
         handler: (s, annotationStore, nav) => nav.incrementLayer(),
+        eventType: 'key',
+    },
+    {
+        key: 'Shift + ,',
+        action: 'Copy active segment to previous z',
+        matcher: () => false,
+        handler: () => {
+            // Implemented directly in PaintApp.svelte to call app-level copy logic.
+        },
+        eventType: 'key',
+    },
+    {
+        key: 'Shift + .',
+        action: 'Copy active segment to next z',
+        matcher: () => false,
+        handler: () => {
+            // Implemented directly in PaintApp.svelte to call app-level copy logic.
+        },
+        eventType: 'key',
+    },
+    {
+        key: 'Alt + ,',
+        action: 'Propagate active segment to previous z',
+        matcher: () => false,
+        handler: () => {
+            // Implemented directly in PaintApp.svelte to call app-level propagation logic.
+        },
+        eventType: 'key',
+    },
+    {
+        key: 'Alt + .',
+        action: 'Propagate active segment to next z',
+        matcher: () => false,
+        handler: () => {
+            // Implemented directly in PaintApp.svelte to call app-level propagation logic.
+        },
+        eventType: 'key',
+    },
+    {
+        key: 'Alt + C',
+        action: 'Copy from last slice onto current z',
+        matcher: () => false,
+        handler: () => {
+            // Implemented directly in PaintApp.svelte to call app-level copy logic.
+        },
+        eventType: 'key',
+    },
+    {
+        key: 'Alt + Shift + C',
+        action: 'Propagate from last slice onto current z',
+        matcher: () => false,
+        handler: () => {
+            // Implemented directly in PaintApp.svelte to call app-level propagation logic.
+        },
         eventType: 'key',
     },
     {
@@ -322,4 +376,3 @@ function centerfullyZoom(newZoom: number, s: p5, nav: NavigationStore, zoomToMou
         nav.decrementY((s.height / 2) * (1 / oldZoom - 1 / nav.zoom));
     }
 }
-

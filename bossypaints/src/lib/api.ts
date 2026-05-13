@@ -1,7 +1,7 @@
 import type PolygonAnnotation from "$lib/webpaint/PolygonAnnotation";
 
-// const baseUrl = 'http://localhost:8000';
-const baseUrl = "https://api.paint.labs.bossdb.org";
+const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '');
+const baseUrl = configuredBaseUrl || "https://api.paint.labs.bossdb.org";
 
 export { baseUrl };
 
@@ -47,32 +47,49 @@ export type TaskExports = {
     cloudvolumes?: ExportFile[];
 }
 
+export type PolygonAnnotationPayload = {
+    positiveRegions: Array<Array<[number, number]>>;
+    negativeRegions?: Array<Array<[number, number]>>;
+    editing: boolean;
+    segmentID: number;
+    color?: number[] | null;
+    z: number;
+}
+
+export type PropagateSegmentResponse = {
+    method: string;
+    display_name: string;
+    source_z: number;
+    target_z: number;
+    segment_id: number;
+    polygons: PolygonAnnotationPayload[];
+    meta?: Record<string, unknown>;
+}
+
 class API {
-    async get(url: string) {
-        url = url.startsWith('/') ? url : `/${url}`;
+    private buildHeaders(): Record<string, string> {
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
         if (localStorage.getItem('apiToken')) {
             headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
         }
+        return headers;
+    }
+
+    async get(url: string) {
+        url = url.startsWith('/') ? url : `/${url}`;
         const response = await fetch(`${baseUrl}${url}`, {
-            headers,
+            headers: this.buildHeaders(),
         });
         return response.json();
     }
 
     async post(url: string, data: any) {
         url = url.startsWith('/') ? url : `/${url}`;
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-        if (localStorage.getItem('apiToken')) {
-            headers['Authorization'] = `Token ${localStorage.getItem('apiToken')}`;
-        }
         const response = await fetch(`${baseUrl}${url}`, {
             method: 'POST',
-            headers: headers,
+            headers: this.buildHeaders(),
             body: JSON.stringify(data),
         });
         return response.json();
@@ -120,6 +137,42 @@ class API {
 
     async updateTaskName(taskId: TaskID, name: string | null): Promise<{ message: string, name: string | null }> {
         return this.post(`/api/tasks/${taskId}/update-name`, { name });
+    }
+
+    async propagateSegment({
+        taskId,
+        method,
+        sourceZ,
+        targetZ,
+        segmentID,
+        sourcePolygons,
+        options,
+    }: {
+        taskId: TaskID;
+        method: string;
+        sourceZ: number;
+        targetZ: number;
+        segmentID: number;
+        sourcePolygons: PolygonAnnotation[];
+        options?: Record<string, unknown>;
+    }): Promise<PropagateSegmentResponse> {
+        const response = await fetch(`${baseUrl}/api/tasks/${taskId}/propagate-segment`, {
+            method: 'POST',
+            headers: this.buildHeaders(),
+            body: JSON.stringify({
+                method,
+                source_z: sourceZ,
+                target_z: targetZ,
+                segment_id: segmentID,
+                source_polygons: sourcePolygons,
+                options: options || {},
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.detail || payload.message || 'Segment propagation failed.');
+        }
+        return payload;
     }
 
     async getBossDBUsernameFromToken(token: string): Promise<{ username: string }> {

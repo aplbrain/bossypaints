@@ -26,6 +26,15 @@ const APP_CONFIG = {
     pinchZoomSpeed: 0.1,
 
     /**
+     * Hard zoom bounds for all navigation paths.
+     * Prevents the camera from crossing through zero or exploding to unusable scales.
+     */
+    zoomBounds: {
+        min: 0.1,
+        max: 10
+    },
+
+    /**
      * Resolution system configuration.
      * Defines different resolution levels with zoom thresholds.
      * Higher resolution levels are downsampled versions (res 1 = 2x downsample, res 2 = 4x downsample, etc.)

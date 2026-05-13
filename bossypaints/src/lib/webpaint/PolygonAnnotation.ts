@@ -170,6 +170,22 @@ class PolygonAnnotation {
         }
     }
 
+    cloneToLayer(z: number, editing: boolean = this.editing): PolygonAnnotation {
+        return new PolygonAnnotation(
+            {
+                positiveRegions: this.positiveRegions.map((region) =>
+                    region.map(([x, y]) => [x, y] as [number, number])
+                ),
+                negativeRegions: this.negativeRegions.map((region) =>
+                    region.map(([x, y]) => [x, y] as [number, number])
+                )
+            },
+            this.segmentID,
+            editing,
+            z
+        );
+    }
+
     /**
      * Create a SINGLE PolygonAnnotation from polybool results using positive/negative geometry.
      */

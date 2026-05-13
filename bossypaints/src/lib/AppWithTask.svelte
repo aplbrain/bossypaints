@@ -11,7 +11,7 @@
 		type NavigationStore
 	} from '$lib/webpaint/stores/NavigationStore.svelte';
 	import { goto } from '$app/navigation';
-	import API, { type TaskInDB } from '$lib/api';
+	import API, { type PolygonAnnotationPayload, type TaskInDB } from '$lib/api';
 	import { Notyf } from 'notyf';
 	import 'notyf/notyf.min.css';
 	import PolygonAnnotation from '$lib/webpaint/PolygonAnnotation';
@@ -28,6 +28,7 @@
 	import { substractSegment, saveSegment } from './utils/annotation';
 
 	const notyf = new Notyf();
+	type AdjacentDirection = -1 | 1;
 
 	export let task: TaskInDB;
 	let annotationStore: AnnotationManagerStore;
@@ -44,6 +45,14 @@
 	let pendingNavigation: (() => void) | null = null;
 	let hasUnsavedChanges = false;
 	let lastCheckpointAnnotations: any[] = [];
+	let lastVisitedLayer: number | null = null;
+	let trackedLayer: number | null = null;
+	let isPropagatingSegment = false;
+	let latestPropagationRequestID = 0;
+	let propagationMode = 'RW';
+	const SEGMENT_PROPAGATION_METHOD = 'random_walker';
+	const SEGMENT_PROPAGATION_LABEL = 'Propagate from last slice';
+	const PROPAGATION_MODE_OPTIONS = ['RW'];
 
 	// Histogram window state (default 8-bit window)
 	let histMin = 0;
@@ -156,6 +165,247 @@
 		}, CHECKPOINT_DEBOUNCE_MS);
 	}
 
+	function layerHasSegment(layer: number, segmentID: number): boolean {
+		return annotationStore.getSegmentAnnotations(layer, segmentID).length > 0;
+	}
+
+	function getAdjacentSegmentSourceLayer(): number | null {
+		if (!annotationStore || !nav) return null;
+
+		const currentLayer = nav.layer;
+		const segmentID = annotationStore.currentSegmentID;
+		const lowerLayer = currentLayer - 1;
+		const upperLayer = currentLayer + 1;
+		const lowerHasSegment = lowerLayer >= nav.minLayer && layerHasSegment(lowerLayer, segmentID);
+		const upperHasSegment = upperLayer < nav.maxLayer && layerHasSegment(upperLayer, segmentID);
+
+		if (
+			lastVisitedLayer !== null &&
+			(lastVisitedLayer === lowerLayer || lastVisitedLayer === upperLayer) &&
+			layerHasSegment(lastVisitedLayer, segmentID)
+		) {
+			return lastVisitedLayer;
+		}
+
+		if (lowerHasSegment && !upperHasSegment) {
+			return lowerLayer;
+		}
+		if (!lowerHasSegment && upperHasSegment) {
+			return upperLayer;
+		}
+		if (lowerHasSegment && upperHasSegment) {
+			return lowerLayer;
+		}
+		return null;
+	}
+
+	function getAdjacentTargetLayer(direction: AdjacentDirection): number | null {
+		if (!nav) return null;
+
+		const targetLayer = nav.layer + direction;
+		if (targetLayer < nav.minLayer || targetLayer >= nav.maxLayer) {
+			return null;
+		}
+		return targetLayer;
+	}
+
+	function getDirectionLabel(direction: AdjacentDirection): 'previous' | 'next' {
+		return direction < 0 ? 'previous' : 'next';
+	}
+
+	function getSavedSegmentAnnotations(layer: number, segmentID: number): Array<PolygonAnnotation> {
+		if (!annotationStore) return [];
+		return annotationStore.getSegmentAnnotations(layer, segmentID);
+	}
+
+	function replaceSegmentFromSourceLayer(
+		sourceLayer: number,
+		targetLayer: number,
+		segmentID: number,
+		sourceAnnotations: Array<PolygonAnnotation>
+	) {
+		const copiedAnnotations = sourceAnnotations.map((annotation) =>
+			annotation.cloneToLayer(targetLayer, false)
+		);
+
+		annotationStore.replaceSegmentAnnotations(targetLayer, segmentID, copiedAnnotations);
+		annotationStore.resetCurrentAnnotation();
+		hasUnsavedChanges = checkForUnsavedChanges();
+	}
+
+	function copyCurrentSegmentFromLastSlice() {
+		if (!annotationStore || !nav || isPropagatingSegment) return;
+
+		const sourceLayer = getAdjacentSegmentSourceLayer();
+		const targetLayer = nav.layer;
+		const segmentID = annotationStore.currentSegmentID;
+
+		if (sourceLayer === null) {
+			notyf.error(`No nearby slice contains segment ${segmentID}.`);
+			return;
+		}
+
+		const sourceAnnotations = getSavedSegmentAnnotations(sourceLayer, segmentID);
+		if (sourceAnnotations.length === 0) {
+			notyf.error(`No annotations found for segment ${segmentID} on z ${sourceLayer}.`);
+			return;
+		}
+
+		replaceSegmentFromSourceLayer(sourceLayer, targetLayer, segmentID, sourceAnnotations);
+		notyf.success(`Copied segment ${segmentID} from z ${sourceLayer} to z ${targetLayer}.`);
+	}
+
+	function copyCurrentSegmentToAdjacentSlice(direction: AdjacentDirection) {
+		if (!annotationStore || !nav || isPropagatingSegment) return;
+
+		const sourceLayer = nav.layer;
+		const targetLayer = getAdjacentTargetLayer(direction);
+		const segmentID = annotationStore.currentSegmentID;
+
+		if (targetLayer === null) {
+			notyf.error(`No ${getDirectionLabel(direction)} slice is available from z ${sourceLayer}.`);
+			return;
+		}
+
+		const sourceAnnotations = getSavedSegmentAnnotations(sourceLayer, segmentID);
+		if (sourceAnnotations.length === 0) {
+			notyf.error(`No annotations found for segment ${segmentID} on z ${sourceLayer}.`);
+			return;
+		}
+
+		replaceSegmentFromSourceLayer(sourceLayer, targetLayer, segmentID, sourceAnnotations);
+		nav.setLayer(targetLayer);
+		notyf.success(`Copied segment ${segmentID} from z ${sourceLayer} to z ${targetLayer}.`);
+	}
+
+	function polygonPayloadToAnnotation(annotation: PolygonAnnotationPayload): PolygonAnnotation {
+		return new PolygonAnnotation(
+			{
+				positiveRegions: annotation.positiveRegions,
+				negativeRegions: annotation.negativeRegions || []
+			},
+			annotation.segmentID,
+			false,
+			annotation.z
+		);
+	}
+
+	async function propagateCurrentSegmentFromLastSlice() {
+		if (!annotationStore || !nav) return;
+
+		const sourceLayer = getAdjacentSegmentSourceLayer();
+		const targetLayer = nav.layer;
+		const segmentID = annotationStore.currentSegmentID;
+
+		if (sourceLayer === null) {
+			notyf.error(`No nearby slice contains segment ${segmentID}.`);
+			return;
+		}
+
+		await propagateSegmentBetweenLayers({
+			sourceLayer,
+			targetLayer,
+			segmentID,
+			expectedLayerAtResponse: targetLayer,
+			navigateToTargetOnSuccess: false
+		});
+	}
+
+	async function propagateCurrentSegmentToAdjacentSlice(direction: AdjacentDirection) {
+		if (!annotationStore || !nav || isPropagatingSegment) return;
+
+		const sourceLayer = nav.layer;
+		const targetLayer = getAdjacentTargetLayer(direction);
+		const segmentID = annotationStore.currentSegmentID;
+
+		if (targetLayer === null) {
+			notyf.error(`No ${getDirectionLabel(direction)} slice is available from z ${sourceLayer}.`);
+			return;
+		}
+
+		await propagateSegmentBetweenLayers({
+			sourceLayer,
+			targetLayer,
+			segmentID,
+			expectedLayerAtResponse: sourceLayer,
+			navigateToTargetOnSuccess: true
+		});
+	}
+
+	async function propagateSegmentBetweenLayers({
+		sourceLayer,
+		targetLayer,
+		segmentID,
+		expectedLayerAtResponse,
+		navigateToTargetOnSuccess
+	}: {
+		sourceLayer: number;
+		targetLayer: number;
+		segmentID: number;
+		expectedLayerAtResponse: number;
+		navigateToTargetOnSuccess: boolean;
+	}) {
+		if (!annotationStore || !nav || isPropagatingSegment) return;
+
+		const sourceAnnotations = getSavedSegmentAnnotations(sourceLayer, segmentID);
+		if (sourceAnnotations.length === 0) {
+			notyf.error(`No annotations found for segment ${segmentID} on z ${sourceLayer}.`);
+			return;
+		}
+
+		const requestID = latestPropagationRequestID + 1;
+		latestPropagationRequestID = requestID;
+		isPropagatingSegment = true;
+
+		const targetAnnotationsSnapshot = JSON.stringify(
+			annotationStore.getSegmentAnnotations(targetLayer, segmentID)
+		);
+		const draftSnapshot = JSON.stringify(annotationStore.currentAnnotation.annotation);
+
+		try {
+			const response = await API.propagateSegment({
+				taskId: task.id,
+				method: SEGMENT_PROPAGATION_METHOD,
+				sourceZ: sourceLayer,
+				targetZ: targetLayer,
+				segmentID,
+				sourcePolygons: sourceAnnotations
+			});
+
+			const targetStillMatches =
+				nav.layer === expectedLayerAtResponse &&
+				annotationStore.currentSegmentID === segmentID &&
+				JSON.stringify(annotationStore.getSegmentAnnotations(targetLayer, segmentID)) ===
+					targetAnnotationsSnapshot &&
+				JSON.stringify(annotationStore.currentAnnotation.annotation) === draftSnapshot;
+
+			if (requestID !== latestPropagationRequestID || !targetStillMatches) {
+				console.info('Discarded propagation result because the target slice state changed.');
+				return;
+			}
+
+			const propagatedAnnotations = response.polygons.map(polygonPayloadToAnnotation);
+			annotationStore.replaceSegmentAnnotations(targetLayer, segmentID, propagatedAnnotations);
+			annotationStore.resetCurrentAnnotation();
+			hasUnsavedChanges = checkForUnsavedChanges();
+			if (navigateToTargetOnSuccess) {
+				nav.setLayer(targetLayer);
+			}
+			notyf.success(
+				`Propagated segment ${segmentID} from z ${sourceLayer} to z ${targetLayer} with ${response.display_name}.`
+			);
+		} catch (error) {
+			console.error('Segment propagation failed:', error);
+			notyf.error(
+				error instanceof Error ? error.message : 'Failed to propagate the active segment.'
+			);
+		} finally {
+			if (requestID === latestPropagationRequestID) {
+				isPropagatingSegment = false;
+			}
+		}
+	}
+
 	async function loadTask() {
 		annotationStore = createAnnotationManagerStore(
 			Math.max(1, task.z_max - task.z_min),
@@ -234,6 +484,16 @@
 
 	loadTask();
 
+	$: if (nav) {
+		const currentLayer = nav.layer;
+		if (trackedLayer === null) {
+			trackedLayer = currentLayer;
+		} else if (trackedLayer !== currentLayer) {
+			lastVisitedLayer = trackedLayer;
+			trackedLayer = currentLayer;
+		}
+	}
+
 	// Set up paint app body styles on mount and clean up on destroy
 	onMount(() => {
 		// Apply paint app specific styles
@@ -254,7 +514,7 @@
 	});
 </script>
 
-<div class="w-full">
+<div class="w-full" role="presentation" oncontextmenu={(event) => event.preventDefault()}>
 	{#if task && annotationStore && nav}
 		<PaintApp
 			{annotationStore}
@@ -272,6 +532,10 @@
 				queueCheckpoint(data);
 			}}
 			onToggleInfo={() => (showInfo = !showInfo)}
+			onCopyToAdjacentSlice={copyCurrentSegmentToAdjacentSlice}
+			onCopyFromLastSlice={copyCurrentSegmentFromLastSlice}
+			onPropagateToAdjacentSlice={propagateCurrentSegmentToAdjacentSlice}
+			onPropagateFromLastSlice={propagateCurrentSegmentFromLastSlice}
 			onSubmitData={(data) => {
 				API.saveTask({ taskId: task.id, checkpoint: data }).then(() => {
 					notyf.success('Volume finalized and saved.');
@@ -285,6 +549,14 @@
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
 			onLayerChange={nav.setLayer}
 			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
+			onCopyFromLastSlice={copyCurrentSegmentFromLastSlice}
+			onPropagateFromLastSlice={propagateCurrentSegmentFromLastSlice}
+			adjacentSegmentSourceLayer={getAdjacentSegmentSourceLayer()}
+			propagationActionLabel={SEGMENT_PROPAGATION_LABEL}
+			propagationInFlight={isPropagatingSegment}
+			{propagationMode}
+			propagationModes={PROPAGATION_MODE_OPTIONS}
+			onPropagationModeChange={(mode) => (propagationMode = mode)}
 			{histMin}
 			{histMax}
 			onHistogramChange={handleHistogramChange}
