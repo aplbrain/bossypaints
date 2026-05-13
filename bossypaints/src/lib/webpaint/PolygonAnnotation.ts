@@ -1,312 +1,286 @@
-import p5 from 'p5';
-import { type NavigationStore } from './stores/NavigationStore.svelte';
-import { segmentIdToRGB } from './colorutils';
-import APP_CONFIG from './config';
-import type { AnnotationManagerStore } from './stores/AnnotationManagerStore.svelte';
+import p5 from "p5";
+import { type NavigationStore } from "./stores/NavigationStore.svelte";
+import { segmentIdToRGB } from "./colorutils";
+import APP_CONFIG from "./config";
+import type { AnnotationManagerStore } from "./stores/AnnotationManagerStore.svelte";
 
 class PolygonAnnotation {
-	// Positive/negative regions approach
-	positiveRegions: Array<Array<[number, number]>>;
-	negativeRegions: Array<Array<[number, number]>>;
 
-	editing: boolean;
-	segmentID: number;
-	color: number[];
-	z: number;
+    // Positive/negative regions approach
+    positiveRegions: Array<Array<[number, number]>>;
+    negativeRegions: Array<Array<[number, number]>>;
 
-	constructor(
-		input?: {
-			positiveRegions?: Array<Array<[number, number]>>;
-			negativeRegions?: Array<Array<[number, number]>>;
-		},
-		segmentID?: number,
-		editing = true,
-		z = 0
-	) {
-		this.editing = editing;
-		this.segmentID = segmentID || 1;
-		this.color = segmentIdToRGB(this.segmentID);
-		this.z = z;
+    editing: boolean;
+    segmentID: number;
+    color: number[];
+    z: number;
 
-		// Initialize regions
-		this.positiveRegions = input?.positiveRegions || [];
-		this.negativeRegions = input?.negativeRegions || [];
-	}
 
-	addVertex(pt: [number, number]): void {
-		this.color = segmentIdToRGB(this.segmentID);
+    constructor(
+        input?: {
+            positiveRegions?: Array<Array<[number, number]>>;
+            negativeRegions?: Array<Array<[number, number]>>;
+        },
+        segmentID?: number,
+        editing = true,
+        z = 0
+    ) {
+        this.editing = editing;
+        this.segmentID = segmentID || 1;
+        this.color = segmentIdToRGB(this.segmentID);
+        this.z = z;
 
-		// Add to the first positive region (or create one if none exists)
-		if (this.positiveRegions.length === 0) {
-			this.positiveRegions.push([]);
-		}
-		this.positiveRegions[0].push(pt);
-	}
+        // Initialize regions
+        this.positiveRegions = input?.positiveRegions || [];
+        this.negativeRegions = input?.negativeRegions || [];
+    }
 
-	draw(p: p5, nav: NavigationStore, annoMgr: AnnotationManagerStore) {
-		const mouseDataPos = nav.sceneToData(p.mouseX, p.mouseY);
-		const hover = this.pointIsInside([mouseDataPos.x, mouseDataPos.y]);
 
-		// Pick a fill color:
-		const opacity =
-			255 *
-			(this.editing
-				? APP_CONFIG.editingOpacity
-				: hover
-					? APP_CONFIG.hoveredOpacity
-					: annoMgr.currentSegmentID === this.segmentID
-						? APP_CONFIG.activeOpacity
-						: APP_CONFIG.nonActiveOpacity);
-		p.fill(this.color[0], this.color[1], this.color[2], opacity);
-		p.stroke(this.color[0], this.color[1], this.color[2], opacity + 10);
-		p.strokeWeight(2);
+    addVertex(pt: [number, number]): void {
+        this.color = segmentIdToRGB(this.segmentID);
 
-		// Draw each positive region with only the negative regions that are contained within it
-		this.positiveRegions.forEach((positiveRegion) => {
-			p.beginShape();
+        // Add to the first positive region (or create one if none exists)
+        if (this.positiveRegions.length === 0) {
+            this.positiveRegions.push([]);
+        }
+        this.positiveRegions[0].push(pt);
+    }
 
-			// Draw the positive region
-			positiveRegion.forEach((pt: [number, number]) => {
-				p.vertex(pt[0], pt[1]);
-			});
+    draw(p: p5, nav: NavigationStore, annoMgr: AnnotationManagerStore) {
+        const mouseDataPos = nav.sceneToData(p.mouseX, p.mouseY);
+        const hover = this.pointIsInside([mouseDataPos.x, mouseDataPos.y]);
 
-			// Only add negative regions that are actually contained within this positive region
-			this.negativeRegions.forEach((negativeRegion: Array<[number, number]>) => {
-				if (this.isRegionContainedInRegion(negativeRegion, positiveRegion)) {
-					p.beginContour();
-					negativeRegion.forEach((pt: [number, number]) => {
-						p.vertex(pt[0], pt[1]);
-					});
-					p.endContour();
-				}
-			});
+        // Pick a fill color:
+        const opacity = 255 * (this.editing ? APP_CONFIG.editingOpacity : (
+            hover ? APP_CONFIG.hoveredOpacity : (
+                annoMgr.currentSegmentID === this.segmentID ? APP_CONFIG.activeOpacity : APP_CONFIG.nonActiveOpacity)
+        ));
+        p.fill(this.color[0], this.color[1], this.color[2], opacity);
+        p.stroke(this.color[0], this.color[1], this.color[2], opacity + 10);
+        p.strokeWeight(2);
 
-			p.endShape();
-		});
+        // Draw each positive region with only the negative regions that are contained within it
+        this.positiveRegions.forEach((positiveRegion) => {
+            p.beginShape();
 
-		if (
-			hover &&
-			!this.editing &&
-			this.positiveRegions.length > 0 &&
-			this.positiveRegions[0].length > 0
-		) {
-			p.fill(0, 0, 0, 255);
-			p.textSize(12 / nav.zoom);
-			p.noStroke();
-			p.text(
-				'Segment ID: ' + this.segmentID,
-				this.positiveRegions[0][0][0],
-				this.positiveRegions[0][0][1]
-			);
-		}
-	}
+            // Draw the positive region
+            positiveRegion.forEach((pt: [number, number]) => {
+                p.vertex(pt[0], pt[1]);
+            });
 
-	pointIsInside(pt: [number, number]): boolean {
-		// Check if point is inside any positive region
-		const insideAnyPositive = this.positiveRegions.some((region) => this.raycast(pt, region));
+            // Only add negative regions that are actually contained within this positive region
+            this.negativeRegions.forEach((negativeRegion: Array<[number, number]>) => {
+                if (this.isRegionContainedInRegion(negativeRegion, positiveRegion)) {
+                    p.beginContour();
+                    negativeRegion.forEach((pt: [number, number]) => {
+                        p.vertex(pt[0], pt[1]);
+                    });
+                    p.endContour();
+                }
+            });
 
-		if (!insideAnyPositive) {
-			return false;
-		}
+            p.endShape();
+        });
 
-		// Check if point is inside any negative region (hole)
-		const insideAnyNegative = this.negativeRegions.some((region) => this.raycast(pt, region));
+        if (hover && !this.editing && this.positiveRegions.length > 0 && this.positiveRegions[0].length > 0) {
+            p.fill(0, 0, 0, 255);
+            p.textSize(12 / nav.zoom);
+            p.noStroke();
+            p.text("Segment ID: " + this.segmentID, this.positiveRegions[0][0][0], this.positiveRegions[0][0][1]);
+        }
+    }
 
-		// Point is inside shape if it's in any positive region but not in any negative region
-		return !insideAnyNegative;
-	}
+    pointIsInside(pt: [number, number]): boolean {
+        // Check if point is inside any positive region
+        const insideAnyPositive = this.positiveRegions.some(region => this.raycast(pt, region));
 
-	private raycast(pt: [number, number], polygon: Array<[number, number]>): boolean {
-		// ray-casting algorithm
-		let inside = false;
-		for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-			const xi = polygon[i][0],
-				yi = polygon[i][1];
-			const xj = polygon[j][0],
-				yj = polygon[j][1];
+        if (!insideAnyPositive) {
+            return false;
+        }
 
-			const intersect =
-				yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi;
-			if (intersect) inside = !inside;
-		}
-		return inside;
-	}
+        // Check if point is inside any negative region (hole)
+        const insideAnyNegative = this.negativeRegions.some(region => this.raycast(pt, region));
 
-	/**
-	 * Calculate the signed area of a polygon to determine winding order.
-	 * Positive area = counter-clockwise (outer boundary)
-	 * Negative area = clockwise (hole)
-	 */
-	private calculateSignedArea(polygon: Array<[number, number]>): number {
-		if (polygon.length < 3) return 0;
+        // Point is inside shape if it's in any positive region but not in any negative region
+        return !insideAnyNegative;
+    }
 
-		let area = 0;
-		for (let i = 0; i < polygon.length; i++) {
-			const j = (i + 1) % polygon.length;
-			area += (polygon[j][0] - polygon[i][0]) * (polygon[j][1] + polygon[i][1]);
-		}
-		return area / 2;
-	}
+    private raycast(pt: [number, number], polygon: Array<[number, number]>): boolean {
+        // ray-casting algorithm
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i][0], yi = polygon[i][1];
+            const xj = polygon[j][0], yj = polygon[j][1];
 
-	/**
-	 * Classify regions from polybool result based on winding order.
-	 * According to polybool docs: exterior paths are counter-clockwise, holes are clockwise.
-	 * Now returns ALL outer boundaries instead of just the largest one.
-	 */
-	private classifyRegionsByWindingOrder(regions: Array<Array<[number, number]>>): {
-		outerBoundaries: Array<Array<[number, number]>>;
-		holes: Array<Array<[number, number]>>;
-	} {
-		if (regions.length === 0) {
-			return { outerBoundaries: [], holes: [] };
-		}
+            const intersect = ((yi > pt[1]) !== (yj > pt[1])) &&
+                (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
 
-		const classified = regions.map((region) => ({
-			region,
-			signedArea: this.calculateSignedArea(region),
-			isOuterBoundary: this.calculateSignedArea(region) > 0 // counter-clockwise = positive area
-		}));
+    /**
+     * Calculate the signed area of a polygon to determine winding order.
+     * Positive area = counter-clockwise (outer boundary)
+     * Negative area = clockwise (hole)
+     */
+    private calculateSignedArea(polygon: Array<[number, number]>): number {
+        if (polygon.length < 3) return 0;
 
-		const outerBoundaries = classified.filter((c) => c.isOuterBoundary).map((c) => c.region);
-		const holes = classified.filter((c) => !c.isOuterBoundary).map((c) => c.region);
+        let area = 0;
+        for (let i = 0; i < polygon.length; i++) {
+            const j = (i + 1) % polygon.length;
+            area += (polygon[j][0] - polygon[i][0]) * (polygon[j][1] + polygon[i][1]);
+        }
+        return area / 2;
+    }
 
-		return {
-			outerBoundaries,
-			holes
-		};
-	}
+    /**
+     * Classify regions from polybool result based on winding order.
+     * According to polybool docs: exterior paths are counter-clockwise, holes are clockwise.
+     * Now returns ALL outer boundaries instead of just the largest one.
+     */
+    private classifyRegionsByWindingOrder(regions: Array<Array<[number, number]>>): {
+        outerBoundaries: Array<Array<[number, number]>>;
+        holes: Array<Array<[number, number]>>;
+    } {
+        if (regions.length === 0) {
+            return { outerBoundaries: [], holes: [] };
+        }
 
-	removeLatestVertex() {
-		// Remove from the first positive region
-		if (this.positiveRegions.length > 0 && this.positiveRegions[0].length > 0) {
-			this.positiveRegions[0].pop();
-		}
-	}
+        const classified = regions.map(region => ({
+            region,
+            signedArea: this.calculateSignedArea(region),
+            isOuterBoundary: this.calculateSignedArea(region) > 0 // counter-clockwise = positive area
+        }));
 
-	cloneToLayer(z: number, editing: boolean = this.editing): PolygonAnnotation {
-		return new PolygonAnnotation(
-			{
-				positiveRegions: this.positiveRegions.map((region) =>
-					region.map(([x, y]) => [x, y] as [number, number])
-				),
-				negativeRegions: this.negativeRegions.map((region) =>
-					region.map(([x, y]) => [x, y] as [number, number])
-				)
-			},
-			this.segmentID,
-			editing,
-			z
-		);
-	}
+        const outerBoundaries = classified.filter(c => c.isOuterBoundary).map(c => c.region);
+        const holes = classified.filter(c => !c.isOuterBoundary).map(c => c.region);
 
-	/**
-	 * Create a SINGLE PolygonAnnotation from polybool results using positive/negative geometry.
-	 */
-	static fromPolyboolRegions(
-		regions: Array<Array<[number, number]>>,
-		segmentID: number,
-		editing: boolean,
-		z: number
-	): PolygonAnnotation {
-		if (regions.length === 0) {
-			return new PolygonAnnotation({}, segmentID, editing, z);
-		}
+        return {
+            outerBoundaries,
+            holes
+        };
+    }
 
-		// Classify all regions by winding order
-		const classified = regions.map((region) => ({
-			region,
-			signedArea: PolygonAnnotation.calculateSignedAreaStatic(region),
-			isOuterBoundary: PolygonAnnotation.calculateSignedAreaStatic(region) > 0
-		}));
+    removeLatestVertex() {
+        // Remove from the first positive region
+        if (this.positiveRegions.length > 0 && this.positiveRegions[0].length > 0) {
+            this.positiveRegions[0].pop();
+        }
+    }
 
-		const positiveRegions = classified.filter((c) => c.isOuterBoundary).map((c) => c.region);
-		const negativeRegions = classified.filter((c) => !c.isOuterBoundary).map((c) => c.region);
+    cloneToLayer(z: number, editing: boolean = this.editing): PolygonAnnotation {
+        return new PolygonAnnotation(
+            {
+                positiveRegions: this.positiveRegions.map((region) =>
+                    region.map(([x, y]) => [x, y] as [number, number])
+                ),
+                negativeRegions: this.negativeRegions.map((region) =>
+                    region.map(([x, y]) => [x, y] as [number, number])
+                )
+            },
+            this.segmentID,
+            editing,
+            z
+        );
+    }
 
-		// Always create exactly ONE PolygonAnnotation containing all positive and negative regions
-		return new PolygonAnnotation(
-			{
-				positiveRegions,
-				negativeRegions
-			},
-			segmentID,
-			editing,
-			z
-		);
-	}
+    /**
+     * Create a SINGLE PolygonAnnotation from polybool results using positive/negative geometry.
+     */
+    static fromPolyboolRegions(regions: Array<Array<[number, number]>>, segmentID: number, editing: boolean, z: number): PolygonAnnotation {
+        if (regions.length === 0) {
+            return new PolygonAnnotation({}, segmentID, editing, z);
+        }
 
-	/**
-	 * Static version of calculateSignedArea for use in static methods
-	 */
-	private static calculateSignedAreaStatic(polygon: Array<[number, number]>): number {
-		if (polygon.length < 3) return 0;
+        // Classify all regions by winding order
+        const classified = regions.map(region => ({
+            region,
+            signedArea: PolygonAnnotation.calculateSignedAreaStatic(region),
+            isOuterBoundary: PolygonAnnotation.calculateSignedAreaStatic(region) > 0
+        }));
 
-		let area = 0;
-		for (let i = 0; i < polygon.length; i++) {
-			const j = (i + 1) % polygon.length;
-			area += (polygon[j][0] - polygon[i][0]) * (polygon[j][1] + polygon[i][1]);
-		}
-		return area / 2;
-	}
+        const positiveRegions = classified.filter(c => c.isOuterBoundary).map(c => c.region);
+        const negativeRegions = classified.filter(c => !c.isOuterBoundary).map(c => c.region);
 
-	/**
-	 * Check if a region (potential hole) is contained within another region (potential container).
-	 * Uses the centroid approach - if the centroid of the hole is inside the container,
-	 * we consider the hole to belong to that container.
-	 */
-	private isRegionContainedInRegion(
-		holeRegion: Array<[number, number]>,
-		containerRegion: Array<[number, number]>
-	): boolean {
-		if (holeRegion.length === 0 || containerRegion.length === 0) {
-			return false;
-		}
+        // Always create exactly ONE PolygonAnnotation containing all positive and negative regions
+        return new PolygonAnnotation({
+            positiveRegions,
+            negativeRegions
+        }, segmentID, editing, z);
+    }
 
-		// Calculate centroid of the hole region
-		const centroid = this.calculateCentroid(holeRegion);
+    /**
+     * Static version of calculateSignedArea for use in static methods
+     */
+    private static calculateSignedAreaStatic(polygon: Array<[number, number]>): number {
+        if (polygon.length < 3) return 0;
 
-		// Check if centroid is inside the container region
-		return this.raycast(centroid, containerRegion);
-	}
+        let area = 0;
+        for (let i = 0; i < polygon.length; i++) {
+            const j = (i + 1) % polygon.length;
+            area += (polygon[j][0] - polygon[i][0]) * (polygon[j][1] + polygon[i][1]);
+        }
+        return area / 2;
+    }
 
-	/**
-	 * Calculate the centroid (geometric center) of a polygon.
-	 */
-	private calculateCentroid(polygon: Array<[number, number]>): [number, number] {
-		if (polygon.length === 0) {
-			return [0, 0];
-		}
+    /**
+     * Check if a region (potential hole) is contained within another region (potential container).
+     * Uses the centroid approach - if the centroid of the hole is inside the container,
+     * we consider the hole to belong to that container.
+     */
+    private isRegionContainedInRegion(holeRegion: Array<[number, number]>, containerRegion: Array<[number, number]>): boolean {
+        if (holeRegion.length === 0 || containerRegion.length === 0) {
+            return false;
+        }
 
-		let centroidX = 0;
-		let centroidY = 0;
-		let signedArea = 0;
+        // Calculate centroid of the hole region
+        const centroid = this.calculateCentroid(holeRegion);
 
-		for (let i = 0; i < polygon.length; i++) {
-			const j = (i + 1) % polygon.length;
-			const x0 = polygon[i][0];
-			const y0 = polygon[i][1];
-			const x1 = polygon[j][0];
-			const y1 = polygon[j][1];
+        // Check if centroid is inside the container region
+        return this.raycast(centroid, containerRegion);
+    }
 
-			const a = x0 * y1 - x1 * y0;
-			signedArea += a;
-			centroidX += (x0 + x1) * a;
-			centroidY += (y0 + y1) * a;
-		}
+    /**
+     * Calculate the centroid (geometric center) of a polygon.
+     */
+    private calculateCentroid(polygon: Array<[number, number]>): [number, number] {
+        if (polygon.length === 0) {
+            return [0, 0];
+        }
 
-		signedArea *= 0.5;
+        let centroidX = 0;
+        let centroidY = 0;
+        let signedArea = 0;
 
-		if (Math.abs(signedArea) < 1e-10) {
-			// Fallback to simple average if signed area is too small
-			const avgX = polygon.reduce((sum, pt) => sum + pt[0], 0) / polygon.length;
-			const avgY = polygon.reduce((sum, pt) => sum + pt[1], 0) / polygon.length;
-			return [avgX, avgY];
-		}
+        for (let i = 0; i < polygon.length; i++) {
+            const j = (i + 1) % polygon.length;
+            const x0 = polygon[i][0];
+            const y0 = polygon[i][1];
+            const x1 = polygon[j][0];
+            const y1 = polygon[j][1];
 
-		centroidX /= 6.0 * signedArea;
-		centroidY /= 6.0 * signedArea;
+            const a = x0 * y1 - x1 * y0;
+            signedArea += a;
+            centroidX += (x0 + x1) * a;
+            centroidY += (y0 + y1) * a;
+        }
 
-		return [centroidX, centroidY];
-	}
+        signedArea *= 0.5;
+
+        if (Math.abs(signedArea) < 1e-10) {
+            // Fallback to simple average if signed area is too small
+            const avgX = polygon.reduce((sum, pt) => sum + pt[0], 0) / polygon.length;
+            const avgY = polygon.reduce((sum, pt) => sum + pt[1], 0) / polygon.length;
+            return [avgX, avgY];
+        }
+
+        centroidX /= (6.0 * signedArea);
+        centroidY /= (6.0 * signedArea);
+
+        return [centroidX, centroidY];
+    }
 }
 
 export default PolygonAnnotation;
