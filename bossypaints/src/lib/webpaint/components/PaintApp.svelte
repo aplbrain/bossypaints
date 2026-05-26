@@ -46,6 +46,7 @@ from BossDB and displays it on the canvas.
 	export let onSubmitData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
 	export let onCheckpointData: (layerwiseAnnotations: PolygonAnnotation[]) => void = () => {};
 	export let onToggleInfo: () => void = () => {};
+	export let onToggleMerge: () => void = () => {};
 	export let onCopyToAdjacentSlice: (direction: -1 | 1) => void | Promise<void> = () => {};
 	export let onCopyFromLastSlice: () => void | Promise<void> = () => {};
 	export let onPropagateToAdjacentSlice: (direction: -1 | 1) => void | Promise<void> = () => {};
@@ -915,6 +916,12 @@ from BossDB and displays it on the canvas.
 			// 't' key = toggle info panel visibility
 			if (s.key === 't' || s.key === 'T') {
 				onToggleInfo();
+				return false;
+			}
+
+			// 'm' key = toggle merge panel visibility
+			if (s.key === 'm' || s.key === 'M') {
+				onToggleMerge();
 				return false;
 			}
 

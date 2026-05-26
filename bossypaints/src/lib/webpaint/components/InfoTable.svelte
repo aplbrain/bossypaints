@@ -12,10 +12,10 @@ manager and navigation store.
 -->
 <script lang="ts">
 	import { ArrowDownIcon, ArrowUpIcon } from '$lib/icons';
-	import { segmentIdToRGB } from '$lib/webpaint/colorutils';
 
 	export let currentLayer: number;
 	export let currentSegmentID: number;
+	export let currentSegmentColor: [number, number, number] = [59, 130, 246];
 	export let layerAnnotationCount: number;
 	export let onLayerChange: (newLayer: number) => void;
 	export let onSegmentIDChange: (id: number) => void;
@@ -100,8 +100,6 @@ manager and navigation store.
 		}
 	}
 
-	// Get the current segment color - make it reactive to changes
-	$: currentSegmentColor = segmentIdToRGB(currentSegmentID);
 	$: colorStyle = `rgb(${currentSegmentColor[0]}, ${currentSegmentColor[1]}, ${currentSegmentColor[2]})`;
 
 	// Update temp segment ID when the current segment ID changes

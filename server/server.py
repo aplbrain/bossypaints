@@ -160,7 +160,11 @@ async def save_task(request: Request, task_id: TaskID, checkpoint: dict, backgro
     if task.export_pending:
         raise HTTPException(status_code=409, detail="Export already in progress for this task")
 
-    checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
+    checkpoint_obj = Checkpoint(
+        taskID=task_id,
+        polygons=checkpoint["checkpoint"],
+        mergeGroups=checkpoint.get("mergeGroups", []),
+    )
     checkpoint_store.save_checkpoint(checkpoint_obj)
 
     # Set export pending flag to true
@@ -181,7 +185,11 @@ async def checkpoint_task(request: Request, task_id: TaskID, checkpoint: dict):
     if not task or task.assigned_to != username:
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
 
-    checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
+    checkpoint_obj = Checkpoint(
+        taskID=task_id,
+        polygons=checkpoint["checkpoint"],
+        mergeGroups=checkpoint.get("mergeGroups", []),
+    )
     checkpoint_store.save_checkpoint(checkpoint_obj)
 
     # Reset export pending flag since new annotations invalidate pending exports

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import MergePanel from '$lib/MergePanel.svelte';
 	import PaintApp from '$lib/webpaint/components/PaintApp.svelte';
 	import InfoTable from '$lib/webpaint/components/InfoTable.svelte';
 	import KeybindingsTable from '$lib/webpaint/components/KeybindingsTable.svelte';
@@ -29,22 +30,28 @@
 
 	const notyf = new Notyf();
 	type AdjacentDirection = -1 | 1;
+	type CheckpointSubmission = {
+		checkpoint: Array<PolygonAnnotationPayload>;
+		mergeGroups: Array<Array<number>>;
+	};
 
 	export let task: TaskInDB;
 	let annotationStore: AnnotationManagerStore;
 	let nav: NavigationStore;
 	let showKeybindings = false;
 	let showInfo = true;
+	let showMerges = false;
+	let currentSegmentColor: [number, number, number] = [59, 130, 246];
 	const CHECKPOINT_DEBOUNCE_MS = 1000;
 	let checkpointTimer: ReturnType<typeof setTimeout> | null = null;
 	let checkpointInFlight = false;
-	let queuedCheckpoint: any[] | null = null;
+	let queuedCheckpoint: CheckpointSubmission | null = null;
 
 	// Navigation confirmation modal
 	let showNavigationModal = false;
 	let pendingNavigation: (() => void) | null = null;
 	let hasUnsavedChanges = false;
-	let lastCheckpointAnnotations: any[] = [];
+	let lastCheckpointState = '';
 	let lastVisitedLayer: number | null = null;
 	let trackedLayer: number | null = null;
 	let isPropagatingSegment = false;
@@ -66,15 +73,38 @@
 		histMax = newMax;
 	}
 
+	function annotationToPayload(annotation: PolygonAnnotation): PolygonAnnotationPayload {
+		return {
+			positiveRegions: annotation.positiveRegions.map((region) =>
+				region.map(([x, y]) => [x, y] as [number, number])
+			),
+			negativeRegions: annotation.negativeRegions.map((region) =>
+				region.map(([x, y]) => [x, y] as [number, number])
+			),
+			editing: annotation.editing,
+			segmentID: annotation.segmentID,
+			color: annotation.color ? [...annotation.color] : null,
+			z: annotation.z
+		};
+	}
+
+	function buildCheckpointSubmission(
+		annotations: Array<PolygonAnnotation> = annotationStore.getAllAnnotations()
+	): CheckpointSubmission {
+		return {
+			checkpoint: annotations.map(annotationToPayload),
+			mergeGroups: annotationStore.getMergedSegmentGroups()
+		};
+	}
+
+	function serializeCheckpointSubmission(submission: CheckpointSubmission): string {
+		return JSON.stringify(submission);
+	}
+
 	// Function to check if there are unsaved changes
 	function checkForUnsavedChanges() {
 		if (!annotationStore) return false;
-
-		const currentAnnotations = annotationStore.getAllAnnotations();
-		const currentAnnotationsString = JSON.stringify(currentAnnotations);
-		const lastCheckpointString = JSON.stringify(lastCheckpointAnnotations);
-
-		return currentAnnotationsString !== lastCheckpointString;
+		return serializeCheckpointSubmission(buildCheckpointSubmission()) !== lastCheckpointState;
 	}
 
 	// Function to handle navigation with confirmation
@@ -107,13 +137,14 @@
 	// Function to save and then navigate
 	async function saveAndNavigate() {
 		try {
+			const payload = buildCheckpointSubmission();
 			await API.checkpointTask({
 				taskId: task.id,
-				checkpoint: annotationStore.getAllAnnotations()
+				...payload
 			});
 
 			// Update last checkpoint to current state
-			lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+			lastCheckpointState = serializeCheckpointSubmission(payload);
 			hasUnsavedChanges = false;
 
 			notyf.success('Changes saved successfully!');
@@ -139,8 +170,8 @@
 		queuedCheckpoint = null;
 
 		try {
-			await API.checkpointTask({ taskId: task.id, checkpoint: payload });
-			lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+			await API.checkpointTask({ taskId: task.id, ...payload });
+			lastCheckpointState = serializeCheckpointSubmission(payload);
 			hasUnsavedChanges = false;
 			notyf.success('Checkpoint saved.');
 		} catch (error) {
@@ -154,8 +185,8 @@
 		}
 	}
 
-	function queueCheckpoint(data: any[]) {
-		queuedCheckpoint = data;
+	function queueCheckpoint(payload: CheckpointSubmission) {
+		queuedCheckpoint = payload;
 		if (checkpointTimer) {
 			clearTimeout(checkpointTimer);
 		}
@@ -437,10 +468,14 @@
 					annotationStore.addAnnotation(annotation.z, polygonAnnotation);
 				});
 			});
+
+			const latestCheckpoint =
+				checkpointResponse.checkpoints[checkpointResponse.checkpoints.length - 1];
+			annotationStore.setMergedSegmentGroups(latestCheckpoint?.mergeGroups || []);
 		}
 
 		// Set initial checkpoint state after loading
-		lastCheckpointAnnotations = annotationStore.getAllAnnotations();
+		lastCheckpointState = serializeCheckpointSubmission(buildCheckpointSubmission());
 		hasUnsavedChanges = false;
 	}
 
@@ -482,6 +517,32 @@
 		return (annotatedArea / totalArea) * 100;
 	}
 
+	function handleSelectSegmentID(segmentID: number) {
+		annotationStore.setCurrentSegmentID(segmentID);
+	}
+
+	function handleMergeSegments(segmentIDs: Array<number>) {
+		if (!annotationStore || segmentIDs.length < 2) {
+			return;
+		}
+
+		annotationStore.mergeSegments(segmentIDs);
+		queueCheckpoint(buildCheckpointSubmission());
+		hasUnsavedChanges = checkForUnsavedChanges();
+		notyf.success(`Merged IDs ${segmentIDs.join(', ')} under segment ${segmentIDs[0]}.`);
+	}
+
+	function handleUnmergeSegment(segmentID: number) {
+		if (!annotationStore || !annotationStore.isSegmentMerged(segmentID)) {
+			return;
+		}
+
+		annotationStore.unmergeSegment(segmentID);
+		queueCheckpoint(buildCheckpointSubmission());
+		hasUnsavedChanges = checkForUnsavedChanges();
+		notyf.success(`Unmerged ID ${segmentID}.`);
+	}
+
 	loadTask();
 
 	$: if (nav) {
@@ -493,6 +554,10 @@
 			trackedLayer = currentLayer;
 		}
 	}
+
+	$: currentSegmentColor = annotationStore
+		? annotationStore.getSegmentColor(annotationStore.currentSegmentID)
+		: ([59, 130, 246] as [number, number, number]);
 
 	// Set up paint app body styles on mount and clean up on destroy
 	onMount(() => {
@@ -529,23 +594,38 @@
 			{histMin}
 			{histMax}
 			onCheckpointData={(data) => {
-				queueCheckpoint(data);
+				queueCheckpoint(buildCheckpointSubmission(data));
 			}}
 			onToggleInfo={() => (showInfo = !showInfo)}
+			onToggleMerge={() => (showMerges = !showMerges)}
 			onCopyToAdjacentSlice={copyCurrentSegmentToAdjacentSlice}
 			onCopyFromLastSlice={copyCurrentSegmentFromLastSlice}
 			onPropagateToAdjacentSlice={propagateCurrentSegmentToAdjacentSlice}
 			onPropagateFromLastSlice={propagateCurrentSegmentFromLastSlice}
 			onSubmitData={(data) => {
-				API.saveTask({ taskId: task.id, checkpoint: data }).then(() => {
+				API.saveTask({ taskId: task.id, ...buildCheckpointSubmission(data) }).then(() => {
 					notyf.success('Volume finalized and saved.');
 				});
 			}}
 		/>
 
+		<MergePanel
+			annotatedSegmentIDs={annotationStore.knownSegmentIDs}
+			mergedSegmentGroups={annotationStore.mergedSegmentGroups}
+			currentSegmentID={annotationStore.currentSegmentID}
+			hoveredSegmentID={annotationStore.hoveredAnnotation?.segmentID ?? null}
+			getSegmentColor={(segmentID) => annotationStore.getSegmentColor(segmentID)}
+			onSelectSegmentID={handleSelectSegmentID}
+			onMergeSegments={handleMergeSegments}
+			onUnmergeSegment={handleUnmergeSegment}
+			show={showMerges}
+			onToggle={() => (showMerges = !showMerges)}
+		/>
+
 		<InfoTable
 			currentLayer={nav.layer}
 			currentSegmentID={annotationStore.currentSegmentID}
+			{currentSegmentColor}
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
 			onLayerChange={nav.setLayer}
 			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
@@ -600,7 +680,7 @@
 			<button
 				class="tooltip bg-cyan-500 hover:bg-cyan-600 text-white p-3 rounded-full shadow-lg transition-colors duration-200"
 				onclick={() => {
-					queueCheckpoint(annotationStore.getAllAnnotations());
+					queueCheckpoint(buildCheckpointSubmission());
 				}}
 				aria-label="Save Progress (Alt+S)"
 				data-tooltip="Save Progress (Alt+S)"

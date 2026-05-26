@@ -9,7 +9,11 @@ from bossypaints.renderer import (
     LocalCloudVolumePolygonRenderer,
 )
 from bossypaints.tasks import JSONFileTaskQueueStore, Task, TaskID, TaskQueueStore
-from bossypaints.checkpoints import Checkpoint, JSONCheckpointStore
+from bossypaints.checkpoints import (
+    Checkpoint,
+    JSONCheckpointStore,
+    build_segment_canonical_map,
+)
 
 def _mesh_batch_size(task: Task, total_ids: int) -> int:
     env_size = os.getenv("BOSSYPAINTS_MESH_BATCH_SIZE")
@@ -66,7 +70,15 @@ def render_and_mesh(task_id: str, task: Task, checkpoints: list[Checkpoint], tas
         # except Exception:
         #     pass
         mesher = Mesher((1, 1, 1))  # TODO: Get the resolution/voxel size from the task/source
-        segment_ids = sorted(set(poly.segmentID for checkpoint in checkpoints for poly in checkpoint.polygons))
+        latest_merge_groups = checkpoints[-1].mergeGroups if checkpoints else []
+        canonical_segment_ids = build_segment_canonical_map(latest_merge_groups)
+        segment_ids = sorted(
+            {
+                canonical_segment_ids.get(poly.segmentID, poly.segmentID)
+                for checkpoint in checkpoints
+                for poly in checkpoint.polygons
+            }
+        )
         if not segment_ids:
             return
 
