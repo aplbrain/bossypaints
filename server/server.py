@@ -1039,6 +1039,19 @@ async def download_all_exports(request: Request, task_id: TaskID):
 # CloudVolume filmstrip endpoint
 # ----------------------------
 
+@api_router.get("/filmstrip/cloudvolume/mips")
+async def filmstrip_cloudvolume_mips(uri: str):
+    """Return available mip levels for a CloudVolume source."""
+    try:
+        vol = CloudVolume(uri, progress=False, cache=False, use_https=True)
+        scales = vol.scales if hasattr(vol, "scales") else []
+        mip_levels = sorted({int(index) for index, _scale in enumerate(scales)})
+        if not mip_levels:
+            mip_levels = [0]
+        return {"mip_levels": mip_levels}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"CloudVolume mip metadata error: {e}")
+
 @api_router.get("/filmstrip/cloudvolume")
 async def filmstrip_cloudvolume(
     uri: str,

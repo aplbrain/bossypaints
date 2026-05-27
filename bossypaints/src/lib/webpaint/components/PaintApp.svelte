@@ -223,6 +223,11 @@ from BossDB and displays it on the canvas.
 	const chunkSizeX = APP_CONFIG.fixedChunkSize.width;
 	const chunkSizeY = APP_CONFIG.fixedChunkSize.height;
 	const chunkSizeZ = APP_CONFIG.fixedChunkSize.depth;
+	const configuredResolutionValues = Array.from(
+		new Set(APP_CONFIG.resolutionLevels.map((level) => level.resolution))
+	).sort((left, right) => left - right);
+	const maxConfiguredResolution =
+		configuredResolutionValues[configuredResolutionValues.length - 1] ?? 0;
 
 	// Helper function to get the current resolution level based on zoom
 	function getCurrentResolutionLevel(zoom: number): {
@@ -242,6 +247,87 @@ from BossDB and displays it on the canvas.
 		return APP_CONFIG.resolutionLevels[APP_CONFIG.resolutionLevels.length - 1];
 	}
 
+	function resolveDisplayResolution(targetResolution: number): number {
+		if (!availableMipLevels || availableMipLevels.length === 0) {
+			return targetResolution;
+		}
+
+		if (availableMipLevels.includes(targetResolution)) {
+			return targetResolution;
+		}
+
+		const finerOrEqualLevels = availableMipLevels
+			.filter((resolutionLevel) => resolutionLevel <= targetResolution)
+			.sort((left, right) => right - left);
+		if (finerOrEqualLevels.length > 0) {
+			return finerOrEqualLevels[0];
+		}
+
+		const coarserLevels = availableMipLevels
+			.filter((resolutionLevel) => resolutionLevel > targetResolution)
+			.sort((left, right) => left - right);
+		if (coarserLevels.length > 0) {
+			return coarserLevels[0];
+		}
+
+		return targetResolution;
+	}
+
+	function getActiveResolutionLevel(zoom: number): {
+		threshold: number;
+		resolution: number;
+		color: number[];
+		name: string;
+	} {
+		const targetResolutionLevel = getCurrentResolutionLevel(zoom);
+		const resolvedResolution = resolveDisplayResolution(targetResolutionLevel.resolution);
+
+		if (resolvedResolution === targetResolutionLevel.resolution) {
+			return targetResolutionLevel;
+		}
+
+		return {
+			...targetResolutionLevel,
+			resolution: resolvedResolution,
+			name: `Res ${resolvedResolution}`
+		};
+	}
+
+	function getProgressiveResolutionLoadSequence(targetResolution: number): number[] {
+		if (!APP_CONFIG.progressiveMipLoading.enabled) {
+			return [targetResolution];
+		}
+
+		const coarseSteps = Math.max(0, APP_CONFIG.progressiveMipLoading.coarseSteps);
+		if (coarseSteps === 0) {
+			return [targetResolution];
+		}
+
+		if (availableMipLevels && availableMipLevels.length > 0) {
+			const availableMipSet = new Set(availableMipLevels);
+			const sequence: number[] = [];
+
+			for (let resolutionLevel = targetResolution + coarseSteps; resolutionLevel >= targetResolution; resolutionLevel -= 1) {
+				if (availableMipSet.has(resolutionLevel)) {
+					sequence.push(resolutionLevel);
+				}
+			}
+
+			if (sequence.length > 0) {
+				return sequence;
+			}
+
+			return [targetResolution];
+		}
+
+		const maxResolution = Math.min(targetResolution + coarseSteps, maxConfiguredResolution);
+		const sequence: number[] = [];
+		for (let resolutionLevel = maxResolution; resolutionLevel >= targetResolution; resolutionLevel -= 1) {
+			sequence.push(resolutionLevel);
+		}
+		return sequence;
+	}
+
 	// Helper function to calculate filmstrip-aligned Z-range for a given Z-coordinate
 	function getFilmstripZRange(z: number): { z_min: number; z_max: number } {
 		const batchSize = APP_CONFIG.filmstrip.batchSize;
@@ -251,10 +337,60 @@ from BossDB and displays it on the canvas.
 		return { z_min, z_max };
 	}
 
+	function getPrefetchFilmstripRanges(
+		currentZ: number,
+		visibleChunkWindow: VisibleChunkWindow
+	): Array<{ z_min: number; z_max: number }> {
+		const prefetchRanges: Array<{ z_min: number; z_max: number }> = [];
+		const batchSize = APP_CONFIG.filmstrip.batchSize;
+		const lowerPrefetchTriggerZ = visibleChunkWindow.filmstripZMin + 1;
+		const upperPrefetchTriggerZ = visibleChunkWindow.filmstripZMax - 2;
+
+		if (currentZ <= lowerPrefetchTriggerZ) {
+			const previousZMax = visibleChunkWindow.filmstripZMin;
+			const previousZMin = Math.max(previousZMax - batchSize, zs[0]);
+			if (previousZMax > previousZMin) {
+				prefetchRanges.push({ z_min: previousZMin, z_max: previousZMax });
+			}
+		}
+
+		if (currentZ >= upperPrefetchTriggerZ) {
+			const nextZMin = visibleChunkWindow.filmstripZMax;
+			if (nextZMin < zs[1]) {
+				const nextZMax = Math.min(nextZMin + batchSize, zs[1]);
+				if (nextZMax > nextZMin) {
+					prefetchRanges.push({ z_min: nextZMin, z_max: nextZMax });
+				}
+			}
+		}
+
+		return prefetchRanges;
+	}
+
 	// Helper function to calculate Boss resolution level directly
 	function getResolutionLevel(resolutionLevel: number): number {
 		return resolutionLevel;
 	}
+
+	type ChunkBounds = {
+		x_min: number;
+		x_max: number;
+		y_min: number;
+		y_max: number;
+		z_min: number;
+		z_max: number;
+	};
+
+	type VisibleChunkWindow = {
+		minChunkX: number;
+		maxChunkX: number;
+		minChunkY: number;
+		maxChunkY: number;
+		chunkZ: number;
+		resolution: number;
+		filmstripZMin: number;
+		filmstripZMax: number;
+	};
 
 	// Helper function to get chunk coordinates for a given point
 	// Returns coordinates that BossDB expects
@@ -277,7 +413,7 @@ from BossDB and displays it on the canvas.
 		// Find which logical chunk contains this world point
 		const chunkX = Math.floor(x / chunkWorldSize);
 		const chunkY = Math.floor(y / chunkWorldSize);
-		const chunkZ = Math.floor(z / 16);
+		const chunkZ = Math.floor(z / APP_CONFIG.fixedChunkSize.depth);
 
 		// Convert back to base resolution coordinates for BossDB
 		return {
@@ -291,89 +427,89 @@ from BossDB and displays it on the canvas.
 	}
 
 	// Helper function to get all neighboring chunks around a center point
-	function getAllNeighboringChunks(
-		centerOfScreen: { x: number; y: number },
+	function getViewportChunkWindow(
+		viewWidth: number,
+		viewHeight: number,
 		currentZ: number,
 		resolutionLevel: number = 0
-	): Array<{
-		x_min: number;
-		x_max: number;
-		y_min: number;
-		y_max: number;
-		z_min: number;
-		z_max: number;
-	}> {
-		const chunks = [];
+	): VisibleChunkWindow {
+		const topLeft = nav.sceneToData(0, 0);
+		const bottomRight = nav.sceneToData(viewWidth, viewHeight);
+		const minX = Math.min(topLeft.x, bottomRight.x);
+		const maxX = Math.max(topLeft.x, bottomRight.x);
+		const minY = Math.min(topLeft.y, bottomRight.y);
+		const maxY = Math.max(topLeft.y, bottomRight.y);
+		const chunkWorldWidth = APP_CONFIG.fixedChunkSize.width * Math.pow(2, resolutionLevel);
+		const chunkWorldHeight = APP_CONFIG.fixedChunkSize.height * Math.pow(2, resolutionLevel);
+		const viewportPaddingChunks = APP_CONFIG.chunkLoading.viewportPaddingChunks;
+		const epsilon = 1e-6;
+		const filmstripRange = getFilmstripZRange(currentZ);
 
-		// At higher resolution levels, chunks cover more world space
-		const chunkWorldSize = APP_CONFIG.fixedChunkSize.width * Math.pow(2, resolutionLevel);
+		return {
+			minChunkX: Math.max(0, Math.floor(minX / chunkWorldWidth) - viewportPaddingChunks),
+			maxChunkX: Math.max(
+				0,
+				Math.floor((maxX - epsilon) / chunkWorldWidth) + viewportPaddingChunks
+			),
+			minChunkY: Math.max(0, Math.floor(minY / chunkWorldHeight) - viewportPaddingChunks),
+			maxChunkY: Math.max(
+				0,
+				Math.floor((maxY - epsilon) / chunkWorldHeight) + viewportPaddingChunks
+			),
+			chunkZ: Math.max(0, Math.floor(currentZ / APP_CONFIG.fixedChunkSize.depth)),
+			resolution: resolutionLevel,
+			filmstripZMin: filmstripRange.z_min,
+			filmstripZMax: filmstripRange.z_max
+		};
+	}
 
-		// Find which logical chunk contains the center point
-		const centerChunkX = Math.floor(centerOfScreen.x / chunkWorldSize);
-		const centerChunkY = Math.floor(centerOfScreen.y / chunkWorldSize);
-		const centerChunkZ = Math.floor(currentZ / APP_CONFIG.fixedChunkSize.depth);
+	function visibleChunkWindowEquals(
+		left: VisibleChunkWindow | null,
+		right: VisibleChunkWindow
+	): boolean {
+		return (
+			!!left &&
+			left.minChunkX === right.minChunkX &&
+			left.maxChunkX === right.maxChunkX &&
+			left.minChunkY === right.minChunkY &&
+			left.maxChunkY === right.maxChunkY &&
+			left.chunkZ === right.chunkZ &&
+			left.resolution === right.resolution &&
+			left.filmstripZMin === right.filmstripZMin &&
+			left.filmstripZMax === right.filmstripZMax
+		);
+	}
 
-		const radius = APP_CONFIG.chunkLoading.radius;
+	function getVisibleChunksForWindow(
+		window: VisibleChunkWindow,
+		centerOfScreen: { x: number; y: number }
+	): Array<ChunkBounds> {
+		const chunkWorldWidth = APP_CONFIG.fixedChunkSize.width * Math.pow(2, window.resolution);
+		const chunkWorldHeight = APP_CONFIG.fixedChunkSize.height * Math.pow(2, window.resolution);
 		const prioritizeCenter = APP_CONFIG.chunkLoading.prioritizeCenter;
+		const centerChunkX = Math.floor(centerOfScreen.x / chunkWorldWidth);
+		const centerChunkY = Math.floor(centerOfScreen.y / chunkWorldHeight);
+		const chunks: Array<ChunkBounds & { distance: number }> = [];
 
-		// Generate chunks in order of priority (center-out) or simple grid order
-		if (prioritizeCenter) {
-			// Create an array of chunk offsets sorted by distance from center
-			const chunkOffsets = [];
-			for (let dx = -radius; dx <= radius; dx++) {
-				for (let dy = -radius; dy <= radius; dy++) {
-					const distance = Math.sqrt(dx * dx + dy * dy);
-					chunkOffsets.push({ dx, dy, distance });
-				}
-			}
-
-			// Sort by distance from center (closest first)
-			chunkOffsets.sort((a, b) => a.distance - b.distance);
-
-			// Generate chunks in priority order
-			for (const { dx, dy } of chunkOffsets) {
-				const chunkX = centerChunkX + dx;
-				const chunkY = centerChunkY + dy;
-				const chunkZ = centerChunkZ;
-
-				// Skip chunks that would be negative
-				if (chunkX < 0 || chunkY < 0 || chunkZ < 0) continue;
-
-				// Convert back to base resolution coordinates for BossDB
+		for (let chunkX = window.minChunkX; chunkX <= window.maxChunkX; chunkX += 1) {
+			for (let chunkY = window.minChunkY; chunkY <= window.maxChunkY; chunkY += 1) {
 				chunks.push({
 					x_min: chunkX * APP_CONFIG.fixedChunkSize.width,
 					x_max: (chunkX + 1) * APP_CONFIG.fixedChunkSize.width,
 					y_min: chunkY * APP_CONFIG.fixedChunkSize.height,
 					y_max: (chunkY + 1) * APP_CONFIG.fixedChunkSize.height,
-					z_min: chunkZ * APP_CONFIG.fixedChunkSize.depth,
-					z_max: (chunkZ + 1) * APP_CONFIG.fixedChunkSize.depth
+					z_min: window.chunkZ * APP_CONFIG.fixedChunkSize.depth,
+					z_max: (window.chunkZ + 1) * APP_CONFIG.fixedChunkSize.depth,
+					distance: Math.hypot(chunkX - centerChunkX, chunkY - centerChunkY)
 				});
-			}
-		} else {
-			// Generate chunks in simple grid order
-			for (let dx = -radius; dx <= radius; dx++) {
-				for (let dy = -radius; dy <= radius; dy++) {
-					const chunkX = centerChunkX + dx;
-					const chunkY = centerChunkY + dy;
-					const chunkZ = centerChunkZ;
-
-					// Skip chunks that would be negative
-					if (chunkX < 0 || chunkY < 0 || chunkZ < 0) continue;
-
-					// Convert back to base resolution coordinates for BossDB
-					chunks.push({
-						x_min: chunkX * APP_CONFIG.fixedChunkSize.width,
-						x_max: (chunkX + 1) * APP_CONFIG.fixedChunkSize.width,
-						y_min: chunkY * APP_CONFIG.fixedChunkSize.height,
-						y_max: (chunkY + 1) * APP_CONFIG.fixedChunkSize.height,
-						z_min: chunkZ * APP_CONFIG.fixedChunkSize.depth,
-						z_max: (chunkZ + 1) * APP_CONFIG.fixedChunkSize.depth
-					});
-				}
 			}
 		}
 
-		return chunks;
+		if (prioritizeCenter) {
+			chunks.sort((a, b) => a.distance - b.distance);
+		}
+
+		return chunks.map(({ distance: _distance, ...chunk }) => chunk);
 	}
 
 	// Check if center of screen is outside current ROI
@@ -394,11 +530,114 @@ from BossDB and displays it on the canvas.
 	// Image cache for managing resolution chunks
 	let imageCache: ImageCache;
 	let browserStorage: BrowserStorage;
-	let loadedChunks: Map<string, p5.Image> = new Map();
-	let currentResolutionLevel: number = 0;
-	let lastCenterChunk: ChunkIdentifier | null = null;
+	let lastVisibleChunkWindow: VisibleChunkWindow | null = null;
+	let lastProgressiveLoadSignature: string | null = null;
+	let lastPrefetchRangeSignature: string | null = null;
 	let currentVisibleChunks: ChunkIdentifier[] = [];
+	let currentRenderFallbackResolutions: number[] = [];
+	let availableMipLevels: number[] | null = null;
+	let lastMipMetadataDatasetURI: string | null = null;
 	let navigationStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	type ChunkRenderSource = {
+		image: any;
+		sourceIdentifier: ChunkIdentifier;
+		sourceX: number;
+		sourceY: number;
+		sourceWidth: number;
+		sourceHeight: number;
+	};
+
+	async function refreshAvailableMipLevels(uri: string): Promise<void> {
+		const mipLevels = await remote.getAvailableMipLevels(uri);
+		if (uri !== lastMipMetadataDatasetURI) {
+			return;
+		}
+
+		availableMipLevels = mipLevels && mipLevels.length > 0 ? mipLevels : null;
+	}
+
+	$: if (datasetURI && datasetURI !== lastMipMetadataDatasetURI) {
+		lastMipMetadataDatasetURI = datasetURI;
+		availableMipLevels = null;
+		void refreshAvailableMipLevels(datasetURI);
+	}
+
+	function getAncestorChunkIdentifier(
+		targetIdentifier: ChunkIdentifier,
+		sourceResolution: number
+	): ChunkIdentifier {
+		if (sourceResolution === targetIdentifier.resolution) {
+			return targetIdentifier;
+		}
+
+		const targetDisplayScale = Math.pow(2, targetIdentifier.resolution);
+		const sourceDisplayScale = Math.pow(2, sourceResolution);
+		const sourceChunkWorldWidth = APP_CONFIG.fixedChunkSize.width * sourceDisplayScale;
+		const sourceChunkWorldHeight = APP_CONFIG.fixedChunkSize.height * sourceDisplayScale;
+		const targetWorldX = targetIdentifier.x_min * targetDisplayScale;
+		const targetWorldY = targetIdentifier.y_min * targetDisplayScale;
+		const sourceChunkX = Math.floor(targetWorldX / sourceChunkWorldWidth);
+		const sourceChunkY = Math.floor(targetWorldY / sourceChunkWorldHeight);
+
+		return {
+			x_min: sourceChunkX * APP_CONFIG.fixedChunkSize.width,
+			x_max: (sourceChunkX + 1) * APP_CONFIG.fixedChunkSize.width,
+			y_min: sourceChunkY * APP_CONFIG.fixedChunkSize.height,
+			y_max: (sourceChunkY + 1) * APP_CONFIG.fixedChunkSize.height,
+			z_min: targetIdentifier.z_min,
+			z_max: targetIdentifier.z_max,
+			resolution: sourceResolution
+		};
+	}
+
+	function getBestRenderSourceForChunk(
+		targetIdentifier: ChunkIdentifier,
+		currentLayer: number
+	): ChunkRenderSource | null {
+		if (!imageCache || currentRenderFallbackResolutions.length === 0) {
+			return null;
+		}
+
+		const targetDisplayScale = Math.pow(2, targetIdentifier.resolution);
+		const targetWorldX = targetIdentifier.x_min * targetDisplayScale;
+		const targetWorldY = targetIdentifier.y_min * targetDisplayScale;
+		const targetWorldWidth = APP_CONFIG.fixedChunkSize.width * targetDisplayScale;
+		const targetWorldHeight = APP_CONFIG.fixedChunkSize.height * targetDisplayScale;
+
+		for (const sourceResolution of currentRenderFallbackResolutions) {
+			if (sourceResolution < targetIdentifier.resolution) {
+				continue;
+			}
+
+			const sourceIdentifier = getAncestorChunkIdentifier(targetIdentifier, sourceResolution);
+			const filmstripInfo = imageCache.getFilmstripRenderInfo(sourceIdentifier, currentLayer);
+			if (!filmstripInfo) {
+				continue;
+			}
+
+			const sourceDisplayScale = Math.pow(2, sourceResolution);
+			const sourceWorldX = sourceIdentifier.x_min * sourceDisplayScale;
+			const sourceWorldY = sourceIdentifier.y_min * sourceDisplayScale;
+			const sourceX = Math.round((targetWorldX - sourceWorldX) / sourceDisplayScale);
+			const sourceY =
+				filmstripInfo.sourceY +
+				Math.round((targetWorldY - sourceWorldY) / sourceDisplayScale);
+			const sourceWidth = Math.max(1, Math.round(targetWorldWidth / sourceDisplayScale));
+			const sourceHeight = Math.max(1, Math.round(targetWorldHeight / sourceDisplayScale));
+
+			return {
+				image: filmstripInfo.filmstrip,
+				sourceIdentifier,
+				sourceX,
+				sourceY,
+				sourceWidth,
+				sourceHeight
+			};
+		}
+
+		return null;
+	}
 
 	// Pinch zoom state tracking
 	let lastTouchDistance: number = 0;
@@ -547,95 +786,99 @@ from BossDB and displays it on the canvas.
 	async function loadVisibleChunks(
 		centerOfScreen: { x: number; y: number },
 		currentZ: number,
+		viewWidth: number,
+		viewHeight: number,
+		visibleChunkWindow: VisibleChunkWindow,
 		currentResolutionLevel: {
 			threshold: number;
 			resolution: number;
 			color: number[];
 			name: string;
-		}
+		},
+		progressiveLoadSequence: number[],
+		prefetchFilmstripRanges: Array<{ z_min: number; z_max: number }>
 	) {
 		if (!imageCache) return;
-
-		// Calculate filmstrip-aligned Z-range for efficient batch loading
-		const filmstripRange = getFilmstripZRange(currentZ);
 
 		debugUtil.log('LOAD: Loading visible chunks for:', {
 			center: `x:${centerOfScreen.x.toFixed(0)}, y:${centerOfScreen.y.toFixed(0)}`,
 			z: currentZ,
-			filmstrip: `${filmstripRange.z_min}:${filmstripRange.z_max}`,
-			resolution: currentResolutionLevel.resolution
+			filmstrip: `${visibleChunkWindow.filmstripZMin}:${visibleChunkWindow.filmstripZMax}`,
+			resolution: currentResolutionLevel.resolution,
+			progressiveSequence: progressiveLoadSequence,
+			prefetchFilmstrips:
+				prefetchFilmstripRanges.length > 0
+					? prefetchFilmstripRanges.map((range) => `${range.z_min}:${range.z_max}`)
+					: ['none']
 		});
 
-		// Get all chunks that should be visible
-		const chunks = getAllNeighboringChunks(
-			centerOfScreen,
-			currentZ,
-			currentResolutionLevel.resolution
-		);
+		const targetChunks = getVisibleChunksForWindow(visibleChunkWindow, centerOfScreen);
 		const newVisibleChunks: ChunkIdentifier[] = [];
+		const requestedChunks = new Map<string, ChunkIdentifier>();
 
-		// Convert chunk bounds to ChunkIdentifier format and load chunks in priority order
-		const chunkPromises: Promise<void>[] = [];
-		for (const chunk of chunks) {
-			// Load each chunk using filmstrip-aligned Z-range for efficient batch fetching
+		for (const chunk of targetChunks) {
 			const chunkId: ChunkIdentifier = {
 				x_min: chunk.x_min,
 				x_max: chunk.x_max,
 				y_min: chunk.y_min,
 				y_max: chunk.y_max,
-				z_min: filmstripRange.z_min, // Filmstrip-aligned range
-				z_max: filmstripRange.z_max, // Filmstrip-aligned range
+				z_min: visibleChunkWindow.filmstripZMin,
+				z_max: visibleChunkWindow.filmstripZMax,
 				resolution: getResolutionLevel(currentResolutionLevel.resolution)
 			};
 
 			newVisibleChunks.push(chunkId);
-
-			// Start loading the chunk asynchronously (prioritized by getAllNeighboringChunks order)
-			debugUtil.log(
-				`LOAD: Requesting filmstrip chunk: x:[${chunkId.x_min}-${chunkId.x_max}], y:[${chunkId.y_min}-${chunkId.y_max}], z:[${chunkId.z_min}-${chunkId.z_max}] (priority: ${chunks.indexOf(chunk)})`
-			);
-			// Pass filmstrip and resolution context for smart cancellation
-			const context = {
-				filmstripRange: { z_min: chunkId.z_min, z_max: chunkId.z_max },
-				resolution: chunkId.resolution
-			};
-			const loadPromise = imageCache.getImage(chunkId, context).catch((err) => {
-				debugUtil.warn(`LOAD: Failed to load chunk:`, err);
-			});
-			chunkPromises.push(loadPromise);
 		}
 
-		// Load all chunks but don't wait for completion (async loading)
-		Promise.allSettled(chunkPromises).then(() => {
-			debugUtil.log(
-				`LOAD: Completed loading ${chunks.length} chunks for resolution ${currentResolutionLevel.resolution}`
-			);
-		});
-
 		currentVisibleChunks = newVisibleChunks;
+		currentRenderFallbackResolutions = [...progressiveLoadSequence].reverse();
 
-		// Preload neighboring chunks for smooth navigation
-		const centerChunk = getChunkForPoint(
-			centerOfScreen.x,
-			centerOfScreen.y,
-			currentZ,
-			currentResolutionLevel.resolution
-		);
-		const centerChunkId: ChunkIdentifier = {
-			x_min: centerChunk.x_min,
-			x_max: centerChunk.x_max,
-			y_min: centerChunk.y_min,
-			y_max: centerChunk.y_max,
-			z_min: filmstripRange.z_min, // Filmstrip-aligned range
-			z_max: filmstripRange.z_max, // Filmstrip-aligned range
-			resolution: getResolutionLevel(currentResolutionLevel.resolution)
-		};
+		for (const resolutionLevel of progressiveLoadSequence) {
+			const resolutionWindow = getViewportChunkWindow(
+				viewWidth,
+				viewHeight,
+				currentZ,
+				resolutionLevel
+			);
+			const resolutionChunks = getVisibleChunksForWindow(resolutionWindow, centerOfScreen);
 
-		// Preload with configurable radius around the center chunk
-		imageCache.preloadNeighboringChunks(centerChunkId, APP_CONFIG.chunkLoading.radius);
+			for (const chunk of resolutionChunks) {
+				const requestChunkId: ChunkIdentifier = {
+					x_min: chunk.x_min,
+					x_max: chunk.x_max,
+					y_min: chunk.y_min,
+					y_max: chunk.y_max,
+					z_min: resolutionWindow.filmstripZMin,
+					z_max: resolutionWindow.filmstripZMax,
+					resolution: getResolutionLevel(resolutionLevel)
+				};
+				requestedChunks.set(JSON.stringify(requestChunkId), requestChunkId);
+			}
 
-		// Preload neighboring filmstrip batches for efficient Z-navigation
-		imageCache.preloadNeighboringFilmstrips(centerChunkId);
+			for (const prefetchFilmstripRange of prefetchFilmstripRanges) {
+				for (const chunk of resolutionChunks) {
+					const requestChunkId: ChunkIdentifier = {
+						x_min: chunk.x_min,
+						x_max: chunk.x_max,
+						y_min: chunk.y_min,
+						y_max: chunk.y_max,
+						z_min: prefetchFilmstripRange.z_min,
+						z_max: prefetchFilmstripRange.z_max,
+						resolution: getResolutionLevel(resolutionLevel)
+					};
+					requestedChunks.set(JSON.stringify(requestChunkId), requestChunkId);
+				}
+			}
+		}
+
+		const desiredRequestedChunks = Array.from(requestedChunks.values());
+		imageCache.cancelRequestsExcept(desiredRequestedChunks);
+
+		for (const chunkId of desiredRequestedChunks) {
+			void imageCache.getImage(chunkId).catch((err) => {
+				debugUtil.warn(`LOAD: Failed to load chunk:`, err);
+			});
+		}
 	}
 
 	// Helper function to generate a readable tile key for debug display
@@ -662,66 +905,32 @@ from BossDB and displays it on the canvas.
 		const displayScale = Math.pow(2, resolutionLevel.resolution);
 
 		for (const chunkId of currentVisibleChunks) {
-			// Try to get the cached image first (individual chunk)
-			let image = imageCache.getCachedImage(chunkId);
-
-			if (image) {
-				// Optionally window the image via LUT when non-default
-				if (!(histMin === 0 && histMax === 255)) {
-					image = imageCache.getAdjustedImageForWindow(chunkId, image, histMin, histMax);
-				}
-
-				// Calculate rendering position and size based on resolution level
-				const renderX = chunkId.x_min * displayScale;
-				const renderY = chunkId.y_min * displayScale;
-				const renderWidth = APP_CONFIG.fixedChunkSize.width * displayScale; // 256, 512, 1024, etc.
-				const renderHeight = APP_CONFIG.fixedChunkSize.height * displayScale; // 256, 512, 1024, etc.
-
-				// Draw the individual cached image - extract correct layer from filmstrip
-				s.image(
-					image,
-					renderX,
-					renderY,
-					renderWidth,
-					renderHeight,
-					0,
-					(nav.layer % APP_CONFIG.fixedChunkSize.depth) * APP_CONFIG.fixedChunkSize.height, // Index into the filmstrip for the current layer
-					APP_CONFIG.fixedChunkSize.width,
-					APP_CONFIG.fixedChunkSize.height
-				);
-
-				continue;
-			}
-
-			// Try to render directly from filmstrip
-			const filmstripInfo = imageCache.getFilmstripRenderInfo(chunkId, nav.layer);
-
 			// Calculate rendering position and size based on resolution level
 			const renderX = chunkId.x_min * displayScale;
 			const renderY = chunkId.y_min * displayScale;
 			const renderWidth = APP_CONFIG.fixedChunkSize.width * displayScale;
 			const renderHeight = APP_CONFIG.fixedChunkSize.height * displayScale;
-			if (filmstripInfo) {
-				let film = filmstripInfo.filmstrip;
+			const renderSource = getBestRenderSourceForChunk(chunkId, nav.layer);
+			if (renderSource) {
+				let film = renderSource.image;
 				if (!(histMin === 0 && histMax === 255)) {
 					film = imageCache.getAdjustedImageForWindow(
-						chunkId,
-						filmstripInfo.filmstrip,
+						renderSource.sourceIdentifier,
+						renderSource.image,
 						histMin,
 						histMax
 					);
 				}
-				// Render directly from filmstrip
 				s.image(
 					film,
 					renderX,
 					renderY,
 					renderWidth,
 					renderHeight,
-					0,
-					nav.layer * APP_CONFIG.fixedChunkSize.height,
-					filmstripInfo.sourceWidth,
-					filmstripInfo.sourceHeight
+					renderSource.sourceX,
+					renderSource.sourceY,
+					renderSource.sourceWidth,
+					renderSource.sourceHeight
 				);
 
 				continue;
@@ -786,8 +995,38 @@ from BossDB and displays it on the canvas.
 
 			// Load initial chunks
 			const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
-			const currentResolutionLevelInfo = getCurrentResolutionLevel(nav.zoom);
-			loadVisibleChunks(centerOfScreen, nav.layer, currentResolutionLevelInfo);
+			const currentResolutionLevelInfo = getActiveResolutionLevel(nav.zoom);
+			const progressiveLoadSequence = getProgressiveResolutionLoadSequence(
+				currentResolutionLevelInfo.resolution
+			);
+			const initialVisibleChunkWindow = getViewportChunkWindow(
+				s.width,
+				s.height,
+				nav.layer,
+				currentResolutionLevelInfo.resolution
+			);
+			const initialPrefetchFilmstripRanges = getPrefetchFilmstripRanges(
+				nav.layer,
+				initialVisibleChunkWindow
+			);
+			lastVisibleChunkWindow = initialVisibleChunkWindow;
+			lastProgressiveLoadSignature = progressiveLoadSequence.join(',');
+			lastPrefetchRangeSignature =
+				initialPrefetchFilmstripRanges.length > 0
+					? initialPrefetchFilmstripRanges
+							.map((range) => `${range.z_min}:${range.z_max}`)
+							.join('|')
+					: null;
+			loadVisibleChunks(
+				centerOfScreen,
+				nav.layer,
+				s.width,
+				s.height,
+				initialVisibleChunkWindow,
+				currentResolutionLevelInfo,
+				progressiveLoadSequence,
+				initialPrefetchFilmstripRanges
+			);
 		};
 
 		s.draw = () => {
@@ -807,47 +1046,47 @@ from BossDB and displays it on the canvas.
 
 			// Get current view info for dynamic loading
 			const centerOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
-			const currentResolutionLevelInfo = getCurrentResolutionLevel(nav.zoom);
-
-			// Check if we need to load new chunks (resolution changed or moved significantly)
-			const centerChunk = getChunkForPoint(
-				centerOfScreen.x,
-				centerOfScreen.y,
+			const currentResolutionLevelInfo = getActiveResolutionLevel(nav.zoom);
+			const progressiveLoadSequence = getProgressiveResolutionLoadSequence(
+				currentResolutionLevelInfo.resolution
+			);
+			const progressiveLoadSignature = progressiveLoadSequence.join(',');
+			const visibleChunkWindow = getViewportChunkWindow(
+				s.width,
+				s.height,
 				nav.layer,
 				currentResolutionLevelInfo.resolution
 			);
+			const prefetchFilmstripRanges = getPrefetchFilmstripRanges(nav.layer, visibleChunkWindow);
+			const prefetchRangeSignature =
+				prefetchFilmstripRanges.length > 0
+					? prefetchFilmstripRanges.map((range) => `${range.z_min}:${range.z_max}`).join('|')
+					: null;
 
-			// Use filmstrip-aligned Z-range for center chunk calculation
-			const filmstripRange = getFilmstripZRange(nav.layer);
-
-			const centerChunkId: ChunkIdentifier = {
-				x_min: centerChunk.x_min,
-				x_max: centerChunk.x_max,
-				y_min: centerChunk.y_min,
-				y_max: centerChunk.y_max,
-				z_min: filmstripRange.z_min, // Filmstrip-aligned range
-				z_max: filmstripRange.z_max, // Filmstrip-aligned range
-				resolution: getResolutionLevel(currentResolutionLevelInfo.resolution)
-			};
-			// Check if we've moved to a different chunk or changed resolution level or layer
-			const chunkChanged =
-				!lastCenterChunk ||
-				lastCenterChunk.x_min !== centerChunkId.x_min ||
-				lastCenterChunk.y_min !== centerChunkId.y_min ||
-				lastCenterChunk.z_min !== centerChunkId.z_min ||
-				lastCenterChunk.resolution !== centerChunkId.resolution;
-			if (chunkChanged) {
-				// If resolution level changed, update the current level
-				if (lastCenterChunk && lastCenterChunk.resolution !== centerChunkId.resolution) {
-					currentResolutionLevel = centerChunkId.resolution;
-					// Keep old resolution level cached for fast switching
+			if (
+				!visibleChunkWindowEquals(lastVisibleChunkWindow, visibleChunkWindow) ||
+				lastProgressiveLoadSignature !== progressiveLoadSignature ||
+				lastPrefetchRangeSignature !== prefetchRangeSignature
+			) {
+				if (lastVisibleChunkWindow?.resolution !== visibleChunkWindow.resolution) {
 					debugUtil.log(
-						`Resolution changed from ${lastCenterChunk.resolution} to ${centerChunkId.resolution} - keeping cache`
+						`Resolution changed from ${lastVisibleChunkWindow?.resolution} to ${visibleChunkWindow.resolution} - keeping cache`
 					);
 				}
 
-				lastCenterChunk = centerChunkId;
-				loadVisibleChunks(centerOfScreen, nav.layer, currentResolutionLevelInfo);
+				lastVisibleChunkWindow = visibleChunkWindow;
+				lastProgressiveLoadSignature = progressiveLoadSignature;
+				lastPrefetchRangeSignature = prefetchRangeSignature;
+				loadVisibleChunks(
+					centerOfScreen,
+					nav.layer,
+					s.width,
+					s.height,
+					visibleChunkWindow,
+					currentResolutionLevelInfo,
+					progressiveLoadSequence,
+					prefetchFilmstripRanges
+				);
 			}
 
 			// Render the cached chunks
@@ -916,7 +1155,7 @@ from BossDB and displays it on the canvas.
 				const debugCenterOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
 
 				// Get the current resolution level based on zoom
-				const debugCurrentResolutionLevelInfo = getCurrentResolutionLevel(nav.zoom);
+				const debugCurrentResolutionLevelInfo = getActiveResolutionLevel(nav.zoom);
 
 				// Get chunks using the current resolution level
 				const currentChunk = getChunkForPoint(
@@ -925,11 +1164,13 @@ from BossDB and displays it on the canvas.
 					nav.layer,
 					debugCurrentResolutionLevelInfo.resolution
 				);
-				const allChunks = getAllNeighboringChunks(
-					debugCenterOfScreen,
+				const debugVisibleChunkWindow = getViewportChunkWindow(
+					s.width,
+					s.height,
 					nav.layer,
 					debugCurrentResolutionLevelInfo.resolution
 				);
+				const allChunks = getVisibleChunksForWindow(debugVisibleChunkWindow, debugCenterOfScreen);
 
 				// Draw all neighboring chunks
 				s.strokeWeight(1);
@@ -964,7 +1205,7 @@ from BossDB and displays it on the canvas.
 			// if (debugEnabled) {
 			const worldCoords = nav.sceneToData(s.mouseX, s.mouseY);
 			const displayCenterOfScreen = nav.sceneToData(s.width / 2, s.height / 2);
-			const displayResolutionLevelInfo = getCurrentResolutionLevel(nav.zoom);
+			const displayResolutionLevelInfo = getActiveResolutionLevel(nav.zoom);
 
 			// Update mouse and scene info
 			debugInfo.sceneMouseX = s.mouseX;
@@ -1558,10 +1799,8 @@ from BossDB and displays it on the canvas.
 	<div class="debug-line">Current {debugInfo.resolutionName} Chunk: {debugInfo.chunkInfo}</div>
 
 	<div class="debug-line">
-		Chunk Loading: {(2 * APP_CONFIG.chunkLoading.radius + 1) ** 2} chunks ({2 *
-			APP_CONFIG.chunkLoading.radius +
-			1}x{2 * APP_CONFIG.chunkLoading.radius + 1} grid, radius={APP_CONFIG.chunkLoading.radius},
-		center-first={APP_CONFIG.chunkLoading.prioritizeCenter})
+		Chunk Loading: viewport-driven with {APP_CONFIG.chunkLoading.viewportPaddingChunks} chunk padding,
+		center-first={APP_CONFIG.chunkLoading.prioritizeCenter}
 	</div>
 
 	{#if imageCache}
