@@ -238,11 +238,29 @@ export const keybindings: Keybinding[] = [
 		eventType: 'key'
 	},
 	{
-		key: 'm',
-		action: 'Toggle merge panel visibility',
-		matcher: (s) => s.key === 'm' || s.key === 'M',
+		key: 's',
+		action: 'Toggle segment panel visibility',
+		matcher: (s) => s.key === 's' || s.key === 'S',
 		handler: () => {
 			// Note: Implemented directly in PaintApp.svelte via onToggleMerge callback from AppWithTask
+		},
+		eventType: 'key'
+	},
+	{
+		key: 'z',
+		action: 'Toggle minimap visibility',
+		matcher: (s) => s.key === 'z' || s.key === 'Z',
+		handler: () => {
+			// Note: Implemented directly in PaintApp.svelte
+		},
+		eventType: 'key'
+	},
+	{
+		key: '\\',
+		action: 'Toggle debug overlay visibility',
+		matcher: (s) => s.key === '\\',
+		handler: () => {
+			// Note: Implemented directly in PaintApp.svelte
 		},
 		eventType: 'key'
 	},

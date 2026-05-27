@@ -14,6 +14,9 @@
 	export let annotationStore: AnnotationManagerStore;
 	export let nav: NavigationStore;
 	export let height = 320;
+	export let footprint = 0;
+	export let show = true;
+	export let onToggle: () => void = () => {};
 
 	const width = 110;
 	const minTrackHeight = 210;
@@ -256,8 +259,34 @@
 
 <svelte:window bind:innerHeight={viewportHeight} />
 
-<div class="minimap-wrap">
-	<div class="minimap-shell">
+<div
+	class="minimap-wrap"
+	style="transform: translateX({show ? '0' : 'calc(-100% - 16px)'});"
+>
+	<div class="minimap-shell" bind:clientHeight={footprint}>
+		<button
+			class="minimap-toggle"
+			on:click={onToggle}
+			title="Toggle Minimap (Z)"
+			aria-label="Toggle Minimap"
+		>
+			{#if show}
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M15 5l-7 7 7 7"
+					/>
+				</svg>
+			{:else}
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+				</svg>
+			{/if}
+			<span class="minimap-toggle-key">z</span>
+		</button>
+
 		<div
 			bind:this={trackEl}
 			class="minimap-track-shell"
@@ -410,9 +439,11 @@
 		bottom: 16px;
 		z-index: 100;
 		pointer-events: auto;
+		transition: transform 300ms ease-in-out;
 	}
 
 	.minimap-shell {
+		position: relative;
 		width: 140px;
 		display: flex;
 		flex-direction: column;
@@ -429,6 +460,40 @@
 		touch-action: none;
 		user-select: none;
 		-webkit-user-select: none;
+	}
+
+	.minimap-toggle {
+		position: absolute;
+		right: -28px;
+		top: 28px;
+		transform: translateY(-50%);
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 0 0.375rem 0.375rem 0;
+		border: 1px solid rgb(209 213 219);
+		background: white;
+		color: rgb(55 65 81);
+		box-shadow:
+			0 1px 2px rgb(0 0 0 / 0.08),
+			0 1px 3px rgb(0 0 0 / 0.12);
+		cursor: pointer;
+	}
+
+	.minimap-toggle:hover {
+		background: rgb(249 250 251);
+	}
+
+	.minimap-toggle-key {
+		position: absolute;
+		bottom: 2px;
+		left: 2px;
+		font-size: 10px;
+		line-height: 1;
+		color: rgb(107 114 128);
+		opacity: 0.7;
 	}
 
 	.minimap-track-shell {
