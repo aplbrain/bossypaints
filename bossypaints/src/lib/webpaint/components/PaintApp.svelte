@@ -23,6 +23,7 @@ from BossDB and displays it on the canvas.
 	import PolygonAnnotation from '../PolygonAnnotation';
 	import { ImageCache, type ChunkIdentifier } from '../ImageCache';
 	import { BrowserStorage, type NavigationState } from '../BrowserStorage';
+	import { type SplitSeed, type SplitSeedLabel } from '../split';
 
 	export let annotationStore: AnnotationManagerStore;
 	export let nav: NavigationStore;
@@ -51,6 +52,14 @@ from BossDB and displays it on the canvas.
 	export let onCopyFromLastSlice: () => void | Promise<void> = () => {};
 	export let onPropagateToAdjacentSlice: (direction: -1 | 1) => void | Promise<void> = () => {};
 	export let onPropagateFromLastSlice: () => void | Promise<void> = () => {};
+	export let splitModeActive: boolean = false;
+	export let splitSeedColor: SplitSeedLabel = 'red';
+	export let splitSeeds: Array<SplitSeed> = [];
+	export let splitPreviewAnnotations: Array<PolygonAnnotation> = [];
+	export let splitTargetSegmentID: number | null = null;
+	export let splitPreviewSegmentID: number | null = null;
+	export let onAddSplitSeed: (point: { x: number; y: number; z: number }) => void = () => {};
+	export let onRemoveSplitSeed: (seedID: number) => void = () => {};
 
 	// Toggle visibility of task region (yellow rectangle) and axes
 	let showAxesAndTaskRegion = true;
@@ -58,6 +67,154 @@ from BossDB and displays it on the canvas.
 	// Function to toggle axes and task region visibility
 	function toggleAxesAndTaskRegion() {
 		showAxesAndTaskRegion = !showAxesAndTaskRegion;
+	}
+
+	function calculateRegionCentroid(region: Array<[number, number]>): [number, number] {
+		if (region.length === 0) {
+			return [0, 0];
+		}
+
+		let centroidX = 0;
+		let centroidY = 0;
+		let signedArea = 0;
+
+		for (let index = 0; index < region.length; index += 1) {
+			const nextIndex = (index + 1) % region.length;
+			const [x0, y0] = region[index];
+			const [x1, y1] = region[nextIndex];
+			const areaComponent = x0 * y1 - x1 * y0;
+			signedArea += areaComponent;
+			centroidX += (x0 + x1) * areaComponent;
+			centroidY += (y0 + y1) * areaComponent;
+		}
+
+		signedArea *= 0.5;
+		if (Math.abs(signedArea) < 1e-10) {
+			return [
+				region.reduce((sum, [x]) => sum + x, 0) / region.length,
+				region.reduce((sum, [, y]) => sum + y, 0) / region.length
+			];
+		}
+
+		return [centroidX / (6 * signedArea), centroidY / (6 * signedArea)];
+	}
+
+	function pointInPolygon(point: [number, number], polygon: Array<[number, number]>): boolean {
+		let inside = false;
+
+		for (
+			let index = 0, previousIndex = polygon.length - 1;
+			index < polygon.length;
+			previousIndex = index++
+		) {
+			const [x1, y1] = polygon[index];
+			const [x2, y2] = polygon[previousIndex];
+			const intersects =
+				y1 > point[1] !== y2 > point[1] &&
+				point[0] < ((x2 - x1) * (point[1] - y1)) / (y2 - y1) + x1;
+			if (intersects) {
+				inside = !inside;
+			}
+		}
+
+		return inside;
+	}
+
+	function drawAnnotationWithColor(
+		s: p5,
+		annotation: PolygonAnnotation,
+		fillColor: [number, number, number, number],
+		strokeColor: [number, number, number, number]
+	) {
+		s.fill(fillColor[0], fillColor[1], fillColor[2], fillColor[3]);
+		s.stroke(strokeColor[0], strokeColor[1], strokeColor[2], strokeColor[3]);
+		s.strokeWeight(2);
+
+		for (const positiveRegion of annotation.positiveRegions) {
+			s.beginShape();
+			for (const [x, y] of positiveRegion) {
+				s.vertex(x, y);
+			}
+
+			for (const negativeRegion of annotation.negativeRegions) {
+				const centroid = calculateRegionCentroid(negativeRegion);
+				if (!pointInPolygon(centroid, positiveRegion)) {
+					continue;
+				}
+				s.beginContour();
+				for (const [x, y] of negativeRegion) {
+					s.vertex(x, y);
+				}
+				s.endContour();
+			}
+
+			s.endShape();
+		}
+	}
+
+	function drawSplitPreviewOverlay(s: p5) {
+		if (!splitModeActive || splitTargetSegmentID === null || splitPreviewSegmentID === null) {
+			return;
+		}
+
+		const visiblePreviewAnnotations = splitPreviewAnnotations.filter(
+			(annotation) => annotation.z === nav.layer
+		);
+		for (const annotation of visiblePreviewAnnotations) {
+			if (annotation.segmentID === splitTargetSegmentID) {
+				drawAnnotationWithColor(s, annotation, [239, 68, 68, 72], [185, 28, 28, 210]);
+			} else if (annotation.segmentID === splitPreviewSegmentID) {
+				drawAnnotationWithColor(s, annotation, [59, 130, 246, 88], [29, 78, 216, 220]);
+			}
+		}
+	}
+
+	function drawSplitSeedsForCurrentLayer(s: p5) {
+		if (!splitModeActive) {
+			return;
+		}
+
+		const visibleSeeds = splitSeeds.filter((seed) => seed.z === nav.layer);
+		for (const seed of visibleSeeds) {
+			const seedColor =
+				seed.label === 'red'
+					? ([239, 68, 68, 255] as [number, number, number, number])
+					: ([59, 130, 246, 255] as [number, number, number, number]);
+			const isActiveColor = seed.label === splitSeedColor;
+
+			s.stroke(255, 255, 255, 220);
+			s.strokeWeight(isActiveColor ? 4 / nav.zoom : 3 / nav.zoom);
+			s.fill(seedColor[0], seedColor[1], seedColor[2], seedColor[3]);
+			s.circle(seed.x, seed.y, (isActiveColor ? 14 : 11) / nav.zoom);
+		}
+	}
+
+	function getSplitSeedUnderPointer(sceneX: number, sceneY: number): SplitSeed | null {
+		if (!splitModeActive) {
+			return null;
+		}
+
+		const dataSpaceCoord = nav.sceneToData(sceneX, sceneY);
+		const hitRadius = 16 / nav.zoom;
+		const hitRadiusSquared = hitRadius * hitRadius;
+		let closestSeed: SplitSeed | null = null;
+		let closestDistanceSquared = hitRadiusSquared;
+
+		for (const seed of splitSeeds) {
+			if (seed.z !== nav.layer) {
+				continue;
+			}
+
+			const dx = seed.x - dataSpaceCoord.x;
+			const dy = seed.y - dataSpaceCoord.y;
+			const distanceSquared = dx * dx + dy * dy;
+			if (distanceSquared <= closestDistanceSquared) {
+				closestSeed = seed;
+				closestDistanceSquared = distanceSquared;
+			}
+		}
+
+		return closestSeed;
 	}
 
 	const remote = new BossRemote();
@@ -636,7 +793,7 @@ from BossDB and displays it on the canvas.
 		s.draw = () => {
 			s.background(0, 0, 0);
 			// Cursor is a crosshair if nav.drawing:
-			if (nav.drawing) {
+			if (splitModeActive || nav.drawing) {
 				s.cursor('crosshair');
 			} else {
 				s.cursor('default');
@@ -727,16 +884,28 @@ from BossDB and displays it on the canvas.
 
 			// Draw annotations only if they're visible
 			if (nav.annotationsVisible) {
-				annotationStore.currentAnnotation.annotation.draw(s, nav, annotationStore);
+				if (!splitModeActive) {
+					annotationStore.currentAnnotation.annotation.draw(s, nav, annotationStore);
+				}
 
 				// Optimize hover detection - calculate mouse position once
 				const dataPosition = nav.sceneToData(s.mouseX, s.mouseY);
+				const hideSourceSegmentDuringSplitPreview =
+					splitModeActive && splitTargetSegmentID !== null && splitPreviewAnnotations.length > 0;
 
 				for (let anno of annotationStore.getLayerAnnotations(nav.layer) || []) {
+					if (hideSourceSegmentDuringSplitPreview && anno.segmentID === splitTargetSegmentID) {
+						continue;
+					}
 					anno.draw(s, nav, annotationStore);
 					if (anno.pointIsInside([dataPosition.x, dataPosition.y])) {
 						annotationStore.setHoveredAnnotation(anno);
 					}
+				}
+
+				if (splitModeActive) {
+					drawSplitPreviewOverlay(s);
+					drawSplitSeedsForCurrentLayer(s);
 				}
 			}
 			s.pop();
@@ -859,6 +1028,32 @@ from BossDB and displays it on the canvas.
 
 		s.keyPressed = (evt: any) => {
 			const keyEvent = evt as KeyboardEvent | undefined;
+			const key = keyEvent?.key ?? s.key;
+
+			if (splitModeActive) {
+				if (
+					(keyEvent?.shiftKey &&
+						!keyEvent.altKey &&
+						(keyEvent.code === 'Comma' || keyEvent.code === 'Period')) ||
+					(keyEvent?.altKey &&
+						(keyEvent.code === 'Comma' || keyEvent.code === 'Period' || keyEvent.code === 'KeyC'))
+				) {
+					return false;
+				}
+
+				if (
+					keyEvent?.code === 'Enter' ||
+					keyEvent?.code === 'Backspace' ||
+					key === 'd' ||
+					key === 'D' ||
+					key === 'x' ||
+					key === 'X' ||
+					key === '=' ||
+					key === '-'
+				) {
+					return false;
+				}
+			}
 
 			// Alt + S = checkpoint
 			if (s.keyIsDown(s.ALT) && s.keyCode === 83) {
@@ -1007,6 +1202,23 @@ from BossDB and displays it on the canvas.
 				const touches = s.touches as Array<{ x: number; y: number }>;
 				const t = touches[0];
 
+				if (splitModeActive) {
+					const seedUnderPointer = getSplitSeedUnderPointer(t.x, t.y);
+					if (seedUnderPointer) {
+						onRemoveSplitSeed(seedUnderPointer.id);
+					} else {
+						const dataSpaceCoord = nav.sceneToData(t.x, t.y);
+						onAddSplitSeed({
+							x: dataSpaceCoord.x,
+							y: dataSpaceCoord.y,
+							z: nav.layer
+						});
+					}
+					lastTouchPos = { x: t.x, y: t.y };
+					if (evt && evt.preventDefault) evt.preventDefault();
+					return false;
+				}
+
 				// Prepare long-press selection (when not drawing)
 				longPressStartPos = { x: t.x, y: t.y };
 				if (longPressTimer) clearTimeout(longPressTimer);
@@ -1076,6 +1288,12 @@ from BossDB and displays it on the canvas.
 				const touches = s.touches as Array<{ x: number; y: number }>;
 				const curr = { x: touches[0].x, y: touches[0].y };
 
+				if (splitModeActive) {
+					lastTouchPos = curr;
+					if (evt && evt.preventDefault) evt.preventDefault();
+					return false;
+				}
+
 				// Cancel long-press if user moves beyond tolerance
 				if (longPressStartPos) {
 					const mdx = curr.x - longPressStartPos.x;
@@ -1127,6 +1345,32 @@ from BossDB and displays it on the canvas.
 		};
 
 		function handleMouseEvent(eventType: MouseEventType, evt: MouseEvent | KeyboardEvent) {
+			if (splitModeActive) {
+				if (eventType === 'mousePressed' && s.mouseButton === s.LEFT && !s.keyIsDown(s.SHIFT)) {
+					const seedUnderPointer = getSplitSeedUnderPointer(s.mouseX, s.mouseY);
+					if (seedUnderPointer) {
+						onRemoveSplitSeed(seedUnderPointer.id);
+					} else {
+						const dataSpaceCoord = nav.sceneToData(s.mouseX, s.mouseY);
+						onAddSplitSeed({
+							x: dataSpaceCoord.x,
+							y: dataSpaceCoord.y,
+							z: nav.layer
+						});
+					}
+					return false;
+				}
+
+				if (eventType === 'mouseDragged' && s.mouseButton === s.LEFT && !s.keyIsDown(s.SHIFT)) {
+					return false;
+				}
+
+				if (eventType === 'mousePressed' && s.mouseButton === s.RIGHT) {
+					(evt as MouseEvent).preventDefault();
+					return false;
+				}
+			}
+
 			for (const kb of keybindings.filter(
 				(kb) => kb.eventType === 'mouse' && kb.mouseEventType === eventType
 			)) {

@@ -1,4 +1,5 @@
 import type PolygonAnnotation from '$lib/webpaint/PolygonAnnotation';
+import type { SplitMethod, SplitSeed } from '$lib/webpaint/split';
 
 const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
 	/\/$/,
@@ -71,6 +72,15 @@ export type PropagateSegmentResponse = {
 	source_z: number;
 	target_z: number;
 	segment_id: number;
+	polygons: PolygonAnnotationPayload[];
+	meta?: Record<string, unknown>;
+};
+
+export type SplitSegmentResponse = {
+	method: string;
+	display_name: string;
+	segment_id: number;
+	new_segment_id: number;
 	polygons: PolygonAnnotationPayload[];
 	meta?: Record<string, unknown>;
 };
@@ -199,6 +209,42 @@ class API {
 		const payload = await response.json();
 		if (!response.ok) {
 			throw new Error(payload.detail || payload.message || 'Segment propagation failed.');
+		}
+		return payload;
+	}
+
+	async splitSegment({
+		taskId,
+		method,
+		segmentID,
+		newSegmentID,
+		sourcePolygons,
+		seeds,
+		options
+	}: {
+		taskId: TaskID;
+		method: SplitMethod;
+		segmentID: number;
+		newSegmentID: number;
+		sourcePolygons: Array<PolygonAnnotation | PolygonAnnotationPayload>;
+		seeds: Array<SplitSeed>;
+		options?: Record<string, unknown>;
+	}): Promise<SplitSegmentResponse> {
+		const response = await fetch(`${baseUrl}/api/tasks/${taskId}/split-segment`, {
+			method: 'POST',
+			headers: this.buildHeaders(),
+			body: JSON.stringify({
+				method,
+				segment_id: segmentID,
+				new_segment_id: newSegmentID,
+				source_polygons: sourcePolygons,
+				seeds,
+				options: options || {}
+			})
+		});
+		const payload = await response.json();
+		if (!response.ok) {
+			throw new Error(payload.detail || payload.message || 'Segment split failed.');
 		}
 		return payload;
 	}

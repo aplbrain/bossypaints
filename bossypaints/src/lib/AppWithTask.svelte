@@ -17,6 +17,7 @@
 	import 'notyf/notyf.min.css';
 	import PolygonAnnotation from '$lib/webpaint/PolygonAnnotation';
 	import { onMount, onDestroy } from 'svelte';
+	import { type SplitMethod, type SplitSeed, type SplitSeedLabel } from '$lib/webpaint/split';
 	import {
 		AnnotationIcon,
 		CheckIcon,
@@ -42,6 +43,21 @@
 	let showInfo = true;
 	let showMerges = false;
 	let currentSegmentColor: [number, number, number] = [59, 130, 246];
+	let splitModeActive = false;
+	let splitTargetSegmentID: number | null = null;
+	let splitPreviewSegmentID: number | null = null;
+	let splitMethod: SplitMethod = 'linear';
+	let splitSeedColor: SplitSeedLabel = 'red';
+	let splitSeeds: Array<SplitSeed> = [];
+	let splitSeedIDCounter = 1;
+	let splitPreviewAnnotations: Array<PolygonAnnotation> = [];
+	let splitPreviewLoading = false;
+	let splitPreviewError: string | null = null;
+	let splitPreviewMeta: Record<string, unknown> | null = null;
+	let latestSplitPreviewRequestID = 0;
+	let lastSplitPreviewRequestKey = '';
+	let splitSeedCounts = { red: 0, blue: 0 };
+	let canApplySplit = false;
 	const CHECKPOINT_DEBOUNCE_MS = 1000;
 	let checkpointTimer: ReturnType<typeof setTimeout> | null = null;
 	let checkpointInFlight = false;
@@ -65,12 +81,206 @@
 	let histMin = 0;
 	let histMax = 255;
 
+	const SPLIT_METHOD_LABELS: Record<SplitMethod, string> = {
+		linear: 'Linear',
+		geodesic: 'Geodesic',
+		graph_cut: 'Graph Cut'
+	};
+
 	function handleHistogramChange(min: number, max: number) {
 		// Ensure ordered and within reasonable bounds
 		const newMin = Math.max(0, Math.min(min, max));
 		const newMax = Math.max(newMin, Math.min(max, 65535));
 		histMin = newMin;
 		histMax = newMax;
+	}
+
+	function resetSplitState() {
+		latestSplitPreviewRequestID += 1;
+		lastSplitPreviewRequestKey = '';
+		splitModeActive = false;
+		splitTargetSegmentID = null;
+		splitPreviewSegmentID = null;
+		splitSeedColor = 'red';
+		splitSeeds = [];
+		splitSeedIDCounter = 1;
+		splitPreviewAnnotations = [];
+		splitPreviewLoading = false;
+		splitPreviewError = null;
+		splitPreviewMeta = null;
+	}
+
+	function startSplitMode() {
+		if (!annotationStore) {
+			return;
+		}
+
+		splitTargetSegmentID = annotationStore.currentSegmentID;
+		splitPreviewSegmentID = annotationStore.getNextAvailableSegmentID();
+		splitSeedColor = 'red';
+		splitSeeds = [];
+		splitPreviewAnnotations = [];
+		splitPreviewLoading = false;
+		splitPreviewError = null;
+		splitPreviewMeta = null;
+		lastSplitPreviewRequestKey = '';
+		splitModeActive = true;
+		showMerges = true;
+		annotationStore.setCurrentSegmentID(splitTargetSegmentID);
+		notyf.success(`Split mode active for segment ${splitTargetSegmentID}.`);
+	}
+
+	function cancelSplitMode() {
+		if (!splitModeActive) {
+			return;
+		}
+
+		resetSplitState();
+	}
+
+	function addSplitSeed(point: { x: number; y: number; z: number }) {
+		if (!annotationStore || !splitModeActive || splitTargetSegmentID === null) {
+			return;
+		}
+
+		const targetAnnotations = annotationStore.getSegmentAnnotations(point.z, splitTargetSegmentID);
+		const isInsideTargetSegment = targetAnnotations.some((annotation) =>
+			annotation.pointIsInside([point.x, point.y])
+		);
+		if (!isInsideTargetSegment) {
+			notyf.error(`Split seeds must be placed on segment ${splitTargetSegmentID}.`);
+			return;
+		}
+
+		splitSeeds = [
+			...splitSeeds,
+			{
+				id: splitSeedIDCounter,
+				x: point.x,
+				y: point.y,
+				z: point.z,
+				label: splitSeedColor
+			}
+		];
+		splitSeedIDCounter += 1;
+	}
+
+	function undoSplitSeed() {
+		if (splitSeeds.length === 0) {
+			return;
+		}
+
+		splitSeeds = splitSeeds.slice(0, -1);
+	}
+
+	function clearSplitSeeds() {
+		splitSeeds = [];
+	}
+
+	function removeSplitSeed(seedID: number) {
+		splitSeeds = splitSeeds.filter((seed) => seed.id !== seedID);
+	}
+
+	function getSplitSourcePolygons(segmentID: number): Array<PolygonAnnotationPayload> {
+		return annotationStore
+			.getAllAnnotations()
+			.filter((annotation) => annotation.segmentID === segmentID)
+			.map(annotationToPayload);
+	}
+
+	async function requestSplitPreview(previewKey: string) {
+		if (!annotationStore || splitTargetSegmentID === null || splitPreviewSegmentID === null) {
+			return;
+		}
+
+		const sourcePolygons = getSplitSourcePolygons(splitTargetSegmentID);
+		if (sourcePolygons.length === 0) {
+			splitPreviewLoading = false;
+			splitPreviewError = `No saved polygons found for segment ${splitTargetSegmentID}.`;
+			splitPreviewAnnotations = [];
+			splitPreviewMeta = null;
+			return;
+		}
+
+		const requestID = latestSplitPreviewRequestID + 1;
+		latestSplitPreviewRequestID = requestID;
+		splitPreviewLoading = true;
+		splitPreviewError = null;
+		splitPreviewMeta = null;
+		splitPreviewAnnotations = [];
+
+		try {
+			const response = await API.splitSegment({
+				taskId: task.id,
+				method: splitMethod,
+				segmentID: splitTargetSegmentID,
+				newSegmentID: splitPreviewSegmentID,
+				sourcePolygons,
+				seeds: splitSeeds
+			});
+
+			if (
+				requestID !== latestSplitPreviewRequestID ||
+				!splitModeActive ||
+				previewKey !== lastSplitPreviewRequestKey
+			) {
+				return;
+			}
+
+			splitPreviewAnnotations = response.polygons.map(polygonPayloadToAnnotation);
+			splitPreviewMeta = response.meta || null;
+			if (splitPreviewAnnotations.length === 0) {
+				splitPreviewError = 'The current split preview is empty.';
+			}
+		} catch (error) {
+			if (requestID !== latestSplitPreviewRequestID || previewKey !== lastSplitPreviewRequestKey) {
+				return;
+			}
+			splitPreviewError =
+				error instanceof Error ? error.message : 'Failed to compute the 3D split preview.';
+		} finally {
+			if (requestID === latestSplitPreviewRequestID && previewKey === lastSplitPreviewRequestKey) {
+				splitPreviewLoading = false;
+			}
+		}
+	}
+
+	function applySplit() {
+		if (
+			!annotationStore ||
+			!splitModeActive ||
+			splitTargetSegmentID === null ||
+			splitPreviewSegmentID === null ||
+			splitPreviewAnnotations.length === 0
+		) {
+			return;
+		}
+
+		const modifiedLayerCount = annotationStore.replaceSegmentAcrossLayers({
+			sourceSegmentID: splitTargetSegmentID,
+			annotations: splitPreviewAnnotations
+		});
+		if (modifiedLayerCount === 0) {
+			notyf.error('The current split does not separate the selected segment.');
+			return;
+		}
+
+		queueCheckpoint(buildCheckpointSubmission());
+		hasUnsavedChanges = checkForUnsavedChanges();
+		annotationStore.setCurrentSegmentID(splitTargetSegmentID);
+		const methodLabel = SPLIT_METHOD_LABELS[splitMethod];
+		const previewSliceCounts = splitPreviewMeta?.slice_counts;
+		const previewModifiedSliceCount =
+			previewSliceCounts &&
+			typeof previewSliceCounts === 'object' &&
+			'modified' in previewSliceCounts &&
+			typeof previewSliceCounts['modified'] === 'number'
+				? previewSliceCounts['modified']
+				: modifiedLayerCount;
+		notyf.success(
+			`Split segment ${splitTargetSegmentID} into ${splitTargetSegmentID} and ${splitPreviewSegmentID} across ${previewModifiedSliceCount} slices with ${methodLabel}.`
+		);
+		resetSplitState();
 	}
 
 	function annotationToPayload(annotation: PolygonAnnotation): PolygonAnnotationPayload {
@@ -265,7 +475,7 @@
 	}
 
 	function copyCurrentSegmentFromLastSlice() {
-		if (!annotationStore || !nav || isPropagatingSegment) return;
+		if (!annotationStore || !nav || isPropagatingSegment || splitModeActive) return;
 
 		const sourceLayer = getAdjacentSegmentSourceLayer();
 		const targetLayer = nav.layer;
@@ -287,7 +497,7 @@
 	}
 
 	function copyCurrentSegmentToAdjacentSlice(direction: AdjacentDirection) {
-		if (!annotationStore || !nav || isPropagatingSegment) return;
+		if (!annotationStore || !nav || isPropagatingSegment || splitModeActive) return;
 
 		const sourceLayer = nav.layer;
 		const targetLayer = getAdjacentTargetLayer(direction);
@@ -322,7 +532,7 @@
 	}
 
 	async function propagateCurrentSegmentFromLastSlice() {
-		if (!annotationStore || !nav) return;
+		if (!annotationStore || !nav || splitModeActive) return;
 
 		const sourceLayer = getAdjacentSegmentSourceLayer();
 		const targetLayer = nav.layer;
@@ -343,7 +553,7 @@
 	}
 
 	async function propagateCurrentSegmentToAdjacentSlice(direction: AdjacentDirection) {
-		if (!annotationStore || !nav || isPropagatingSegment) return;
+		if (!annotationStore || !nav || isPropagatingSegment || splitModeActive) return;
 
 		const sourceLayer = nav.layer;
 		const targetLayer = getAdjacentTargetLayer(direction);
@@ -376,7 +586,7 @@
 		expectedLayerAtResponse: number;
 		navigateToTargetOnSuccess: boolean;
 	}) {
-		if (!annotationStore || !nav || isPropagatingSegment) return;
+		if (!annotationStore || !nav || isPropagatingSegment || splitModeActive) return;
 
 		const sourceAnnotations = getSavedSegmentAnnotations(sourceLayer, segmentID);
 		if (sourceAnnotations.length === 0) {
@@ -518,11 +728,14 @@
 	}
 
 	function handleSelectSegmentID(segmentID: number) {
+		if (splitModeActive) {
+			return;
+		}
 		annotationStore.setCurrentSegmentID(segmentID);
 	}
 
 	function handleMergeSegments(segmentIDs: Array<number>) {
-		if (!annotationStore || segmentIDs.length < 2) {
+		if (!annotationStore || splitModeActive || segmentIDs.length < 2) {
 			return;
 		}
 
@@ -533,7 +746,7 @@
 	}
 
 	function handleUnmergeSegment(segmentID: number) {
-		if (!annotationStore || !annotationStore.isSegmentMerged(segmentID)) {
+		if (!annotationStore || splitModeActive || !annotationStore.isSegmentMerged(segmentID)) {
 			return;
 		}
 
@@ -553,6 +766,69 @@
 			lastVisitedLayer = trackedLayer;
 			trackedLayer = currentLayer;
 		}
+	}
+
+	$: splitSeedCounts = splitSeeds.reduce(
+		(counts, seed) => {
+			if (seed.label === 'red') {
+				counts.red += 1;
+			} else {
+				counts.blue += 1;
+			}
+			return counts;
+		},
+		{ red: 0, blue: 0 }
+	);
+	$: canApplySplit =
+		splitModeActive &&
+		!splitPreviewLoading &&
+		splitTargetSegmentID !== null &&
+		splitPreviewSegmentID !== null &&
+		splitPreviewAnnotations.some((annotation) => annotation.segmentID === splitTargetSegmentID) &&
+		splitPreviewAnnotations.some((annotation) => annotation.segmentID === splitPreviewSegmentID);
+
+	$: {
+		const nextSplitPreviewRequestKey =
+			splitModeActive &&
+			annotationStore &&
+			splitTargetSegmentID !== null &&
+			splitPreviewSegmentID !== null &&
+			splitSeedCounts.red > 0 &&
+			splitSeedCounts.blue > 0
+				? JSON.stringify({
+						method: splitMethod,
+						targetSegmentID: splitTargetSegmentID,
+						newSegmentID: splitPreviewSegmentID,
+						seeds: splitSeeds.map(({ x, y, z, label }) => ({ x, y, z, label }))
+					})
+				: '';
+
+		if (!nextSplitPreviewRequestKey) {
+			if (lastSplitPreviewRequestKey !== '' || splitPreviewLoading) {
+				latestSplitPreviewRequestID += 1;
+			}
+			lastSplitPreviewRequestKey = '';
+			splitPreviewAnnotations = [];
+			splitPreviewLoading = false;
+			splitPreviewError = null;
+			splitPreviewMeta = null;
+		} else if (nextSplitPreviewRequestKey !== lastSplitPreviewRequestKey) {
+			lastSplitPreviewRequestKey = nextSplitPreviewRequestKey;
+			splitPreviewAnnotations = [];
+			splitPreviewLoading = false;
+			splitPreviewError = null;
+			splitPreviewMeta = null;
+			void requestSplitPreview(nextSplitPreviewRequestKey);
+		}
+	}
+
+	$: if (
+		splitModeActive &&
+		annotationStore &&
+		splitTargetSegmentID !== null &&
+		annotationStore.currentSegmentID !== splitTargetSegmentID
+	) {
+		annotationStore.setCurrentSegmentID(splitTargetSegmentID);
 	}
 
 	$: currentSegmentColor = annotationStore
@@ -593,9 +869,17 @@
 			resolution={task.resolution}
 			{histMin}
 			{histMax}
+			{splitModeActive}
+			{splitSeedColor}
+			{splitSeeds}
+			{splitPreviewAnnotations}
+			{splitTargetSegmentID}
+			{splitPreviewSegmentID}
 			onCheckpointData={(data) => {
 				queueCheckpoint(buildCheckpointSubmission(data));
 			}}
+			onAddSplitSeed={addSplitSeed}
+			onRemoveSplitSeed={removeSplitSeed}
 			onToggleInfo={() => (showInfo = !showInfo)}
 			onToggleMerge={() => (showMerges = !showMerges)}
 			onCopyToAdjacentSlice={copyCurrentSegmentToAdjacentSlice}
@@ -615,9 +899,26 @@
 			currentSegmentID={annotationStore.currentSegmentID}
 			hoveredSegmentID={annotationStore.hoveredAnnotation?.segmentID ?? null}
 			getSegmentColor={(segmentID) => annotationStore.getSegmentColor(segmentID)}
+			splitMode={splitModeActive}
+			{splitTargetSegmentID}
+			splitNewSegmentID={splitPreviewSegmentID}
+			{splitMethod}
+			{splitSeedColor}
+			splitRedSeedCount={splitSeedCounts.red}
+			splitBlueSeedCount={splitSeedCounts.blue}
+			{splitPreviewLoading}
+			{splitPreviewError}
+			{canApplySplit}
 			onSelectSegmentID={handleSelectSegmentID}
 			onMergeSegments={handleMergeSegments}
 			onUnmergeSegment={handleUnmergeSegment}
+			onStartSplit={startSplitMode}
+			onCancelSplit={cancelSplitMode}
+			onApplySplit={applySplit}
+			onUndoSplitSeed={undoSplitSeed}
+			onClearSplitSeeds={clearSplitSeeds}
+			onSetSplitMethod={(method) => (splitMethod = method)}
+			onSetSplitSeedColor={(label) => (splitSeedColor = label)}
 			show={showMerges}
 			onToggle={() => (showMerges = !showMerges)}
 		/>
@@ -628,7 +929,11 @@
 			{currentSegmentColor}
 			layerAnnotationCount={annotationStore.getLayerAnnotations(nav.layer).length}
 			onLayerChange={nav.setLayer}
-			onSegmentIDChange={(id) => annotationStore.setCurrentSegmentID(id)}
+			onSegmentIDChange={(id) => {
+				if (!splitModeActive) {
+					annotationStore.setCurrentSegmentID(id);
+				}
+			}}
 			onCopyFromLastSlice={copyCurrentSegmentFromLastSlice}
 			onPropagateFromLastSlice={propagateCurrentSegmentFromLastSlice}
 			adjacentSegmentSourceLayer={getAdjacentSegmentSourceLayer()}
@@ -752,7 +1057,7 @@
 		</div>
 
 		<!-- Subtract / Save Segment Buttons - For Touch Screen -->
-		{#if nav.drawing && annotationStore.currentAnnotation}
+		{#if nav.drawing && annotationStore.currentAnnotation && !splitModeActive}
 			<!-- add check for if drawing/done drawing?? -->
 			<div class="fixed top-10 left-1/3 flex gap-2 z-30 pointer-events-auto">
 				<button

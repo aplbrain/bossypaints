@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import type { SplitMethod, SplitSeedLabel } from '$lib/webpaint/split';
 
 	type GroupEntry = {
 		type: 'group';
@@ -25,6 +26,23 @@
 	export let onSelectSegmentID: (segmentID: number) => void = () => {};
 	export let onMergeSegments: (segmentIDs: Array<number>) => void = () => {};
 	export let onUnmergeSegment: (segmentID: number) => void = () => {};
+	export let splitMode: boolean = false;
+	export let splitTargetSegmentID: number | null = null;
+	export let splitNewSegmentID: number | null = null;
+	export let splitMethod: SplitMethod = 'linear';
+	export let splitSeedColor: SplitSeedLabel = 'red';
+	export let splitRedSeedCount: number = 0;
+	export let splitBlueSeedCount: number = 0;
+	export let splitPreviewLoading: boolean = false;
+	export let splitPreviewError: string | null = null;
+	export let canApplySplit: boolean = false;
+	export let onStartSplit: () => void = () => {};
+	export let onCancelSplit: () => void = () => {};
+	export let onApplySplit: () => void = () => {};
+	export let onUndoSplitSeed: () => void = () => {};
+	export let onClearSplitSeeds: () => void = () => {};
+	export let onSetSplitMethod: (method: SplitMethod) => void = () => {};
+	export let onSetSplitSeedColor: (label: SplitSeedLabel) => void = () => {};
 	export let show: boolean = false;
 	export let onToggle: () => void = () => {};
 
@@ -64,6 +82,9 @@
 	}
 
 	function handleSelectSegment(segmentID: number) {
+		if (splitMode) {
+			return;
+		}
 		onSelectSegmentID(segmentID);
 	}
 
@@ -90,6 +111,26 @@
 			return 'Group';
 		}
 		return `${segmentIDs[0]} (${segmentIDs.join(', ')}) Group`;
+	}
+
+	function splitSeedToggleClass(label: SplitSeedLabel): string {
+		if (splitSeedColor === label) {
+			return label === 'red'
+				? 'bg-red-600 text-white border-red-600'
+				: 'bg-blue-600 text-white border-blue-600';
+		}
+
+		return label === 'red'
+			? 'bg-white text-red-700 border-red-200 hover:bg-red-50'
+			: 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50';
+	}
+
+	function splitMethodToggleClass(method: SplitMethod): string {
+		if (splitMethod === method) {
+			return 'bg-slate-900 text-white border-slate-900';
+		}
+
+		return 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50';
 	}
 
 	async function scrollActiveRowIntoView() {
@@ -145,8 +186,8 @@
 		<button
 			class="absolute -right-7 top-7 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-r-md bg-white border border-gray-300 shadow hover:bg-gray-50 text-gray-700"
 			on:click={onToggle}
-			title="Toggle Merges (M)"
-			aria-label="Toggle Merge Panel"
+			title="Toggle Segments (M)"
+			aria-label="Toggle Segment Panel"
 		>
 			{#if show}
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,9 +209,13 @@
 		<div class="mb-4 pb-3 border-b border-gray-100">
 			<div class="flex items-start justify-between gap-3">
 				<div>
-					<h2 class="text-lg font-semibold text-gray-900">Merges</h2>
+					<h2 class="text-lg font-semibold text-gray-900">Segments</h2>
 					<p class="text-sm text-gray-600">
-						Group IDs together without changing their stored polygon IDs.
+						{#if splitMode}
+							Split the selected ID across all slices with labeled seeds.
+						{:else}
+							Merge IDs together or split the current selection.
+						{/if}
 					</p>
 				</div>
 				<div class="flex items-center gap-2 shrink-0">
@@ -188,12 +233,32 @@
 						>
 							Cancel
 						</button>
+					{:else if splitMode}
+						<button
+							class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-200 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+							on:click={onApplySplit}
+							disabled={!canApplySplit || splitPreviewLoading}
+						>
+							{splitPreviewLoading ? 'Previewing...' : 'Apply'}
+						</button>
+						<button
+							class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-200 bg-gray-100 hover:bg-gray-200 text-gray-700"
+							on:click={onCancelSplit}
+						>
+							Cancel
+						</button>
 					{:else}
 						<button
 							class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-200 bg-emerald-100 hover:bg-emerald-200 text-emerald-800"
 							on:click={openMergeMode}
 						>
 							Merge
+						</button>
+						<button
+							class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-200 bg-blue-100 hover:bg-blue-200 text-blue-800"
+							on:click={onStartSplit}
+						>
+							Split
 						</button>
 					{/if}
 				</div>
@@ -202,6 +267,89 @@
 				<p class="mt-2 text-xs text-gray-500">
 					Select at least two IDs, then merge them under one group ID.
 				</p>
+			{:else if splitMode}
+				<div class="mt-3 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-3 space-y-3">
+					<p class="text-xs font-medium text-blue-950">
+						Splitting ID {splitTargetSegmentID}. Red keeps ID {splitTargetSegmentID}; blue becomes
+						ID {splitNewSegmentID}.
+					</p>
+					<p class="text-xs text-blue-900">
+						Click on the selected segment to place seeds. The preview solves the full 3D segment and
+						applies exactly what you see.
+					</p>
+					<div class="space-y-2">
+						<p class="text-[11px] font-semibold uppercase tracking-wide text-blue-900/80">
+							3D Method
+						</p>
+						<div class="flex flex-wrap items-center gap-2">
+							<button
+								class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors duration-150 {splitMethodToggleClass(
+									'linear'
+								)}"
+								on:click={() => onSetSplitMethod('linear')}
+							>
+								Linear
+							</button>
+							<button
+								class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors duration-150 {splitMethodToggleClass(
+									'geodesic'
+								)}"
+								on:click={() => onSetSplitMethod('geodesic')}
+							>
+								Geodesic
+							</button>
+							<button
+								class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors duration-150 {splitMethodToggleClass(
+									'graph_cut'
+								)}"
+								on:click={() => onSetSplitMethod('graph_cut')}
+							>
+								Graph Cut
+							</button>
+						</div>
+					</div>
+					<div class="flex items-center gap-2">
+						<button
+							class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors duration-150 {splitSeedToggleClass(
+								'red'
+							)}"
+							on:click={() => onSetSplitSeedColor('red')}
+						>
+							Red ({splitRedSeedCount})
+						</button>
+						<button
+							class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors duration-150 {splitSeedToggleClass(
+								'blue'
+							)}"
+							on:click={() => onSetSplitSeedColor('blue')}
+						>
+							Blue ({splitBlueSeedCount})
+						</button>
+					</div>
+					<div class="flex items-center gap-2">
+						<button
+							class="px-3 py-1.5 text-xs font-medium rounded-md bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+							on:click={onUndoSplitSeed}
+							disabled={splitRedSeedCount + splitBlueSeedCount === 0}
+						>
+							Undo
+						</button>
+						<button
+							class="px-3 py-1.5 text-xs font-medium rounded-md bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+							on:click={onClearSplitSeeds}
+							disabled={splitRedSeedCount + splitBlueSeedCount === 0}
+						>
+							Clear
+						</button>
+					</div>
+					{#if splitPreviewLoading}
+						<p class="text-xs text-blue-900">Updating 3D split preview...</p>
+					{:else if splitPreviewError}
+						<p class="text-xs text-red-700">{splitPreviewError}</p>
+					{:else if splitRedSeedCount > 0 && splitBlueSeedCount > 0}
+						<p class="text-xs text-emerald-700">3D preview ready.</p>
+					{/if}
+				</div>
 			{/if}
 		</div>
 
@@ -278,7 +426,7 @@
 												</span>
 											{/if}
 										</button>
-										{#if !mergeMode}
+										{#if !mergeMode && !splitMode}
 											<button
 												class="px-2 py-1 text-[11px] font-medium rounded-md bg-white hover:bg-red-50 text-red-700 border border-red-200 transition-colors duration-150"
 												on:click={(event) => handleUnmergeSegment(event, segmentID)}
