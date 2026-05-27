@@ -40,15 +40,15 @@
 		},
 		{
 			title: 'Segments',
-			keys: ['ENTER', 'Backspace', 'x', 'd', 'n', 'b']
+			keys: ['ENTER', 'Backspace', 'x', 'd', '=', '-']
 		},
 		{
 			title: 'Display',
-			keys: ['a', 't', 'v']
+			keys: ['a', 't', 'm', 'v']
 		},
 		{
 			title: 'Zoom',
-			keys: ['+', '-', '0', 'Scroll']
+			keys: ['Shift + =', 'Shift + -', '0', 'Scroll']
 		}
 	];
 

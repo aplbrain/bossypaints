@@ -8,6 +8,7 @@ import { createAnnotationStore } from './PolygonAnnotationStore.svelte';
 import polybool, { type Polygon } from '@velipso/polybool';
 import type { NavigationStore } from './NavigationStore.svelte';
 import { segmentIdToRGB } from '../colorutils';
+import { createSplitPreviewForLayer, type SplitBounds, type SplitModel } from '../split';
 
 /**
  * Create a store for managing annotations in a multi-layered volume.
@@ -22,7 +23,47 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 	let currentSegmentID = $state(1);
 	let currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID));
 	let hoveredAnnotation: PolygonAnnotation | null = $state(null);
+	let mergedSegmentGroups: Array<Array<number>> = $state([]);
 	const toLayerIndex = (z: number): number => z - zOffset;
+
+	function normalizeSegmentIDs(segmentIDs: Array<number>): Array<number> {
+		return [
+			...new Set(segmentIDs.filter((segmentID) => Number.isInteger(segmentID) && segmentID > 0))
+		].sort((a, b) => a - b);
+	}
+
+	function sortMergedSegmentGroups(groups: Array<Array<number>>): Array<Array<number>> {
+		return groups
+			.map((group) => normalizeSegmentIDs(group))
+			.filter((group) => group.length > 1)
+			.sort((a, b) => a[0] - b[0]);
+	}
+
+	function getMergedGroupForSegmentID(segmentID: number): Array<number> | null {
+		return mergedSegmentGroups.find((group) => group.includes(segmentID)) || null;
+	}
+
+	function getCanonicalSegmentIDForDisplay(segmentID: number): number {
+		return getMergedGroupForSegmentID(segmentID)?.[0] ?? segmentID;
+	}
+
+	function getSegmentDisplayColor(segmentID: number): [number, number, number] {
+		return segmentIdToRGB(getCanonicalSegmentIDForDisplay(segmentID));
+	}
+
+	function applyDisplayColor(annotation: PolygonAnnotation): PolygonAnnotation {
+		annotation.color = getSegmentDisplayColor(annotation.segmentID);
+		return annotation;
+	}
+
+	function refreshMergedColors() {
+		layerwiseAnnotations.forEach((layerAnnotations) => {
+			layerAnnotations.forEach((annotation) => {
+				annotation.color = getSegmentDisplayColor(annotation.segmentID);
+			});
+		});
+		currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
+	}
 
 	const store = {
 		/**
@@ -48,7 +89,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			if (layerwiseAnnotations[idx] === undefined) {
 				layerwiseAnnotations[idx] = [];
 			}
-			layerwiseAnnotations[idx].push(annotation);
+			layerwiseAnnotations[idx].push(applyDisplayColor(annotation));
 			layerwiseAnnotations[idx] = layerwiseAnnotations[idx].slice();
 		},
 
@@ -80,6 +121,76 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 		 */
 		getAllAnnotations: (): Array<PolygonAnnotation> => layerwiseAnnotations.flat(),
 
+		get knownSegmentIDs(): Array<number> {
+			return normalizeSegmentIDs([
+				...layerwiseAnnotations.flat().map((annotation) => annotation.segmentID),
+				...mergedSegmentGroups.flat(),
+				currentSegmentID
+			]);
+		},
+
+		get mergedSegmentGroups(): Array<Array<number>> {
+			return mergedSegmentGroups.map((group) => [...group]);
+		},
+
+		getNextAvailableSegmentID: (): number => Math.max(0, ...store.knownSegmentIDs) + 1,
+
+		getMergedSegmentGroups: (): Array<Array<number>> =>
+			mergedSegmentGroups.map((group) => [...group]),
+
+		setMergedSegmentGroups: (groups: Array<Array<number>>): void => {
+			mergedSegmentGroups = sortMergedSegmentGroups(groups);
+			refreshMergedColors();
+		},
+
+		getMergedGroup: (segmentID: number): Array<number> | null => {
+			const group = getMergedGroupForSegmentID(segmentID);
+			return group ? [...group] : null;
+		},
+
+		isSegmentMerged: (segmentID: number): boolean => getMergedGroupForSegmentID(segmentID) !== null,
+
+		getCanonicalSegmentID: (segmentID: number): number =>
+			getCanonicalSegmentIDForDisplay(segmentID),
+
+		getSegmentColor: (segmentID: number): [number, number, number] =>
+			getSegmentDisplayColor(segmentID),
+
+		mergeSegments: (segmentIDs: Array<number>): void => {
+			const normalizedSegmentIDs = normalizeSegmentIDs(segmentIDs);
+			if (normalizedSegmentIDs.length < 2) {
+				return;
+			}
+
+			const overlappingGroups = mergedSegmentGroups.filter((group) =>
+				group.some((segmentID) => normalizedSegmentIDs.includes(segmentID))
+			);
+			const untouchedGroups = mergedSegmentGroups.filter(
+				(group) => !group.some((segmentID) => normalizedSegmentIDs.includes(segmentID))
+			);
+			const mergedGroup = normalizeSegmentIDs([
+				...normalizedSegmentIDs,
+				...overlappingGroups.flat()
+			]);
+
+			mergedSegmentGroups = sortMergedSegmentGroups([...untouchedGroups, mergedGroup]);
+			refreshMergedColors();
+		},
+
+		unmergeSegment: (segmentID: number): void => {
+			const existingGroup = getMergedGroupForSegmentID(segmentID);
+			if (!existingGroup) {
+				return;
+			}
+
+			const remainingGroup = existingGroup.filter((id) => id !== segmentID);
+			const nextGroups = mergedSegmentGroups.filter((group) => group !== existingGroup);
+			mergedSegmentGroups = sortMergedSegmentGroups(
+				remainingGroup.length > 1 ? [...nextGroups, remainingGroup] : nextGroups
+			);
+			refreshMergedColors();
+		},
+
 		/**
 		 * Get the current segment ID.
 		 * @returns {number}
@@ -97,7 +208,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			currentSegmentID = id;
 			// Always update the current annotation's segment ID and color to match the new ID
 			currentAnnotation.annotation.segmentID = currentSegmentID;
-			currentAnnotation.annotation.color = segmentIdToRGB(currentSegmentID);
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
 		},
 
 		/**
@@ -108,7 +219,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			currentSegmentID += 1;
 			// Always update the current annotation's segment ID and color
 			currentAnnotation.annotation.segmentID = currentSegmentID;
-			currentAnnotation.annotation.color = segmentIdToRGB(currentSegmentID);
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
 		},
 
 		/**
@@ -119,7 +230,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			currentSegmentID = Math.max(1, currentSegmentID - 1);
 			// Always update the current annotation's segment ID and color
 			currentAnnotation.annotation.segmentID = currentSegmentID;
-			currentAnnotation.annotation.color = segmentIdToRGB(currentSegmentID);
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
 		},
 
 		/**
@@ -158,10 +269,11 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			if (layerwiseAnnotations[idx] === undefined) {
 				layerwiseAnnotations[idx] = [];
 			}
-			layerwiseAnnotations[idx].push(currentAnnotation.annotation);
+			layerwiseAnnotations[idx].push(applyDisplayColor(currentAnnotation.annotation));
 			currentAnnotation = createAnnotationStore(
 				new PolygonAnnotation({}, currentSegmentID, true, layerIndex)
 			);
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
 
 			if (mergeByID) {
 				const sameIDAnnotations = (layerwiseAnnotations[idx] || []).filter(
@@ -194,7 +306,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 					layerwiseAnnotations[idx] = layerwiseAnnotations[idx].filter(
 						(a) => a.segmentID !== currentSegmentID
 					);
-					layerwiseAnnotations[idx].push(mergedAnnotation);
+					layerwiseAnnotations[idx].push(applyDisplayColor(mergedAnnotation));
 				}
 			}
 		},
@@ -218,6 +330,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			currentAnnotation = createAnnotationStore(
 				new PolygonAnnotation({}, currentSegmentID, false, layerIndex)
 			);
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
 
 			if (sameIDAnnotations.length > 0) {
 				// Step 1: First, union all existing annotations with the same segment ID into one shape
@@ -278,7 +391,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 				layerwiseAnnotations[idx] = layerwiseAnnotations[idx].filter(
 					(a) => a.segmentID !== currentSegmentID
 				);
-				layerwiseAnnotations[idx].push(resultAnnotation);
+				layerwiseAnnotations[idx].push(applyDisplayColor(resultAnnotation));
 			}
 		},
 
@@ -288,6 +401,7 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 		 */
 		resetCurrentAnnotation: (): void => {
 			currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID));
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
 		},
 
 		/**
@@ -323,10 +437,167 @@ export function createAnnotationManagerStore(numberOfLayers: number, zOffset: nu
 			);
 			const replacementAnnotations = annotations.map((annotation) => {
 				annotation.z = layerIndex;
-				return annotation;
+				return applyDisplayColor(annotation);
 			});
 
 			layerwiseAnnotations[idx] = [...otherAnnotations, ...replacementAnnotations];
+		},
+
+		replaceSegmentAcrossLayers: ({
+			sourceSegmentID,
+			annotations
+		}: {
+			sourceSegmentID: number;
+			annotations: Array<PolygonAnnotation>;
+		}): number => {
+			const annotationsByLayer = new Map<number, Array<PolygonAnnotation>>();
+			annotations.forEach((annotation) => {
+				const layerAnnotations = annotationsByLayer.get(annotation.z) ?? [];
+				layerAnnotations.push(annotation);
+				annotationsByLayer.set(annotation.z, layerAnnotations);
+			});
+
+			const touchedLayerIndices = new Set<number>();
+			layerwiseAnnotations.forEach((layerAnnotations, layerArrayIndex) => {
+				if (layerAnnotations.some((annotation) => annotation.segmentID === sourceSegmentID)) {
+					touchedLayerIndices.add(layerArrayIndex);
+				}
+			});
+			annotationsByLayer.forEach((_, absoluteZ) => {
+				const layerArrayIndex = toLayerIndex(absoluteZ);
+				if (layerArrayIndex >= 0 && layerArrayIndex < layerwiseAnnotations.length) {
+					touchedLayerIndices.add(layerArrayIndex);
+				}
+			});
+
+			if (touchedLayerIndices.size === 0) {
+				return 0;
+			}
+
+			touchedLayerIndices.forEach((layerArrayIndex) => {
+				const absoluteZ = layerArrayIndex + zOffset;
+				const otherAnnotations = layerwiseAnnotations[layerArrayIndex].filter(
+					(annotation) => annotation.segmentID !== sourceSegmentID
+				);
+				const replacementAnnotations = (annotationsByLayer.get(absoluteZ) ?? []).map(
+					(annotation) => {
+						annotation.z = absoluteZ;
+						return applyDisplayColor(annotation);
+					}
+				);
+
+				layerwiseAnnotations[layerArrayIndex] = [...otherAnnotations, ...replacementAnnotations];
+			});
+
+			hoveredAnnotation = null;
+			currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID, true));
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
+			refreshMergedColors();
+			return touchedLayerIndices.size;
+		},
+
+		splitSegmentAcrossLayers: ({
+			sourceSegmentID,
+			newSegmentID,
+			model,
+			bounds
+		}: {
+			sourceSegmentID: number;
+			newSegmentID: number;
+			model: SplitModel;
+			bounds: SplitBounds;
+		}): {
+			applied: boolean;
+			modifiedLayerCount: number;
+			redLayerCount: number;
+			blueLayerCount: number;
+		} => {
+			const layerReplacements: Array<{
+				layerArrayIndex: number;
+				absoluteZ: number;
+				replacements: Array<PolygonAnnotation>;
+			}> = [];
+			let redLayerCount = 0;
+			let blueLayerCount = 0;
+
+			for (
+				let layerArrayIndex = 0;
+				layerArrayIndex < layerwiseAnnotations.length;
+				layerArrayIndex += 1
+			) {
+				const absoluteZ = layerArrayIndex + zOffset;
+				const sameIDAnnotations = layerwiseAnnotations[layerArrayIndex].filter(
+					(annotation) => annotation.segmentID === sourceSegmentID
+				);
+				if (sameIDAnnotations.length === 0) {
+					continue;
+				}
+
+				const preview = createSplitPreviewForLayer({
+					annotations: sameIDAnnotations,
+					sourceSegmentID,
+					newSegmentID,
+					model,
+					bounds,
+					z: absoluteZ
+				});
+				const replacements = [preview.red, preview.blue].filter(
+					(annotation): annotation is PolygonAnnotation => annotation !== null
+				);
+
+				if (replacements.length === 0) {
+					continue;
+				}
+
+				if (preview.red) {
+					redLayerCount += 1;
+				}
+				if (preview.blue) {
+					blueLayerCount += 1;
+				}
+
+				layerReplacements.push({
+					layerArrayIndex,
+					absoluteZ,
+					replacements
+				});
+			}
+
+			if (layerReplacements.length === 0 || redLayerCount === 0 || blueLayerCount === 0) {
+				return {
+					applied: false,
+					modifiedLayerCount: 0,
+					redLayerCount,
+					blueLayerCount
+				};
+			}
+
+			for (const replacement of layerReplacements) {
+				const otherAnnotations = layerwiseAnnotations[replacement.layerArrayIndex].filter(
+					(annotation) => annotation.segmentID !== sourceSegmentID
+				);
+				const replacementAnnotations = replacement.replacements.map((annotation) => {
+					annotation.z = replacement.absoluteZ;
+					return applyDisplayColor(annotation);
+				});
+
+				layerwiseAnnotations[replacement.layerArrayIndex] = [
+					...otherAnnotations,
+					...replacementAnnotations
+				];
+			}
+
+			hoveredAnnotation = null;
+			currentAnnotation = createAnnotationStore(new PolygonAnnotation({}, currentSegmentID, true));
+			currentAnnotation.annotation.color = getSegmentDisplayColor(currentSegmentID);
+			refreshMergedColors();
+
+			return {
+				applied: true,
+				modifiedLayerCount: layerReplacements.length,
+				redLayerCount,
+				blueLayerCount
+			};
 		},
 
 		/**

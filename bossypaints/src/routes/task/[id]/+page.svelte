@@ -102,7 +102,8 @@
 			// Trigger the save/export process
 			await API.saveTask({
 				taskId: task.id,
-				checkpoint: latestCheckpoint.polygons
+				checkpoint: latestCheckpoint.polygons,
+				mergeGroups: latestCheckpoint.mergeGroups || []
 			});
 
 			exportMessage = 'Export started! Processing in background...';

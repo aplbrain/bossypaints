@@ -20,6 +20,7 @@ from bossypaints.background import render_and_mesh
 from bossypaints.tasks import SQLiteTaskQueueStore, Task, TaskID
 from bossypaints.checkpoints import Checkpoint, SQLiteCheckpointStore, Polygon
 from bossypaints.propagation import CropBox, PropagationContext, propagate_segment
+from bossypaints.splitting import SplitContext, SplitSeed, split_segment
 
 # Load environment variables from .env file
 load_dotenv()
@@ -160,7 +161,11 @@ async def save_task(request: Request, task_id: TaskID, checkpoint: dict, backgro
     if task.export_pending:
         raise HTTPException(status_code=409, detail="Export already in progress for this task")
 
-    checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
+    checkpoint_obj = Checkpoint(
+        taskID=task_id,
+        polygons=checkpoint["checkpoint"],
+        mergeGroups=checkpoint.get("mergeGroups", []),
+    )
     checkpoint_store.save_checkpoint(checkpoint_obj)
 
     # Set export pending flag to true
@@ -181,7 +186,11 @@ async def checkpoint_task(request: Request, task_id: TaskID, checkpoint: dict):
     if not task or task.assigned_to != username:
         raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
 
-    checkpoint_obj = Checkpoint(taskID=task_id, polygons=checkpoint["checkpoint"])
+    checkpoint_obj = Checkpoint(
+        taskID=task_id,
+        polygons=checkpoint["checkpoint"],
+        mergeGroups=checkpoint.get("mergeGroups", []),
+    )
     checkpoint_store.save_checkpoint(checkpoint_obj)
 
     # Reset export pending flag since new annotations invalidate pending exports
@@ -221,6 +230,22 @@ class PropagateSegmentRequest(BaseModel):
     target_z: int
     segment_id: int
     source_polygons: list[Polygon]
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class SplitSeedRequest(BaseModel):
+    x: float
+    y: float
+    z: int
+    label: Literal["red", "blue"]
+
+
+class SplitSegmentRequest(BaseModel):
+    method: str = "linear"
+    segment_id: int
+    new_segment_id: int
+    source_polygons: list[Polygon]
+    seeds: list[SplitSeedRequest]
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -347,6 +372,64 @@ async def propagate_task_segment(
         "source_z": propagate_request.source_z,
         "target_z": propagate_request.target_z,
         "segment_id": propagate_request.segment_id,
+        "polygons": result.polygons,
+        "meta": result.meta,
+    }
+
+
+@api_router.post("/tasks/{task_id}/split-segment")
+async def split_task_segment(
+    request: Request,
+    task_id: TaskID,
+    split_request: SplitSegmentRequest,
+):
+    username = await get_username_from_request(request)
+    task = task_store.get(task_id)
+
+    if not task or task.assigned_to != username:
+        raise HTTPException(status_code=404, detail="Task not found or not assigned to you")
+
+    if split_request.segment_id <= 0 or split_request.new_segment_id <= 0:
+        raise HTTPException(status_code=400, detail="Split segment IDs must be positive integers.")
+    if split_request.segment_id == split_request.new_segment_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Split requires distinct source and new segment IDs.",
+        )
+
+    source_polygons = [
+        polygon
+        for polygon in split_request.source_polygons
+        if polygon.segmentID == split_request.segment_id
+    ]
+    if not source_polygons:
+        raise HTTPException(
+            status_code=400,
+            detail="No source polygons were provided for the selected segment.",
+        )
+
+    try:
+        result = split_segment(
+            split_request.method,
+            SplitContext(
+                task=task,
+                source_segment_id=split_request.segment_id,
+                new_segment_id=split_request.new_segment_id,
+                source_polygons=source_polygons,
+                seeds=[SplitSeed(**seed.dict()) for seed in split_request.seeds],
+                options=split_request.options,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Split failed: {exc}") from exc
+
+    return {
+        "method": result.method,
+        "display_name": result.display_name,
+        "segment_id": split_request.segment_id,
+        "new_segment_id": split_request.new_segment_id,
         "polygons": result.polygons,
         "meta": result.meta,
     }

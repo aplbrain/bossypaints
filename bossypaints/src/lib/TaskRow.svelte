@@ -2,7 +2,7 @@
 	import type { TaskInDB } from '$lib/api';
 	import { generateNeuroglancerLink } from '$lib/neuroglancer';
 	import { getTaskDisplayName, formatCloudVolumePath } from '$lib/utils/task';
-	import { EyeIcon, ExternalLinkIcon } from '$lib/icons';
+	import { EyeIcon, ExternalLinkIcon, AnnotationIcon } from '$lib/icons';
 
 	export let task: TaskInDB;
 	export let index: number;
@@ -17,12 +17,12 @@
 		default: {
 			indexBg: 'from-blue-500 to-purple-600',
 			linkColor: 'text-blue-600 hover:text-blue-800',
-			detailsBtn: 'bg-green-600 hover:bg-green-700'
+			primaryActionBtn: 'bg-green-600 hover:bg-green-700'
 		},
 		archived: {
 			indexBg: 'from-orange-500 to-red-600',
 			linkColor: 'text-orange-600 hover:text-orange-800',
-			detailsBtn: 'bg-orange-600 hover:bg-orange-700'
+			primaryActionBtn: 'bg-orange-600 hover:bg-orange-700'
 		}
 	}[variant];
 </script>
@@ -101,13 +101,23 @@
 		</div>
 	</td>
 	<td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-		<a
-			href="/task/{task.id}"
-			class="inline-flex items-center px-3 py-1.5 {colors.detailsBtn} text-white text-xs font-medium rounded-md transition-colors duration-200"
-		>
-			<EyeIcon className="w-3 h-3 mr-1" />
-			Details
-		</a>
+		{#if variant === 'default'}
+			<a
+				href="/app/{task.id}"
+				class="inline-flex items-center px-3 py-1.5 {colors.primaryActionBtn} text-white text-xs font-medium rounded-md transition-colors duration-200"
+			>
+				<AnnotationIcon className="w-3 h-3 mr-1" />
+				Continue
+			</a>
+		{:else}
+			<a
+				href="/task/{task.id}"
+				class="inline-flex items-center px-3 py-1.5 {colors.primaryActionBtn} text-white text-xs font-medium rounded-md transition-colors duration-200"
+			>
+				<EyeIcon className="w-3 h-3 mr-1" />
+				Details
+			</a>
+		{/if}
 		<a
 			href={nglLink(task)}
 			target="_blank"

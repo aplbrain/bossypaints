@@ -19,9 +19,54 @@ class Polygon(pydantic.BaseModel):
     z: int
 
 
+def normalize_merge_groups(groups: list[list[int]] | None) -> list[list[int]]:
+    if not groups:
+        return []
+
+    merged_groups: list[set[int]] = []
+    for group in groups:
+        normalized_group: set[int] = set()
+        for segment_id in group:
+            try:
+                normalized_segment_id = int(segment_id)
+            except (TypeError, ValueError):
+                continue
+            if normalized_segment_id > 0:
+                normalized_group.add(normalized_segment_id)
+
+        if len(normalized_group) < 2:
+            continue
+
+        overlapping_groups = [
+            existing_group
+            for existing_group in merged_groups
+            if existing_group.intersection(normalized_group)
+        ]
+        if overlapping_groups:
+            normalized_group.update(*overlapping_groups)
+            merged_groups = [
+                existing_group
+                for existing_group in merged_groups
+                if existing_group not in overlapping_groups
+            ]
+
+        merged_groups.append(normalized_group)
+
+    return sorted((sorted(group) for group in merged_groups), key=lambda group: group[0])
+
+
+def build_segment_canonical_map(groups: list[list[int]] | None) -> dict[int, int]:
+    return {
+        segment_id: group[0]
+        for group in normalize_merge_groups(groups)
+        for segment_id in group
+    }
+
+
 class Checkpoint(pydantic.BaseModel):
     polygons: list[Polygon]
     taskID: TaskID
+    mergeGroups: list[list[int]] = pydantic.Field(default_factory=list)
 
     # When receiving dict, convert to Polygon
     @pydantic.validator("polygons", pre=True)
@@ -40,6 +85,10 @@ class Checkpoint(pydantic.BaseModel):
                     raise ValueError(f"Polygon must be dict or Polygon object, got {type(polygon)}")
             return result
         return v
+
+    @pydantic.validator("mergeGroups", pre=True)
+    def normalize_groups(cls, v):
+        return normalize_merge_groups(v)
 
 
 class CheckpointStore(Protocol):
@@ -126,9 +175,20 @@ class SQLiteCheckpointStore(CheckpointStore):
                     id TEXT PRIMARY KEY,
                     task_id TEXT NOT NULL,
                     polygons_json TEXT NOT NULL,
+                    merge_groups_json TEXT NOT NULL DEFAULT '[]',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            existing_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(checkpoints)").fetchall()
+            }
+            if "merge_groups_json" not in existing_columns:
+                conn.execute(
+                    """
+                    ALTER TABLE checkpoints
+                    ADD COLUMN merge_groups_json TEXT NOT NULL DEFAULT '[]'
+                    """
+                )
             # Create index for faster task lookups
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_task_id
@@ -154,15 +214,18 @@ class SQLiteCheckpointStore(CheckpointStore):
     def _checkpoint_from_row(self, row: sqlite3.Row) -> Checkpoint:
         """Convert a SQLite row to a Checkpoint object."""
         polygons_data = json.loads(row['polygons_json'])
+        merge_groups_data = json.loads(row['merge_groups_json']) if row['merge_groups_json'] else []
         return Checkpoint(
             taskID=row['task_id'],
-            polygons=[Polygon(**polygon_data) for polygon_data in polygons_data]
+            polygons=[Polygon(**polygon_data) for polygon_data in polygons_data],
+            mergeGroups=merge_groups_data,
         )
 
     def save_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Save a checkpoint to the SQLite database."""
         checkpoint_id = str(uuid.uuid4())
         polygons_json = json.dumps([polygon.dict() for polygon in checkpoint.polygons])
+        merge_groups_json = json.dumps(checkpoint.mergeGroups)
 
         with self._get_connection() as conn:
             # For now, replace the checkpoint for the task (matching existing behavior)
@@ -173,9 +236,9 @@ class SQLiteCheckpointStore(CheckpointStore):
 
             # Insert the new checkpoint
             conn.execute("""
-                INSERT INTO checkpoints (id, task_id, polygons_json)
-                VALUES (?, ?, ?)
-            """, (checkpoint_id, checkpoint.taskID, polygons_json))
+                INSERT INTO checkpoints (id, task_id, polygons_json, merge_groups_json)
+                VALUES (?, ?, ?, ?)
+            """, (checkpoint_id, checkpoint.taskID, polygons_json, merge_groups_json))
 
             conn.commit()
 

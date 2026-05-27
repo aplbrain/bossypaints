@@ -1,5 +1,5 @@
 import pathlib
-from bossypaints.checkpoints import Checkpoint
+from bossypaints.checkpoints import Checkpoint, build_segment_canonical_map
 from bossypaints.tasks import TaskInDB
 
 # For rasterizing polys with scikit-image
@@ -50,10 +50,22 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
         y_size = int((task.y_max - task.y_min) / voxel_size[1])
         z_size = int((task.z_max - task.z_min) / voxel_size[2])
 
+        latest_merge_groups = checkpoints[-1].mergeGroups if checkpoints else []
+        canonical_segment_ids = build_segment_canonical_map(latest_merge_groups)
+
+        def canonicalize_segment_id(segment_id: int) -> int:
+            return canonical_segment_ids.get(segment_id, segment_id)
+
         if segment_ids is None:
-            ids = sorted(set(poly.segmentID for checkpoint in checkpoints for poly in checkpoint.polygons))
+            ids = sorted(
+                {
+                    canonicalize_segment_id(poly.segmentID)
+                    for checkpoint in checkpoints
+                    for poly in checkpoint.polygons
+                }
+            )
         else:
-            ids = list(segment_ids)
+            ids = sorted({canonicalize_segment_id(segment_id) for segment_id in segment_ids})
         id_count = len(ids)
         if segment_ids is None:
             logger.info(f"Total unique segment IDs found: {id_count}")
@@ -70,7 +82,7 @@ class NumpyInMemoryVolumePolygonRenderer(VolumePolygonRenderer):
 
         for checkpoint in checkpoints:
             for poly in checkpoint.polygons:
-                seg_id = poly.segmentID
+                seg_id = canonicalize_segment_id(poly.segmentID)
                 if segment_id_set is not None and seg_id not in segment_id_set:
                     continue
                 channel_index = None

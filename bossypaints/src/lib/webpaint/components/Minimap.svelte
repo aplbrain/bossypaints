@@ -83,7 +83,8 @@
 			annotationStore.annotations.forEach((annolist, layer) => {
 				const absoluteLayer = nav.minLayer + layer;
 				annolist.forEach((anno) => {
-					s.fill(anno.color[0], anno.color[1], anno.color[2], 150);
+					const displayColor = annotationStore.getSegmentColor(anno.segmentID);
+					s.fill(displayColor[0], displayColor[1], displayColor[2], 150);
 					s.ellipse(
 						anno.segmentID * indicatorSize,
 						s.map(absoluteLayer, nav.minLayer, nav.maxLayer, 0, height),
