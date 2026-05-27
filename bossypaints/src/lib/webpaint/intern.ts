@@ -60,7 +60,12 @@ class BossRemote {
 		*/
 		// For CloudVolume URIs, use our backend filmstrip endpoint. Heuristic: if uri contains 'precomputed://' or starts with gs://, s3://, file://, https:// (non-Boss host)
 		let url: string;
-		const isCloudVolume = uri.startsWith('precomputed://') || uri.startsWith('gs://') || uri.startsWith('s3://') || uri.startsWith('file://') || uri.startsWith('https://');
+		const isCloudVolume =
+			uri.startsWith('precomputed://') ||
+			uri.startsWith('gs://') ||
+			uri.startsWith('s3://') ||
+			uri.startsWith('file://') ||
+			uri.startsWith('https://');
 		if (isCloudVolume) {
 			// Backend serves at http://localhost:8000/api/filmstrip/cloudvolume
 			const backend = baseUrl;
@@ -69,7 +74,7 @@ class BossRemote {
 				res: String(res),
 				x: xs.join(':'),
 				y: ys.join(':'),
-				z: zs.join(':'),
+				z: zs.join(':')
 			});
 			url = `${backend}/api/filmstrip/cloudvolume?${params.toString()}`;
 		} else {
@@ -95,7 +100,9 @@ class BossRemote {
 			});
 
 			if (!response.ok) {
-				debug.error(`NETWORK ERROR [${requestId}]: ${response.status} ${response.statusText} from ${url}`);
+				debug.error(
+					`NETWORK ERROR [${requestId}]: ${response.status} ${response.statusText} from ${url}`
+				);
 				return null;
 			}
 
@@ -103,16 +110,26 @@ class BossRemote {
 			const blob = await response.blob();
 
 			if (!blob || blob.size === 0) {
-				debug.error(`NETWORK ERROR [${requestId}]: Received empty blob from ${url} (content-type: ${contentType})`);
+				debug.error(
+					`NETWORK ERROR [${requestId}]: Received empty blob from ${url} (content-type: ${contentType})`
+				);
 				return null;
 			}
 
 			const duration = Date.now() - requestTime;
-			debug.log(`NETWORK SUCCESS [${requestId}]: Received ${(blob.size / 1024).toFixed(1)}KB from ${url} (content-type: ${contentType}, took ${duration}ms)`);
+			debug.log(
+				`NETWORK SUCCESS [${requestId}]: Received ${(blob.size / 1024).toFixed(1)}KB from ${url} (content-type: ${contentType}, took ${duration}ms)`
+			);
 			return blob;
 		} catch (err) {
+			if ((err as { name?: string } | null)?.name === 'AbortError') {
+				throw err;
+			}
 			const duration = Date.now() - requestTime;
-			debug.error(`NETWORK FAILURE [${requestId}]: Error fetching from ${url} after ${duration}ms`, err);
+			debug.error(
+				`NETWORK FAILURE [${requestId}]: Error fetching from ${url} after ${duration}ms`,
+				err
+			);
 			return null;
 		}
 	}
