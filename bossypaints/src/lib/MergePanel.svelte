@@ -43,12 +43,15 @@
 	export let onClearSplitSeeds: () => void = () => {};
 	export let onSetSplitMethod: (method: SplitMethod) => void = () => {};
 	export let onSetSplitSeedColor: (label: SplitSeedLabel) => void = () => {};
+	export let showMinimap: boolean = true;
+	export let minimapFootprint: number = 0;
 	export let show: boolean = false;
 	export let onToggle: () => void = () => {};
 
 	let mergeMode = false;
 	let selectedSegmentIDs: Array<number> = [];
 	let treeBodyElement: HTMLDivElement | null = null;
+	const panelBottomGap = 24;
 
 	function normalizeSegmentIDs(segmentIDs: Array<number>): Array<number> {
 		return [
@@ -171,6 +174,7 @@
 			})
 		)
 	].sort((a, b) => a.sortKey - b.sortKey) as Array<TreeEntry>;
+	$: reservedBottomPx = showMinimap ? minimapFootprint + panelBottomGap : 16;
 	$: if (show && treeBodyElement) {
 		void scrollActiveRowIntoView();
 	}
@@ -178,15 +182,15 @@
 
 <div
 	class="fixed top-4 left-4 z-40 transition-transform duration-300 ease-in-out"
-	style="transform: translateX({show ? '0' : '-104%'});"
+	style="transform: translateX({show ? '0' : 'calc(-100% - 16px)'}); bottom: {reservedBottomPx}px;"
 >
 	<div
-		class="relative bg-white rounded-lg shadow-lg border border-gray-200 w-80 max-w-[calc(100vw-2rem)] py-4 pl-4 pr-10 overflow-visible"
+		class="relative flex h-full max-h-full flex-col bg-white rounded-lg shadow-lg border border-gray-200 w-80 max-w-[calc(100vw-2rem)] py-4 pl-4 pr-4 overflow-visible"
 	>
 		<button
 			class="absolute -right-7 top-7 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-r-md bg-white border border-gray-300 shadow hover:bg-gray-50 text-gray-700"
 			on:click={onToggle}
-			title="Toggle Segments (M)"
+			title="Toggle Segments (S)"
 			aria-label="Toggle Segment Panel"
 		>
 			{#if show}
@@ -203,7 +207,7 @@
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
 				</svg>
 			{/if}
-			<span class="absolute bottom-0.5 left-0.5 text-[10px] text-gray-500 opacity-70">m</span>
+			<span class="absolute bottom-0.5 left-0.5 text-[10px] text-gray-500 opacity-70">s</span>
 		</button>
 
 		<div class="mb-4 pb-3 border-b border-gray-100">
@@ -353,7 +357,7 @@
 			{/if}
 		</div>
 
-		<div bind:this={treeBodyElement} class="max-h-[70vh] overflow-y-auto pr-1 space-y-2">
+		<div bind:this={treeBodyElement} class="min-h-0 flex-1 overflow-y-auto pr-1 space-y-2">
 			{#if treeEntries.length === 0}
 				<div
 					class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center"

@@ -42,6 +42,8 @@
 	let showKeybindings = false;
 	let showInfo = true;
 	let showMerges = false;
+	let showMinimap = true;
+	let minimapFootprint = 0;
 	let currentSegmentColor: [number, number, number] = [59, 130, 246];
 	let splitModeActive = false;
 	let splitTargetSegmentID: number | null = null;
@@ -858,6 +860,8 @@
 <div class="w-full" role="presentation" oncontextmenu={(event) => event.preventDefault()}>
 	{#if task && annotationStore && nav}
 		<PaintApp
+			bind:showMinimap
+			bind:minimapFootprint
 			{annotationStore}
 			{nav}
 			datasetURI={task.data_source_type === 'cloudvolume'
@@ -919,6 +923,8 @@
 			onClearSplitSeeds={clearSplitSeeds}
 			onSetSplitMethod={(method) => (splitMethod = method)}
 			onSetSplitSeedColor={(label) => (splitSeedColor = label)}
+			{showMinimap}
+			{minimapFootprint}
 			show={showMerges}
 			onToggle={() => (showMerges = !showMerges)}
 		/>
@@ -946,6 +952,7 @@
 			{histMax}
 			onHistogramChange={handleHistogramChange}
 			show={showInfo}
+			showLayerControls={false}
 			onToggle={() => (showInfo = !showInfo)}
 		/>
 		<KeybindingsTable bind:show={showKeybindings} />

@@ -60,9 +60,12 @@ from BossDB and displays it on the canvas.
 	export let splitPreviewSegmentID: number | null = null;
 	export let onAddSplitSeed: (point: { x: number; y: number; z: number }) => void = () => {};
 	export let onRemoveSplitSeed: (seedID: number) => void = () => {};
+	export let showMinimap = true;
+	export let minimapFootprint = 0;
 
 	// Toggle visibility of task region (yellow rectangle) and axes
 	let showAxesAndTaskRegion = true;
+	let showDebugOverlay = false;
 
 	// Function to toggle axes and task region visibility
 	function toggleAxesAndTaskRegion() {
@@ -345,10 +348,12 @@ from BossDB and displays it on the canvas.
 		const batchSize = APP_CONFIG.filmstrip.batchSize;
 		const lowerPrefetchTriggerZ = visibleChunkWindow.filmstripZMin + 1;
 		const upperPrefetchTriggerZ = visibleChunkWindow.filmstripZMax - 2;
+		const lowerBound = nav.restrictLayerBounds ? zs[0] : 0;
+		const upperBound = nav.restrictLayerBounds ? zs[1] : null;
 
 		if (currentZ <= lowerPrefetchTriggerZ) {
 			const previousZMax = visibleChunkWindow.filmstripZMin;
-			const previousZMin = Math.max(previousZMax - batchSize, zs[0]);
+			const previousZMin = Math.max(previousZMax - batchSize, lowerBound);
 			if (previousZMax > previousZMin) {
 				prefetchRanges.push({ z_min: previousZMin, z_max: previousZMax });
 			}
@@ -356,8 +361,9 @@ from BossDB and displays it on the canvas.
 
 		if (currentZ >= upperPrefetchTriggerZ) {
 			const nextZMin = visibleChunkWindow.filmstripZMax;
-			if (nextZMin < zs[1]) {
-				const nextZMax = Math.min(nextZMin + batchSize, zs[1]);
+			if (upperBound === null || nextZMin < upperBound) {
+				const nextZMax =
+					upperBound === null ? nextZMin + batchSize : Math.min(nextZMin + batchSize, upperBound);
 				if (nextZMax > nextZMin) {
 					prefetchRanges.push({ z_min: nextZMin, z_max: nextZMax });
 				}
@@ -765,7 +771,7 @@ from BossDB and displays it on the canvas.
 	};
 
 	// Debug overlay element reference
-	let debugOverlayElement: HTMLElement;
+	let debugOverlayElement: HTMLDivElement | null = null;
 
 	// Function to copy debug info to clipboard
 	function copyDebugInfo() {
@@ -1355,15 +1361,32 @@ from BossDB and displays it on the canvas.
 				return false;
 			}
 
-			// 'm' key = toggle merge panel visibility
-			if (s.key === 'm' || s.key === 'M') {
+			// 's' key = toggle segment panel visibility
+			if (s.key === 's' || s.key === 'S') {
 				onToggleMerge();
+				return false;
+			}
+
+			// 'z' key = toggle minimap visibility
+			if (keyEvent?.code === 'KeyZ' && !keyEvent.shiftKey && !keyEvent.altKey && !keyEvent.metaKey) {
+				showMinimap = !showMinimap;
 				return false;
 			}
 
 			// 'a' key = toggle axes and task region visibility
 			if (s.key === 'a' || s.key === 'A') {
 				toggleAxesAndTaskRegion();
+				return false;
+			}
+
+			// '\' key = toggle debug overlay visibility
+			if (
+				keyEvent?.code === 'Backslash' &&
+				!keyEvent.shiftKey &&
+				!keyEvent.altKey &&
+				!keyEvent.metaKey
+			) {
+				showDebugOverlay = !showDebugOverlay;
 				return false;
 			}
 
@@ -1767,83 +1790,114 @@ from BossDB and displays it on the canvas.
 <!-- Canvas container -->
 <div bind:this={canvasContainer} class="paint-app-canvas"></div>
 
-<!-- Debug information overlay -->
-<!-- {#if debugEnabled} -->
 <div
-	class="debug-overlay"
-	role="button"
-	tabindex="0"
-	aria-label="Copy debug info"
-	on:click={copyDebugInfo}
-	on:keydown={(e) => {
-		if (e.key === 'Enter' || e.key === ' ') {
-			e.preventDefault();
-			copyDebugInfo();
-		}
-	}}
-	bind:this={debugOverlayElement}
+	class="debug-overlay-shell"
+	style="transform: translateX({showDebugOverlay ? '0' : 'calc(-100% - 10px)'});"
 >
-	<div class="debug-line">Scene Mouse: {debugInfo.sceneMouseX}, {debugInfo.sceneMouseY}</div>
-	<div class="debug-line">
-		Data Mouse: {debugInfo.dataMouseX.toFixed(3)}, {debugInfo.dataMouseY.toFixed(3)}
-	</div>
-	<div class="debug-line">
-		Center of Screen: x: {debugInfo.centerX.toFixed(3)}, y: {debugInfo.centerY.toFixed(3)} (z: {debugInfo.layer})
-	</div>
-	<div class="debug-line">
-		Zoom: {debugInfo.zoom.toFixed(3)} | Current Resolution: {debugInfo.resolutionName} (Level {debugInfo.resolutionLevel})
-	</div>
-	<div class="debug-line">
-		Original ROI: x:[{xs[0]}, {xs[1]}] y:[{ys[0]}, {ys[1]}] z:[{zs[0]}, {zs[1]}]
-	</div>
-	<div class="debug-line">Current {debugInfo.resolutionName} Chunk: {debugInfo.chunkInfo}</div>
-
-	<div class="debug-line">
-		Chunk Loading: viewport-driven with {APP_CONFIG.chunkLoading.viewportPaddingChunks} chunk padding,
-		center-first={APP_CONFIG.chunkLoading.prioritizeCenter}
-	</div>
-
-	{#if imageCache}
+	<div
+		class="debug-overlay"
+		role="button"
+		tabindex="0"
+		aria-label="Copy debug info"
+		on:click={copyDebugInfo}
+		on:keydown={(e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				copyDebugInfo();
+			}
+		}}
+		bind:this={debugOverlayElement}
+	>
+		<div class="debug-line">Scene Mouse: {debugInfo.sceneMouseX}, {debugInfo.sceneMouseY}</div>
 		<div class="debug-line">
-			Memory Cache: {debugInfo.cacheStats.enabled ? 'ENABLED' : 'DISABLED'}, {debugInfo.cacheStats
-				.entryCount} entries, {(debugInfo.cacheStats.cacheSize / 1024 / 1024).toFixed(1)}MB / {(
-				debugInfo.cacheStats.maxCacheSize /
-				1024 /
-				1024
-			).toFixed(0)}MB ({debugInfo.cacheStats.utilizationPercent.toFixed(1)}%)
+			Data Mouse: {debugInfo.dataMouseX.toFixed(3)}, {debugInfo.dataMouseY.toFixed(3)}
 		</div>
 		<div class="debug-line">
-			Filmstrip Cache: {debugInfo.cacheStats.filmstripCount} batches, {debugInfo.cacheStats
-				.totalSlicesInFilmstrips} slices
+			Center of Screen: x: {debugInfo.centerX.toFixed(3)}, y: {debugInfo.centerY.toFixed(3)} (z: {debugInfo.layer})
 		</div>
 		<div class="debug-line">
-			Loading: {debugInfo.cacheStats.loadingCount} chunks, {debugInfo.cacheStats
-				.filmstripLoadingCount} filmstrips
+			Zoom: {debugInfo.zoom.toFixed(3)} | Current Resolution: {debugInfo.resolutionName} (Level {debugInfo.resolutionLevel})
 		</div>
-		<div class="debug-line storage-stats">
-			Browser Storage: {debugInfo.storageStats.totalChunks} chunks, {(
-				debugInfo.storageStats.estimatedSize /
-				1024 /
-				1024
-			).toFixed(1)}MB
+		<div class="debug-line">
+			Original ROI: x:[{xs[0]}, {xs[1]}] y:[{ys[0]}, {ys[1]}] z:[{zs[0]}, {zs[1]}]
 		</div>
-	{/if}
+		<div class="debug-line">Current {debugInfo.resolutionName} Chunk: {debugInfo.chunkInfo}</div>
 
-	{#if APP_CONFIG.debug}
-		<div class="debug-line">Pinch Active: {debugInfo.pinchInfo.active}</div>
-		{#if debugInfo.pinchInfo.active}
-			<div class="debug-line">Touch Distance: {debugInfo.pinchInfo.touchDistance.toFixed(2)}</div>
+		<div class="debug-line">
+			Chunk Loading: viewport-driven with {APP_CONFIG.chunkLoading.viewportPaddingChunks} chunk padding,
+			center-first={APP_CONFIG.chunkLoading.prioritizeCenter}
+		</div>
+
+		{#if imageCache}
 			<div class="debug-line">
-				Pinch Center: {debugInfo.pinchInfo.centerX.toFixed(1)}, {debugInfo.pinchInfo.centerY.toFixed(
-					1
-				)}
+				Memory Cache: {debugInfo.cacheStats.enabled ? 'ENABLED' : 'DISABLED'}, {debugInfo.cacheStats
+					.entryCount} entries, {(debugInfo.cacheStats.cacheSize / 1024 / 1024).toFixed(1)}MB / {(
+					debugInfo.cacheStats.maxCacheSize /
+					1024 /
+					1024
+				).toFixed(0)}MB ({debugInfo.cacheStats.utilizationPercent.toFixed(1)}%)
+			</div>
+			<div class="debug-line">
+				Filmstrip Cache: {debugInfo.cacheStats.filmstripCount} batches, {debugInfo.cacheStats
+					.totalSlicesInFilmstrips} slices
+			</div>
+			<div class="debug-line">
+				Loading: {debugInfo.cacheStats.loadingCount} chunks, {debugInfo.cacheStats
+					.filmstripLoadingCount} filmstrips
+			</div>
+			<div class="debug-line storage-stats">
+				Browser Storage: {debugInfo.storageStats.totalChunks} chunks, {(
+					debugInfo.storageStats.estimatedSize /
+					1024 /
+					1024
+				).toFixed(1)}MB
 			</div>
 		{/if}
-	{/if}
-</div>
-<!-- {/if} -->
 
-<Minimap {annotationStore} {nav} />
+		{#if APP_CONFIG.debug}
+			<div class="debug-line">Pinch Active: {debugInfo.pinchInfo.active}</div>
+			{#if debugInfo.pinchInfo.active}
+				<div class="debug-line">Touch Distance: {debugInfo.pinchInfo.touchDistance.toFixed(2)}</div>
+				<div class="debug-line">
+					Pinch Center: {debugInfo.pinchInfo.centerX.toFixed(1)}, {debugInfo.pinchInfo.centerY.toFixed(
+						1
+					)}
+				</div>
+			{/if}
+		{/if}
+	</div>
+
+	<button
+		class="debug-toggle"
+		on:click={() => (showDebugOverlay = !showDebugOverlay)}
+		title="Toggle Debug (\\)"
+		aria-label="Toggle Debug Overlay"
+	>
+		{#if showDebugOverlay}
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M15 5l-7 7 7 7"
+				/>
+			</svg>
+		{:else}
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+			</svg>
+		{/if}
+		<span class="debug-toggle-key">\</span>
+	</button>
+</div>
+
+<Minimap
+	bind:footprint={minimapFootprint}
+	{annotationStore}
+	{nav}
+	show={showMinimap}
+	onToggle={() => (showMinimap = !showMinimap)}
+/>
 
 <style>
 	.paint-app-canvas {
@@ -1870,28 +1924,62 @@ from BossDB and displays it on the canvas.
 		-webkit-touch-callout: none;
 	}
 
-	.debug-overlay {
+	.debug-overlay-shell {
 		position: fixed;
-		top: 10px;
-		left: 0;
-		transform: translateX(-98%);
+		top: 56px;
+		left: 10px;
+		z-index: 1000;
+		pointer-events: auto;
+		transition: transform 300ms ease-in-out;
+	}
+
+	.debug-overlay {
+		position: relative;
 		background: rgba(0, 0, 0, 0.8);
 		color: white;
 		font-family: monospace;
 		font-size: 12px;
 		padding: 10px;
-		border-radius: 0 5px 5px 0;
+		border-radius: 6px;
 		z-index: 1000;
 		pointer-events: auto;
 		max-width: 600px;
 		cursor: pointer;
-		transition: transform 0.3s ease;
-		opacity: 0.3;
+		opacity: 1;
 	}
 
-	.debug-overlay:hover {
-		transform: translateX(0);
-		opacity: 1;
+	.debug-toggle {
+		position: absolute;
+		right: -28px;
+		top: 28px;
+		transform: translateY(-50%);
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 0 0.375rem 0.375rem 0;
+		border: 1px solid rgb(209 213 219);
+		background: white;
+		color: rgb(55 65 81);
+		box-shadow:
+			0 1px 2px rgb(0 0 0 / 0.08),
+			0 1px 3px rgb(0 0 0 / 0.12);
+		cursor: pointer;
+	}
+
+	.debug-toggle:hover {
+		background: rgb(249 250 251);
+	}
+
+	.debug-toggle-key {
+		position: absolute;
+		bottom: 2px;
+		left: 2px;
+		font-size: 10px;
+		line-height: 1;
+		color: rgb(107 114 128);
+		opacity: 0.7;
 	}
 
 	.debug-line {

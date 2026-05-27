@@ -44,7 +44,7 @@
 		},
 		{
 			title: 'Display',
-			keys: ['a', 't', 'm', 'v']
+			keys: ['a', 't', 's', 'z', '\\', 'v']
 		},
 		{
 			title: 'Zoom',

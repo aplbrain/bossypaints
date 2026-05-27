@@ -36,6 +36,7 @@ manager and navigation store.
 	// Visibility control from parent (slide panel in/out)
 	export let show: boolean = true;
 	export let onToggle: () => void = () => {};
+	export let showLayerControls: boolean = true;
 
 	let histDebounce: any = null;
 	function emitHistogram(min: number, max: number) {
@@ -141,35 +142,37 @@ manager and navigation store.
 			{/if}
 			<span class="absolute bottom-0.5 right-0.5 text-[10px] text-gray-500 opacity-70">t</span>
 		</button>
-		<!-- Layer Info -->
-		<div class="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
-			<span class="text-sm font-medium text-gray-600">Layer</span>
-			<div class="flex items-center gap-2">
-				<span
-					class="text-lg font-bold text-gray-900 bg-blue-50 px-3 py-1 rounded-full border border-blue-200"
-				>
-					{currentLayer}
-				</span>
-				<div class="flex flex-col flex-center">
-					<button
-						on:click={incrementLayer}
-						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400 rounded-t-xl px-2 py-1.5 transition-colors cursor-pointer"
-						title="Click to increment layer"
+		{#if showLayerControls}
+			<!-- Layer Info -->
+			<div class="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
+				<span class="text-sm font-medium text-gray-600">Layer</span>
+				<div class="flex items-center gap-2">
+					<span
+						class="text-lg font-bold text-gray-900 bg-blue-50 px-3 py-1 rounded-full border border-blue-200"
 					>
-						<ArrowUpIcon className="w-3 h-3" />
-						<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">.</span> -->
-					</button>
-					<button
-						on:click={decrementLayer}
-						class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400 px-2 py-1.5 rounded-b-xl transition-colors cursor-pointer"
-						title="Click to decrement layer"
-					>
-						<ArrowDownIcon className="w-3 h-3" />
-						<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">,</span> -->
-					</button>
+						{currentLayer}
+					</span>
+					<div class="flex flex-col flex-center">
+						<button
+							on:click={incrementLayer}
+							class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400 rounded-t-xl px-2 py-1.5 transition-colors cursor-pointer"
+							title="Click to increment layer"
+						>
+							<ArrowUpIcon className="w-3 h-3" />
+							<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">.</span> -->
+						</button>
+						<button
+							on:click={decrementLayer}
+							class="relative bg-blue-200 hover:bg-blue-100 border border-blue-400 px-2 py-1.5 rounded-b-xl transition-colors cursor-pointer"
+							title="Click to decrement layer"
+						>
+							<ArrowDownIcon className="w-3 h-3" />
+							<!-- <span class="absolute bottom-0 right-0.5 font-light text-[20px] text-gray-500 opacity-70">,</span> -->
+						</button>
+					</div>
 				</div>
 			</div>
-		</div>
+		{/if}
 
 		<!-- Segment ID with Color -->
 		<div class="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
