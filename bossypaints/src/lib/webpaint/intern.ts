@@ -7,6 +7,16 @@ type BossRemoteOptions = {
 import { baseUrl } from '$lib/api';
 import { debug } from './debug';
 
+function isCloudVolumeURI(uri: string): boolean {
+	return (
+		uri.startsWith('precomputed://') ||
+		uri.startsWith('gs://') ||
+		uri.startsWith('s3://') ||
+		uri.startsWith('file://') ||
+		uri.startsWith('https://')
+	);
+}
+
 class BossRemote {
 	/*
 	A BossRemote -- a JS analogy of `intern.remote.BossRemote`.
@@ -60,12 +70,7 @@ class BossRemote {
 		*/
 		// For CloudVolume URIs, use our backend filmstrip endpoint. Heuristic: if uri contains 'precomputed://' or starts with gs://, s3://, file://, https:// (non-Boss host)
 		let url: string;
-		const isCloudVolume =
-			uri.startsWith('precomputed://') ||
-			uri.startsWith('gs://') ||
-			uri.startsWith('s3://') ||
-			uri.startsWith('file://') ||
-			uri.startsWith('https://');
+		const isCloudVolume = isCloudVolumeURI(uri);
 		if (isCloudVolume) {
 			// Backend serves at http://localhost:8000/api/filmstrip/cloudvolume
 			const backend = baseUrl;
@@ -130,6 +135,43 @@ class BossRemote {
 				`NETWORK FAILURE [${requestId}]: Error fetching from ${url} after ${duration}ms`,
 				err
 			);
+			return null;
+		}
+	}
+
+	async getAvailableMipLevels(uri: string): Promise<number[] | null> {
+		if (!isCloudVolumeURI(uri)) {
+			return null;
+		}
+
+		const backend = baseUrl;
+		const params = new URLSearchParams({ uri });
+		const url = `${backend}/api/filmstrip/cloudvolume/mips?${params.toString()}`;
+
+		try {
+			const response = await fetch(url, {
+				headers: {
+					Authorization: `Token ${this.token}`,
+					Accept: 'application/json'
+				},
+				cache: 'no-store'
+			});
+			if (!response.ok) {
+				debug.warn(`Failed to fetch available CloudVolume mip levels from ${url}`);
+				return null;
+			}
+
+			const payload = (await response.json()) as { mip_levels?: unknown };
+			if (!Array.isArray(payload.mip_levels)) {
+				return null;
+			}
+
+			return payload.mip_levels
+				.map((level) => Number(level))
+				.filter((level) => Number.isInteger(level) && level >= 0)
+				.sort((left, right) => left - right);
+		} catch (error) {
+			debug.warn('Failed to fetch available CloudVolume mip levels', error);
 			return null;
 		}
 	}
