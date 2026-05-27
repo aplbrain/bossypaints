@@ -39,8 +39,26 @@ export function createNavigationStore({
 	const _maxLayer = $state(maxLayer);
 	let _drawing = $state(false);
 	let _annotationsVisible = $state(true);
+	let _restrictLayerBounds = $state(true);
 	const _imageWidth = $state(imageWidth);
 	const _imageHeight = $state(imageHeight);
+
+	const clampLayerToTaskBounds = (value: number): number => {
+		if (!Number.isFinite(value)) {
+			return _minLayer;
+		}
+		return Math.max(_minLayer, Math.min(_maxLayer - 1, Math.floor(value)));
+	};
+
+	const normalizeLayer = (value: number): number => {
+		if (_restrictLayerBounds) {
+			return clampLayerToTaskBounds(value);
+		}
+		if (!Number.isFinite(value)) {
+			return _minLayer;
+		}
+		return Math.max(0, Math.floor(value));
+	};
 
 	// Store original task center coordinates in native resolution
 	let _originalTaskCenterX = $state<number | null>(null);
@@ -86,6 +104,25 @@ export function createNavigationStore({
 		 */
 		toggleAnnotationsVisible: () => {
 			_annotationsVisible = !_annotationsVisible;
+		},
+
+		get restrictLayerBounds() {
+			return _restrictLayerBounds;
+		},
+
+		setRestrictLayerBounds: (restrict: boolean) => {
+			_restrictLayerBounds = restrict;
+			if (_restrictLayerBounds) {
+				_layer = clampLayerToTaskBounds(_layer);
+			}
+		},
+
+		get layerWithinTaskBounds() {
+			return _layer >= _minLayer && _layer < _maxLayer;
+		},
+
+		get taskBoundedLayer() {
+			return clampLayerToTaskBounds(_layer);
 		},
 
 		/** Get the image width of the underlying data. */
@@ -141,31 +178,13 @@ export function createNavigationStore({
 			return _layer;
 		},
 		setLayer: (newLayer: number) => {
-			_layer = newLayer;
-			if (_layer < _minLayer) {
-				_layer = _minLayer;
-			}
-			if (_layer >= _maxLayer) {
-				_layer = _maxLayer - 1;
-			}
+			_layer = normalizeLayer(newLayer);
 		},
 		incrementLayer: (delta: number = 1) => {
-			_layer += delta;
-			if (_layer < _minLayer) {
-				_layer = _minLayer;
-			}
-			if (_layer >= _maxLayer) {
-				_layer = _maxLayer - 1;
-			}
+			_layer = normalizeLayer(_layer + delta);
 		},
 		decrementLayer: (delta: number = 1) => {
-			_layer -= delta;
-			if (_layer < _minLayer) {
-				_layer = _minLayer;
-			}
-			if (_layer > _maxLayer) {
-				_layer = _maxLayer - 1;
-			}
+			_layer = normalizeLayer(_layer - delta);
 		},
 		get zoom() {
 			return _zoom;
@@ -186,7 +205,7 @@ export function createNavigationStore({
 		},
 		reset: () => {
 			_zoom = clampZoom(1);
-			_layer = Math.floor((_minLayer + _maxLayer) / 2);
+			_layer = clampLayerToTaskBounds(Math.floor((_minLayer + _maxLayer) / 2));
 		},
 
 		/**

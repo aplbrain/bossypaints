@@ -345,10 +345,12 @@ from BossDB and displays it on the canvas.
 		const batchSize = APP_CONFIG.filmstrip.batchSize;
 		const lowerPrefetchTriggerZ = visibleChunkWindow.filmstripZMin + 1;
 		const upperPrefetchTriggerZ = visibleChunkWindow.filmstripZMax - 2;
+		const lowerBound = nav.restrictLayerBounds ? zs[0] : 0;
+		const upperBound = nav.restrictLayerBounds ? zs[1] : null;
 
 		if (currentZ <= lowerPrefetchTriggerZ) {
 			const previousZMax = visibleChunkWindow.filmstripZMin;
-			const previousZMin = Math.max(previousZMax - batchSize, zs[0]);
+			const previousZMin = Math.max(previousZMax - batchSize, lowerBound);
 			if (previousZMax > previousZMin) {
 				prefetchRanges.push({ z_min: previousZMin, z_max: previousZMax });
 			}
@@ -356,8 +358,9 @@ from BossDB and displays it on the canvas.
 
 		if (currentZ >= upperPrefetchTriggerZ) {
 			const nextZMin = visibleChunkWindow.filmstripZMax;
-			if (nextZMin < zs[1]) {
-				const nextZMax = Math.min(nextZMin + batchSize, zs[1]);
+			if (upperBound === null || nextZMin < upperBound) {
+				const nextZMax =
+					upperBound === null ? nextZMin + batchSize : Math.min(nextZMin + batchSize, upperBound);
 				if (nextZMax > nextZMin) {
 					prefetchRanges.push({ z_min: nextZMin, z_max: nextZMax });
 				}

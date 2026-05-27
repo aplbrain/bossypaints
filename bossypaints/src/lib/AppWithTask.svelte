@@ -946,6 +946,7 @@
 			{histMax}
 			onHistogramChange={handleHistogramChange}
 			show={showInfo}
+			showLayerControls={false}
 			onToggle={() => (showInfo = !showInfo)}
 		/>
 		<KeybindingsTable bind:show={showKeybindings} />
